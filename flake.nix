@@ -21,10 +21,25 @@
         pnpm = pkgs.pnpm.override { inherit nodejs; };
       in
       {
+        formatter = pkgs.writeShellApplication {
+          name = "treefmt";
+          runtimeInputs = [
+            nodejs
+            pnpm
+            pkgs.nixfmt
+            pkgs.treefmt
+          ];
+          text = ''
+            exec treefmt "$@"
+          '';
+        };
+
         devShells.default = pkgs.mkShell {
           packages = [
             nodejs
             pnpm
+            pkgs.treefmt
+            pkgs.nixfmt
           ];
 
           shellHook = ''

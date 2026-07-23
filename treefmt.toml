@@ -1,0 +1,24 @@
+# treefmt – universal formatter multiplexer
+# See https://github.com/numtide/treefmt
+
+[formatter.oxfmt]
+command = "pnpm"
+options = ["exec", "oxfmt", "--write"]
+includes = [
+  "*.js",
+  "*.jsx",
+  "*.ts",
+  "*.tsx",
+  "*.json",
+  "*.html",
+  "*.css",
+  "*.md",
+  "*.yaml",
+  "*.yml",
+  "*.toml",
+]
+[formatter.nixfmt]
+command = "nixfmt"
+includes = ["*.nix"]
+
+excludes = ["pnpm-lock.yaml", "**/node_modules/**", "**/build/**"]
