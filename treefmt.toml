@@ -1,6 +1,10 @@
 # treefmt – universal formatter multiplexer
 # See https://github.com/numtide/treefmt
 
+excludes = [".git/**", "pnpm-lock.yaml", "node_modules/**", ".react-router/**", "build/**"]
+walk = "filesystem"
+verbose = 1
+
 [formatter.oxfmt]
 command = "pnpm"
 options = ["exec", "oxfmt", "--write"]
@@ -20,5 +24,3 @@ includes = [
 [formatter.nixfmt]
 command = "nixfmt"
 includes = ["*.nix"]
-
-excludes = ["pnpm-lock.yaml", "**/node_modules/**", "**/build/**"]

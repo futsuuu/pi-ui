@@ -20,7 +20,7 @@
         skills = { };
       };
       bundle = agentLib.mkBundle { inherit pkgs selection; };
-      localTargets = {
+      targets = {
         agents = agentLib.defaultLocalTargets.agents // {
           enable = true;
         };
@@ -29,18 +29,13 @@
     {
       apps.skills-install-local = {
         type = "app";
+        meta.description = "Install agent skills locally";
         program = "${
-          agentLib.mkLocalInstallScript {
-            inherit pkgs bundle;
-            targets = localTargets;
-          }
+          agentLib.mkLocalInstallScript { inherit pkgs bundle targets; }
         }/bin/skills-install-local";
       };
       packages.skills-hook = pkgs.writeText "skills-hook" (
-        agentLib.mkShellHook {
-          inherit pkgs bundle;
-          targets = localTargets;
-        }
+        agentLib.mkShellHook { inherit pkgs bundle targets; }
       );
     };
 }

@@ -22,20 +22,48 @@
       systems = [
         "aarch64-darwin"
         "aarch64-linux"
-        "x86_64-darwin"
         "x86_64-linux"
       ];
       perSystem =
         { pkgs, system, ... }:
         let
-          nodejs = pkgs.nodejs_24;
-          pnpm = pkgs.pnpm.override { nodejs-slim = nodejs; };
+          nodejs-slim = pkgs.nodejs-slim_26;
+          pnpm = pkgs.pnpm.override { inherit nodejs-slim; };
+          pnpmDeps = pkgs.fetchPnpmDeps {
+            pname = "pnpm-deps";
+            src = ./.;
+            fetcherVersion = 4;
+            hash = "sha256-zLGwmzYqYeL1Cr1GhQQLdWpm3Ci+dgY1ebBy87F4blc=";
+          };
         in
         {
+          checks = {
+            treefmt = pkgs.stdenv.mkDerivation {
+              inherit pnpmDeps;
+              pname = "check-treefmt";
+              version = "0";
+              src = ./.;
+              nativeBuildInputs = [
+                nodejs-slim
+                pnpm
+                pkgs.pnpmConfigHook
+                pkgs.nixfmt
+                pkgs.treefmt
+              ];
+              buildPhase = ''
+                pnpm install --frozen-store --offline --frozen-lockfile
+                treefmt --ci
+              '';
+              installPhase = ''
+                touch $out
+              '';
+            };
+          };
+
           formatter = pkgs.writeShellApplication {
             name = "treefmt";
             runtimeInputs = [
-              nodejs
+              nodejs-slim
               pnpm
               pkgs.nixfmt
               pkgs.treefmt
@@ -47,7 +75,7 @@
 
           devShells.default = pkgs.mkShell {
             packages = [
-              nodejs
+              nodejs-slim
               pnpm
               pkgs.treefmt
               pkgs.nixfmt

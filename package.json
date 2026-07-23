@@ -8,7 +8,6 @@
     "start": "react-router-serve ./build/server/index.js",
     "typecheck": "react-router typegen && tsc",
     "format": "oxfmt --write",
-    "format:check": "oxfmt --check",
     "lint": "oxlint"
   },
   "dependencies": {
@@ -30,11 +29,5 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.1.5"
-  },
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "*"
-    }
   }
 }
