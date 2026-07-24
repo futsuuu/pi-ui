@@ -33,14 +33,14 @@
             pname = "pnpm-deps";
             src = ./.;
             fetcherVersion = 4;
-            hash = "sha256-zLGwmzYqYeL1Cr1GhQQLdWpm3Ci+dgY1ebBy87F4blc=";
+            hash = "sha256-27g6YJL2WAkFoe44QcVL3jPZb7DC9as7tP0l6fULx18=";
           };
         in
         {
           checks = {
-            treefmt = pkgs.stdenv.mkDerivation {
+            fmt = pkgs.stdenv.mkDerivation {
               inherit pnpmDeps;
-              pname = "check-treefmt";
+              pname = "check-fmt";
               version = "0";
               src = ./.;
               nativeBuildInputs = [
@@ -51,8 +51,27 @@
                 pkgs.treefmt
               ];
               buildPhase = ''
-                pnpm install --frozen-store --offline --frozen-lockfile
+                pnpm install --dev --frozen-store --offline --frozen-lockfile
                 treefmt --ci
+              '';
+              installPhase = ''
+                touch $out
+              '';
+            };
+
+            lint = pkgs.stdenv.mkDerivation {
+              inherit pnpmDeps;
+              pname = "check-lint";
+              version = "0";
+              src = ./.;
+              nativeBuildInputs = [
+                nodejs-slim
+                pnpm
+                pkgs.pnpmConfigHook
+              ];
+              buildPhase = ''
+                pnpm install --frozen-store --offline --frozen-lockfile
+                pnpm run lint
               '';
               installPhase = ''
                 touch $out
@@ -88,6 +107,7 @@
               pnpm run
               echo ""
               source ${self.packages.${system}.skills-hook}
+              echo ""
             '';
           };
         };

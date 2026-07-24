@@ -7,7 +7,7 @@ verbose = 1
 
 [formatter.oxfmt]
 command = "pnpm"
-options = ["exec", "oxfmt", "--write"]
+options = ["run", "fmt"]
 includes = [
   "*.js",
   "*.jsx",
@@ -21,6 +21,7 @@ includes = [
   "*.yml",
   "*.toml",
 ]
+
 [formatter.nixfmt]
 command = "nixfmt"
 includes = ["*.nix"]
