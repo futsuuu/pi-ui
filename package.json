@@ -10,9 +10,13 @@
     "fmt": "oxfmt --write"
   },
   "dependencies": {
+    "@earendil-works/pi-coding-agent": "^0.81.1",
+    "@mantine/core": "^9.4.2",
+    "@mantine/hooks": "^9.4.2",
     "@react-router/node": "^8.3.0",
     "@react-router/serve": "^8.3.0",
     "isbot": "^5.2.1",
+    "lucide-react": "^1.25.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router": "^8.3.0"

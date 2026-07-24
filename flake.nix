@@ -33,7 +33,7 @@
             pname = "pnpm-deps";
             src = ./.;
             fetcherVersion = 4;
-            hash = "sha256-27g6YJL2WAkFoe44QcVL3jPZb7DC9as7tP0l6fULx18=";
+            hash = "sha256-K9bgfOEb5zah/uGy0fFQkUJ3QyGvEGupTBDlYVf8ti8=";
           };
         in
         {
