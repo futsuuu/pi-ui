@@ -2,6 +2,7 @@ import { readdir, writeFile, readFile, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
+import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import {
   createAgentSessionFromServices,
   createAgentSessionRuntime,
@@ -13,8 +14,6 @@ import {
   type AgentSession,
   type AgentSessionRuntime,
 } from "@earendil-works/pi-coding-agent";
-
-export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export type SseEvent = {
   type: string;
@@ -315,7 +314,7 @@ class PiServer {
     await this.initialize(newCwd);
   }
 
-  getMessages(): unknown[] {
+  getMessages(): AgentMessage[] {
     if (!this.session) return [];
     return this.session.messages ?? [];
   }

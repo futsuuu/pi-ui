@@ -1,5 +1,7 @@
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+
 import { getJsonBody, jsonResponse, errorResponse } from "~/lib/api-helpers";
-import { getPiServer, type ThinkingLevel } from "~/lib/pi-server";
+import { getPiServer } from "~/lib/pi-server";
 
 import type { Route } from "./+types/api.pi.steer";
 
