@@ -344,8 +344,18 @@ class PiServer {
 let instance: PiServer | null = null;
 
 export function getPiServer(): PiServer {
+  // Preserve singleton across HMR updates via import.meta.hot.data
   if (!instance) {
-    instance = new PiServer();
+    instance = import.meta.hot?.data.piServer ?? new PiServer();
+    if (import.meta.hot) {
+      import.meta.hot.data.piServer = instance;
+    }
   }
   return instance;
+}
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    instance = null;
+  });
 }
