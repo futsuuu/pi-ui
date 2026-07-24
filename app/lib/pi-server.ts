@@ -194,50 +194,61 @@ class PiServer {
     return this.modelRuntime.getAvailable();
   }
 
-  async setModel(provider: string, modelId: string) {
-    await this.ensureInitialized();
-    if (!this.session || !this.modelRuntime) return;
-    const model = this.modelRuntime.getModel(provider, modelId);
-    if (model) {
-      await this.session.setModel(model);
-      this.broadcast({ type: "pi:state", ...this.getState() });
-    }
-  }
-
-  async setThinkingLevel(level: ThinkingLevel) {
-    await this.ensureInitialized();
-    if (!this.session) return;
-    this.session.setThinkingLevel(level);
-    this.broadcast({ type: "pi:state", ...this.getState() });
-  }
-
-  async prompt(message: string) {
+  async prompt(
+    message: string,
+    options?: { model?: { provider: string; modelId: string }; thinkingLevel?: ThinkingLevel },
+  ) {
     await this.ensureInitialized();
     if (!this.session) return;
     try {
+      await this.applyOptions(options);
       await this.session.prompt(message);
     } catch (err) {
       console.error("Prompt error:", err);
     }
   }
 
-  async steer(message: string) {
+  async steer(
+    message: string,
+    options?: { model?: { provider: string; modelId: string }; thinkingLevel?: ThinkingLevel },
+  ) {
     await this.ensureInitialized();
     if (!this.session) return;
     try {
+      await this.applyOptions(options);
       await this.session.steer(message);
     } catch (err) {
       console.error("Steer error:", err);
     }
   }
 
-  async followUp(message: string) {
+  async followUp(
+    message: string,
+    options?: { model?: { provider: string; modelId: string }; thinkingLevel?: ThinkingLevel },
+  ) {
     await this.ensureInitialized();
     if (!this.session) return;
     try {
+      await this.applyOptions(options);
       await this.session.followUp(message);
     } catch (err) {
       console.error("FollowUp error:", err);
+    }
+  }
+
+  private async applyOptions(options?: {
+    model?: { provider: string; modelId: string };
+    thinkingLevel?: ThinkingLevel;
+  }) {
+    if (!this.session || !this.modelRuntime || !options) return;
+    if (options.model) {
+      const model = this.modelRuntime.getModel(options.model.provider, options.model.modelId);
+      if (model) {
+        await this.session.setModel(model);
+      }
+    }
+    if (options.thinkingLevel) {
+      this.session.setThinkingLevel(options.thinkingLevel);
     }
   }
 
@@ -351,7 +362,7 @@ export function getPiServer(): PiServer {
       import.meta.hot.data.piServer = instance;
     }
   }
-  return instance;
+  return instance!;
 }
 
 if (import.meta.hot) {

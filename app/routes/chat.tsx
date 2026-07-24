@@ -138,6 +138,12 @@ export default function Chat() {
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
+
+  // Local model/thinking selection — applied on prompt submit, not via separate API calls
+  const [selectedModel, setSelectedModel] = useState<{ provider: string; modelId: string } | null>(
+    null,
+  );
+  const [selectedThinkingLevel, setSelectedThinkingLevel] = useState<string>("medium");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -203,6 +209,11 @@ export default function Chat() {
 
       setState(stateData);
       setModels(modelsData.models || []);
+      // Initialize local model/thinking selection from server state
+      if (stateData.model) {
+        setSelectedModel({ provider: stateData.model.provider, modelId: stateData.model.id });
+      }
+      setSelectedThinkingLevel(stateData.thinkingLevel);
 
       // Fetch messages
       await fetchMessages();
@@ -257,6 +268,11 @@ export default function Chat() {
         if (data.type === "pi:state") {
           const newState = data as PiState;
           setState(newState);
+          // Sync local selection with server state only if no pending local selection
+          if (newState.model) {
+            setSelectedModel({ provider: newState.model.provider, modelId: newState.model.id });
+          }
+          setSelectedThinkingLevel(newState.thinkingLevel);
           // Sync URL with current session ID
           if (newState.sessionId && newState.sessionId !== sessionIdFromUrl) {
             window.history.replaceState(
@@ -406,10 +422,19 @@ export default function Chat() {
     setInput("");
     setMessages((prev) => [...prev, { id: uid(), role: "user", content: text }]);
     try {
+      // Include current model/thinking level selections in the prompt request
+      // so no separate API calls are needed
+      const body: Record<string, unknown> = { message: text };
+      if (selectedModel) {
+        body.model = { provider: selectedModel.provider, modelId: selectedModel.modelId };
+      }
+      if (selectedThinkingLevel) {
+        body.thinkingLevel = selectedThinkingLevel;
+      }
       const res = await fetch("/api/pi/prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) console.warn("Prompt returned", res.status);
     } catch (err) {
@@ -424,28 +449,21 @@ export default function Chat() {
     } catch {}
   }
 
-  async function setModel(provider: string, modelId: string) {
-    try {
-      await fetch("/api/pi/set-model", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, modelId }),
-      });
-      setShowModelSelector(false);
-    } catch {}
+  function selectModel(provider: string, modelId: string) {
+    // Update local selection only — applied on next prompt submit
+    setSelectedModel({ provider, modelId });
+    setShowModelSelector(false);
   }
 
   function cycleThinking() {
-    if (!state) return;
+    // Update local selection only — applied on next prompt submit
     const currentIdx = THINKING_LEVELS.indexOf(
-      state.thinkingLevel as (typeof THINKING_LEVELS)[number],
+      (selectedThinkingLevel ||
+        state?.thinkingLevel ||
+        "medium") as (typeof THINKING_LEVELS)[number],
     );
     const nextIdx = (currentIdx + 1) % THINKING_LEVELS.length;
-    fetch("/api/pi/set-thinking", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ level: THINKING_LEVELS[nextIdx] }),
-    }).catch(() => {});
+    setSelectedThinkingLevel(THINKING_LEVELS[nextIdx]);
   }
 
   async function newSessionFromChat() {
@@ -501,13 +519,18 @@ export default function Chat() {
                 onClick={() => setShowModelSelector(!showModelSelector)}
                 className="text-xs px-2.5 py-1 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
               >
-                {state.model?.name ?? "Select Model"}
+                {selectedModel
+                  ? (models.find(
+                      (m) =>
+                        m.provider === selectedModel.provider && m.id === selectedModel.modelId,
+                    )?.name ?? selectedModel.modelId)
+                  : (state.model?.name ?? "Select Model")}
               </button>
               <button
                 onClick={cycleThinking}
                 className="text-xs px-2.5 py-1 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors capitalize"
               >
-                {state.thinkingLevel}
+                {selectedThinkingLevel}
               </button>
             </>
           )}
@@ -544,9 +567,9 @@ export default function Chat() {
               {models.map((m) => (
                 <button
                   key={m.id}
-                  onClick={() => setModel(m.provider, m.id)}
+                  onClick={() => selectModel(m.provider, m.id)}
                   className={`text-left px-3 py-2 rounded-lg text-sm transition-colors border ${
-                    state?.model?.id === m.id
+                    selectedModel?.provider === m.provider && selectedModel?.modelId === m.id
                       ? "bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700"
                       : "bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border-gray-200 dark:border-gray-700"
                   }`}

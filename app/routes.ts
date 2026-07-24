@@ -14,8 +14,6 @@ export default [
   route("api/pi/follow-up", "routes/api.pi.follow-up.ts"),
   route("api/pi/abort", "routes/api.pi.abort.ts"),
   route("api/pi/models", "routes/api.pi.models.ts"),
-  route("api/pi/set-model", "routes/api.pi.set-model.ts"),
-  route("api/pi/set-thinking", "routes/api.pi.set-thinking.ts"),
   route("api/pi/change-cwd", "routes/api.pi.change-cwd.ts"),
   route("api/pi/sessions", "routes/api.pi.sessions.ts"),
   route("api/pi/switch-session", "routes/api.pi.switch-session.ts"),
