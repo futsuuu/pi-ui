@@ -623,12 +623,12 @@ export default function Chat() {
                 className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`max-w-[80%] rounded-xl px-4 py-3 ${
+                  className={`rounded-xl py-3 ${
                     msg.role === "user"
-                      ? "bg-blue-600 text-white"
+                      ? "max-w-[80%] bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 px-4"
                       : msg.role === "tool"
-                        ? "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-mono text-sm border border-gray-200 dark:border-gray-700"
-                        : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100"
+                        ? "w-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-mono text-sm border border-gray-200 dark:border-gray-700 px-4"
+                        : "w-full text-gray-900 dark:text-gray-100"
                   }`}
                 >
                   {msg.toolName && msg.role === "tool" && (
