@@ -1,11 +1,9 @@
-import { Folder, ArrowLeft, File, ArrowRight, Layers, Sun, Moon } from "lucide-react";
-import { useCallback, useEffect } from "react";
-import { useFetcher, useLoaderData, useNavigate } from "react-router";
-import * as v from "valibot";
+import { Folder, ArrowLeft, File, Layers, Sun, Moon, ArrowRight } from "lucide-react";
+import { useCallback } from "react";
+import { useLoaderData, useNavigate } from "react-router";
 
 import { getPiServer } from "~/lib/pi-server";
 import { useTheme } from "~/lib/theme-context";
-import { CwdSchema } from "~/lib/validations";
 
 import type { Route } from "./+types/home";
 
@@ -15,15 +13,13 @@ export function meta(_: Route.MetaArgs) {
 
 export async function loader({ request }: Route.LoaderArgs) {
   const pi = getPiServer();
-  await pi.ensureInitialized();
 
   const url = new URL(request.url);
   const dirFromUrl = url.searchParams.get("dir");
 
-  const cwd = pi.cwd;
   const homeDir = pi.getHomeDir();
   const recentDirs = pi.getRecentDirs();
-  const currentDir = dirFromUrl || cwd || homeDir;
+  const currentDir = dirFromUrl || homeDir;
   const entries = await pi.listDirectory(currentDir);
 
   // Build breadcrumbs from currentDir
@@ -36,56 +32,23 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
   if (breadcrumbs.length === 0) breadcrumbs.push({ name: "/", path: "/" });
 
-  return { cwd, homeDir, recentDirs, currentDir, entries, breadcrumbs };
-}
-
-export async function action({ request }: Route.ActionArgs) {
-  const pi = getPiServer();
-  const body: Record<string, unknown> = await request.json();
-  const intent = body.intent as string | undefined;
-
-  if (intent === "change-cwd") {
-    const cwdRaw = body.cwd;
-    const parsed = v.safeParse(CwdSchema, { cwd: cwdRaw });
-    if (!parsed.success) {
-      return { error: "Invalid cwd" };
-    }
-    await pi.changeCwd(parsed.output.cwd);
-    return { success: true, cwd: parsed.output.cwd };
-  }
-
-  return { error: "Unknown intent" };
+  return { homeDir, recentDirs, currentDir, entries, breadcrumbs };
 }
 
 export default function Home() {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
-  const { cwd, homeDir, recentDirs, currentDir, entries, breadcrumbs } =
-    useLoaderData<typeof loader>();
-
-  const fetcher = useFetcher();
-
-  // Navigate after successful cwd change
-  const fetcherData = fetcher.data as { error?: string; cwd?: string } | undefined;
-  useEffect(() => {
-    if (fetcher.state === "idle" && fetcher.data && !fetcherData?.error && fetcherData?.cwd) {
-      void navigate(`/sessions?dir=${encodeURIComponent(fetcherData.cwd)}`);
-    }
-  }, [fetcher.state, fetcher.data, fetcherData?.cwd, fetcherData?.error, navigate]);
+  const { homeDir, recentDirs, currentDir, entries, breadcrumbs } = useLoaderData<typeof loader>();
 
   const loadDir = useCallback(
     (dirPath: string) => {
-      // Navigate with search param to trigger loader re-run
       void navigate(`/?dir=${encodeURIComponent(dirPath)}`, { replace: true });
     },
     [navigate],
   );
 
   function selectDir(dirPath: string) {
-    void fetcher.submit(
-      { intent: "change-cwd", cwd: dirPath },
-      { method: "post", encType: "application/json" },
-    );
+    void navigate(`/sessions?dir=${encodeURIComponent(dirPath)}`);
   }
 
   function goUp() {
@@ -96,8 +59,6 @@ export default function Home() {
   function goToHome() {
     loadDir(homeDir);
   }
-
-  const selecting = fetcher.state !== "idle";
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -120,16 +81,8 @@ export default function Home() {
       </div>
 
       <div className="flex-1 max-w-3xl mx-auto w-full p-6">
-        {cwd && (
-          <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-6">
-            <p className="text-sm text-blue-700 dark:text-blue-300">
-              <span className="font-medium">Current:</span> {cwd}
-            </p>
-          </div>
-        )}
-
         {/* Recent Directories */}
-        {recentDirs.length > 0 && !cwd && (
+        {recentDirs.length > 0 && (
           <div className="mb-6">
             <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Recent Directories
@@ -210,11 +163,10 @@ export default function Home() {
           <div className="p-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
             <button
               onClick={() => selectDir(currentDir)}
-              disabled={selecting}
               className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium py-2.5 px-4 rounded-lg transition-colors text-sm flex items-center justify-center gap-2"
             >
-              {selecting ? "Setting..." : "Use This Directory"}
-              {!selecting && <ArrowRight className="w-4 h-4" />}
+              Use This Directory
+              <ArrowRight className="w-4 h-4" />
             </button>
           </div>
         </div>

@@ -1,10 +1,10 @@
 import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
 import { MessageCircle, Wrench, Send, Plus, Layers, Sun, Moon } from "lucide-react";
 import { useEffect, useState, useRef, useCallback } from "react";
-import { redirect, useFetcher, useLoaderData, useParams } from "react-router";
+import { redirect, useFetcher, useLoaderData, useNavigate } from "react-router";
 import * as v from "valibot";
 
-import { getPiServer } from "~/lib/pi-server";
+import { getPiServer, type PiState } from "~/lib/pi-server";
 import { useTheme } from "~/lib/theme-context";
 import { MessageSchema } from "~/lib/validations";
 
@@ -15,17 +15,6 @@ export function meta(_: Route.MetaArgs) {
 }
 
 // --- Types ---
-interface PiState {
-  cwd: string;
-  model: { name: string; provider: string; id: string } | null;
-  thinkingLevel: string;
-  isStreaming: boolean;
-  sessionId: string | null;
-  messageCount: number;
-  ready: boolean;
-  error: string | null;
-}
-
 interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "tool" | "thinking" | "system";
@@ -92,29 +81,23 @@ function toChatMessage(msg: AgentMessage, index: number): ChatMessage {
 // --- Server-side loader ---
 export async function loader({ params }: Route.LoaderArgs) {
   const pi = getPiServer();
-  await pi.ensureInitialized();
 
-  // If sessionId is provided in URL, switch to it
-  if (params.sessionId && pi.getState().sessionId !== params.sessionId) {
-    const sessions = await pi.getSessionsList();
-    const match = sessions.find((s) => s.id === params.sessionId);
-    if (match) {
-      await pi.switchSession(match.path);
-    }
+  const sessionId = params.sessionId;
+  if (!sessionId) {
+    return redirect("/");
   }
 
-  const state = pi.getState();
-  const messages = pi.getMessages();
+  const state = await pi.getState(sessionId);
+  const messages = await pi.getMessages(sessionId);
   const models = await pi.getModels();
 
   return { state, messages, models };
 }
 
 // --- Server-side action ---
-export async function action({ request }: Route.ActionArgs) {
+export async function action({ request, params: { sessionId } }: Route.ActionArgs) {
   const pi = getPiServer();
 
-  // Parse JSON body (sent by fetcher.submit with encType: "application/json")
   let body: unknown;
   try {
     body = await request.json();
@@ -127,44 +110,52 @@ export async function action({ request }: Route.ActionArgs) {
     message?: string;
     model?: { provider: string; modelId: string };
     thinkingLevel?: string;
+    cwd?: string;
   };
   const intent = data.intent;
 
-  if (intent === "abort") {
-    await pi.abort();
-    return { success: true };
+  if (!sessionId && intent !== "new-session") {
+    return { error: "sessionId required" };
   }
 
-  if (intent === "prompt" || intent === "steer" || intent === "follow-up") {
-    const parsed = v.safeParse(MessageSchema, body);
-    if (!parsed.success) {
-      return { error: "Invalid message", issues: parsed.issues };
+  try {
+    if (intent === "abort") {
+      await pi.abort(sessionId);
+      return { success: true };
     }
 
-    const { message, model, thinkingLevel } = parsed.output;
+    if (intent === "prompt" || intent === "steer" || intent === "follow-up") {
+      const parsed = v.safeParse(MessageSchema, body);
+      if (!parsed.success) {
+        return { error: "Invalid message", issues: parsed.issues };
+      }
 
-    if (intent === "prompt") await pi.prompt(message, { model, thinkingLevel });
-    else if (intent === "steer") await pi.steer(message, { model, thinkingLevel });
-    else if (intent === "follow-up") await pi.followUp(message, { model, thinkingLevel });
+      const { message, model, thinkingLevel } = parsed.output;
 
-    return { success: true };
-  }
+      if (intent === "prompt") await pi.prompt(sessionId, message, { model, thinkingLevel });
+      else if (intent === "steer") await pi.steer(sessionId, message, { model, thinkingLevel });
+      else if (intent === "follow-up")
+        await pi.followUp(sessionId, message, { model, thinkingLevel });
 
-  if (intent === "new-session") {
-    await pi.newSession();
-    const newSessionId = pi.getState().sessionId;
-    if (newSessionId) {
-      return redirect(`/chat/${encodeURIComponent(newSessionId)}`);
+      return { success: true };
     }
-    return { error: "Failed to create new session" };
-  }
 
-  return { error: "Unknown intent" };
+    if (intent === "new-session") {
+      const cwd = data.cwd;
+      if (!cwd) return { error: "cwd required for new session" };
+      const newSessionId = await pi.createNewSession(cwd);
+      return { success: true, sessionId: newSessionId };
+    }
+
+    return { error: "Unknown intent" };
+  } catch (err) {
+    console.error("Action error:", err);
+    return { error: String(err) };
+  }
 }
 
 // --- Component ---
-export default function Chat() {
-  const { sessionId: sessionIdFromUrl } = useParams();
+export default function Chat({ params: { sessionId } }: Route.ServerComponentProps) {
   const { theme, toggleTheme } = useTheme();
   const { state: loaderState, messages: loaderMessages, models } = useLoaderData<typeof loader>();
 
@@ -191,6 +182,7 @@ export default function Chat() {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetcher = useFetcher();
+  const navigate = useNavigate();
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -200,11 +192,27 @@ export default function Chat() {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  // Reset local state when navigating to a different session
+  // (same route component, so useState inits only once)
+  useEffect(() => {
+    setState(loaderState);
+    setMessages((loaderMessages || []).map((msg, i) => toChatMessage(msg, i)));
+    setInput("");
+    setShowModelSelector(false);
+    setConnected(false);
+    setSelectedModel(
+      loaderState?.model
+        ? { provider: loaderState.model.provider, modelId: loaderState.model.id }
+        : null,
+    );
+    setSelectedThinkingLevel(loaderState?.thinkingLevel ?? "medium");
+  }, [sessionId, loaderState, loaderMessages]);
+
   // Connect SSE for real-time updates
   useEffect(() => {
     function connectSSE() {
       eventSourceRef.current?.close();
-      const es = new EventSource("/api/pi/events");
+      const es = new EventSource(`/api/pi/events?sessionId=${encodeURIComponent(sessionId)}`);
       eventSourceRef.current = es;
 
       es.onopen = () => {
@@ -216,6 +224,9 @@ export default function Chat() {
         try {
           const data = JSON.parse(event.data);
 
+          // Filter events for this session
+          if (data.sessionId && data.sessionId !== sessionId) return;
+
           if (data.type === "pi:state") {
             const newState = data as PiState;
             setState(newState);
@@ -223,7 +234,7 @@ export default function Chat() {
               setSelectedModel({ provider: newState.model.provider, modelId: newState.model.id });
             }
             setSelectedThinkingLevel(newState.thinkingLevel);
-            if (newState.sessionId && newState.sessionId !== sessionIdFromUrl) {
+            if (newState.sessionId && newState.sessionId !== sessionId) {
               window.history.replaceState(
                 null,
                 "",
@@ -253,7 +264,7 @@ export default function Chat() {
       eventSourceRef.current?.close();
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
     };
-  }, [sessionIdFromUrl]);
+  }, [sessionId]);
 
   function handlePiEvent(event: AgentEvent | { type: "agent_settled" }) {
     switch (event.type) {
@@ -322,7 +333,8 @@ export default function Chat() {
         break;
       }
       case "tool_execution_update": {
-        const partial = event.partialResult as { content?: { text?: string }[] } | undefined;
+        const partial = (event as { partialResult?: { content?: { text?: string }[] } })
+          .partialResult;
         const text = partial?.content?.[0]?.text ?? "";
         setMessages((prev) => {
           const last = prev[prev.length - 1];
@@ -336,7 +348,7 @@ export default function Chat() {
         break;
       }
       case "tool_execution_end": {
-        const result = event.result as { content?: { text?: string }[] } | undefined;
+        const result = (event as { result?: { content?: { text?: string }[] } }).result;
         const resultText = result?.content?.[0]?.text ?? "";
         setMessages((prev) => {
           const last = prev[prev.length - 1];
@@ -387,7 +399,10 @@ export default function Chat() {
   }
 
   function abortMessage() {
-    void fetcher.submit({ intent: "abort" }, { method: "post", encType: "application/json" });
+    void fetcher.submit(
+      { sessionId: sessionId, intent: "abort" },
+      { method: "post", encType: "application/json" },
+    );
     setMessages((prev) => prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m)));
   }
 
@@ -407,7 +422,11 @@ export default function Chat() {
   }
 
   function newSessionFromChat() {
-    void fetcher.submit({ intent: "new-session" }, { method: "post", encType: "application/json" });
+    if (!state?.cwd) return;
+    void fetcher.submit(
+      { intent: "new-session", cwd: state.cwd },
+      { method: "post", encType: "application/json" },
+    );
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -417,10 +436,26 @@ export default function Chat() {
     }
   }
 
+  const fetcherData = fetcher.data as
+    | { success?: boolean; sessionId?: string; error?: string }
+    | undefined;
+
+  // Navigate after new session created (fetcher action returns data, not redirect).
+  // Reset fetcher after navigation so stale data doesn't trigger re-navigation on back.
+  useEffect(() => {
+    if (
+      fetcher.state === "idle" &&
+      fetcherData?.sessionId &&
+      fetcherData?.sessionId !== sessionId
+    ) {
+      const next = fetcherData.sessionId;
+      fetcher.reset();
+      void navigate(`/chat/${encodeURIComponent(next)}`);
+    }
+  }, [fetcher.state, fetcherData?.sessionId, navigate, sessionId]);
+
   const hasModel = state?.model != null;
   const hasCwd = state?.cwd != null && state.cwd !== "";
-  const piError = state?.error;
-
   return (
     <div className="h-[100dvh] flex flex-col">
       {/* Top bar — fixed at top */}
@@ -516,9 +551,9 @@ export default function Chat() {
       )}
 
       {/* Error banner */}
-      {piError && (
+      {fetcherData?.error && (
         <div className="bg-red-50 dark:bg-red-900/30 border-b border-red-200 dark:border-red-800 px-6 py-2">
-          <p className="text-sm text-red-700 dark:text-red-300">Pi Error: {piError}</p>
+          <p className="text-sm text-red-700 dark:text-red-300">{fetcherData.error}</p>
         </div>
       )}
 

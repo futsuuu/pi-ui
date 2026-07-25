@@ -15,42 +15,44 @@ export function meta(_: Route.MetaArgs) {
 
 export async function loader({ request }: Route.LoaderArgs) {
   const pi = getPiServer();
-  await pi.ensureInitialized();
 
   const url = new URL(request.url);
-  const dirFromUrl = url.searchParams.get("dir");
-
-  // If URL has a dir param that differs from server's cwd, change cwd first
-  if (dirFromUrl && dirFromUrl !== pi.cwd) {
-    await pi.changeCwd(dirFromUrl);
+  const dir = url.searchParams.get("dir");
+  if (!dir) {
+    return { sessions: [], cwd: null };
   }
 
-  // If no dir in URL but server has cwd, redirect will happen client-side via component
-  const cwd = pi.cwd;
-  const sessions = await pi.getSessionsList();
+  // Track recent directory
+  await pi.addRecentDir(dir);
+
+  const sessions = await pi.getSessionsList(dir);
   const sorted = sessions.sort((a, b) => b.timestamp - a.timestamp);
 
-  return { sessions: sorted, cwd, dirFromUrl };
+  return { sessions: sorted, cwd: dir };
 }
 
 export async function action({ request }: Route.ActionArgs) {
   const pi = getPiServer();
+  const url = new URL(request.url);
+  const dir = url.searchParams.get("dir");
+
   const body: Record<string, unknown> = await request.json();
   const intent = body.intent as string | undefined;
 
   if (intent === "new-session") {
-    await pi.newSession();
-    return { success: true, sessionId: pi.getState().sessionId, action: "new-session" };
+    if (!dir) return { error: "No directory specified" };
+    const sessionId = await pi.createNewSession(dir);
+    return { success: true, sessionId, action: "new-session" };
   }
 
-  if (intent === "switch-session") {
+  if (intent === "open-session") {
     const sessionPathRaw = body.sessionPath;
     const parsed = v.safeParse(SessionPathSchema, { sessionPath: sessionPathRaw });
     if (!parsed.success) {
-      return { error: "Invalid sessionPath", action: "switch-session" };
+      return { error: "Invalid sessionPath", action: "open-session" };
     }
-    await pi.switchSession(parsed.output.sessionPath);
-    return { success: true, sessionId: pi.getState().sessionId, action: "switch-session" };
+    const sessionId = await pi.openSession(parsed.output.sessionPath);
+    return { success: true, sessionId, action: "open-session" };
   }
 
   return { error: "Unknown intent" };
@@ -59,33 +61,30 @@ export async function action({ request }: Route.ActionArgs) {
 export default function Sessions() {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
-  const { sessions, cwd, dirFromUrl } = useLoaderData<typeof loader>();
+  const { sessions, cwd } = useLoaderData<typeof loader>();
 
   const fetcher = useFetcher();
   const fetcherData = fetcher.data as
     | { success?: boolean; sessionId?: string; action?: string; error?: string }
     | undefined;
 
-  // Redirect if no dir in URL but we have a cwd
+  // Redirect if no dir
   useEffect(() => {
-    if (!dirFromUrl && cwd) {
-      void navigate(`/sessions?dir=${encodeURIComponent(cwd)}`, { replace: true });
-    }
-    if (!dirFromUrl && !cwd) {
+    if (!cwd) {
       void navigate("/", { replace: true });
     }
-  }, [dirFromUrl, cwd, navigate]);
+  }, [cwd, navigate]);
 
-  // Navigate after successful session switch/new
+  // Navigate after successful session open/new
   useEffect(() => {
     if (fetcher.state === "idle" && fetcherData?.sessionId) {
       void navigate(`/chat/${encodeURIComponent(fetcherData.sessionId)}`);
     }
   }, [fetcher.state, fetcherData?.sessionId, navigate]);
 
-  async function switchSession(sessionPath: string) {
+  async function openSession(sessionPath: string) {
     void fetcher.submit(
-      { intent: "switch-session", sessionPath },
+      { intent: "open-session", sessionPath },
       { method: "post", encType: "application/json" },
     );
   }
@@ -162,7 +161,7 @@ export default function Sessions() {
             {sessions.map((session) => (
               <button
                 key={session.id}
-                onClick={() => switchSession(session.path)}
+                onClick={() => openSession(session.path)}
                 disabled={switching}
                 className="w-full text-left bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-sm transition-all disabled:opacity-50"
               >
