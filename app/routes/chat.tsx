@@ -1,5 +1,5 @@
 import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
-import { MessageCircle, Wrench, Send, Plus, Layers, Sun, Moon } from "lucide-react";
+import { Check, MessageCircle, Wrench, Send, Plus, Layers, Sun, Moon, X } from "lucide-react";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { redirect, useFetcher, useLoaderData, useNavigate } from "react-router";
 import * as v from "valibot";
@@ -21,10 +21,69 @@ interface ChatMessage {
   content: string;
   thinking?: string;
   toolName?: string;
+  toolArgs?: unknown;
+  isError?: boolean;
   isStreaming?: boolean;
 }
 
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+
+/** Extract a short summary of tool args for inline display */
+function summarizeToolArgs(toolName: string, args: unknown): string | undefined {
+  if (!args || typeof args !== "object") return undefined;
+  const record = args as Record<string, unknown>;
+
+  switch (toolName) {
+    case "read":
+    case "write":
+    case "edit": {
+      const path = record.path;
+      if (typeof path === "string") return path;
+      return undefined;
+    }
+    case "bash": {
+      const command = record.command;
+      if (typeof command === "string") return command;
+      return undefined;
+    }
+    case "rg":
+    case "grep": {
+      const pattern = record.pattern;
+      if (typeof pattern === "string") return pattern;
+      return undefined;
+    }
+    default:
+      return undefined;
+  }
+}
+
+/** Convert AgentMessage[] to ChatMessage[], resolving tool calls from assistant messages. */
+function toChatMessages(msgs: AgentMessage[]): ChatMessage[] {
+  // First pass: extract tool call arguments from assistant messages
+  const toolCallMap = new Map<string, { toolName: string; args: unknown }>();
+  for (const msg of msgs) {
+    if (msg.role === "assistant") {
+      for (const block of msg.content) {
+        if (block.type === "toolCall") {
+          toolCallMap.set(block.id, { toolName: block.name, args: block.arguments });
+        }
+      }
+    }
+  }
+
+  // Second pass: convert messages, injecting args for tool results
+  return msgs.map((msg, i) => {
+    const cm = toChatMessage(msg, i);
+    if (msg.role === "toolResult") {
+      const tc = toolCallMap.get(msg.toolCallId);
+      if (tc) {
+        cm.toolArgs = tc.args;
+        cm.toolName = tc.toolName;
+      }
+    }
+    return cm;
+  });
+}
 
 /** Safe ID generator – works in all browsers and contexts */
 function uid(): string {
@@ -67,10 +126,11 @@ function toChatMessage(msg: AgentMessage, index: number): ChatMessage {
       .map((b) => b.text)
       .join("\n");
     return {
-      id: msg.toolCallId || `tool-${index}`,
+      id: msg.toolCallId,
       role: "tool",
       content,
       toolName: msg.toolName,
+      isError: msg.isError,
     };
   }
 
@@ -160,9 +220,7 @@ export default function Chat({ params: { sessionId } }: Route.ServerComponentPro
   const { state: loaderState, messages: loaderMessages, models } = useLoaderData<typeof loader>();
 
   const [state, setState] = useState<PiState | null>(loaderState);
-  const [messages, setMessages] = useState<ChatMessage[]>(
-    (loaderMessages || []).map((msg, i) => toChatMessage(msg, i)),
-  );
+  const [messages, setMessages] = useState<ChatMessage[]>(toChatMessages(loaderMessages || []));
   const [input, setInput] = useState("");
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [connected, setConnected] = useState(false);
@@ -197,7 +255,7 @@ export default function Chat({ params: { sessionId } }: Route.ServerComponentPro
   // doesn't overwrite SSE-streamed messages.
   useEffect(() => {
     setState(loaderState);
-    setMessages((loaderMessages || []).map((msg, i) => toChatMessage(msg, i)));
+    setMessages(toChatMessages(loaderMessages || []));
     setInput("");
     setShowModelSelector(false);
     setSelectedModel(
@@ -327,6 +385,7 @@ export default function Chat({ params: { sessionId } }: Route.ServerComponentPro
             role: "tool",
             content: `Running ${event.toolName}...`,
             toolName: event.toolName,
+            toolArgs: event.args,
             isStreaming: true,
           },
         ]);
@@ -354,7 +413,12 @@ export default function Chat({ params: { sessionId } }: Route.ServerComponentPro
           const last = prev[prev.length - 1];
           if (last?.role === "tool" && last.isStreaming) {
             const updated = [...prev];
-            updated[updated.length - 1] = { ...last, content: resultText, isStreaming: false };
+            updated[updated.length - 1] = {
+              ...last,
+              content: resultText,
+              isStreaming: false,
+              isError: event.isError,
+            };
             return updated;
           }
           return prev;
@@ -583,15 +647,54 @@ export default function Chat({ params: { sessionId } }: Route.ServerComponentPro
                     msg.role === "user"
                       ? "max-w-[80%] bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 px-4"
                       : msg.role === "tool"
-                        ? "w-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-mono text-sm border border-gray-200 dark:border-gray-700 px-4"
+                        ? "w-full text-gray-700 dark:text-gray-300 font-mono text-sm border border-gray-200 dark:border-gray-700 px-4"
                         : "w-full text-gray-900 dark:text-gray-100"
                   }`}
                 >
                   {msg.toolName && msg.role === "tool" && (
-                    <div className="flex items-center gap-2 mb-1 text-xs text-gray-500 dark:text-gray-400">
-                      <Wrench className="w-3 h-3" />
-                      <span className="font-medium">{msg.toolName}</span>
-                    </div>
+                    <details className="group" open={msg.isStreaming || undefined}>
+                      <summary className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden [&::marker]:hidden">
+                        <Wrench className="w-3 h-3 shrink-0 text-gray-500 dark:text-gray-400" />
+                        <span className="font-medium shrink-0 text-gray-500 dark:text-gray-400">
+                          {msg.toolName}
+                        </span>
+                        {(() => {
+                          const summary =
+                            msg.toolArgs != null
+                              ? summarizeToolArgs(msg.toolName!, msg.toolArgs)
+                              : undefined;
+                          return summary ? (
+                            <span
+                              className="truncate text-gray-600 dark:text-gray-300"
+                              title={summary}
+                            >
+                              {summary}
+                            </span>
+                          ) : null;
+                        })()}
+                        {msg.isError !== undefined &&
+                          (msg.isError ? (
+                            <X className="ml-auto w-4 h-4 text-red-500 dark:text-red-400 shrink-0" />
+                          ) : (
+                            <Check className="ml-auto w-4 h-4 text-green-500 dark:text-green-400 shrink-0" />
+                          ))}
+                      </summary>
+                      <div className="mt-2 space-y-2">
+                        {msg.toolArgs != null && (
+                          <pre className="p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs text-gray-500 dark:text-gray-200 overflow-x-auto max-h-48 whitespace-pre">
+                            {JSON.stringify(msg.toolArgs, null, 2) as React.ReactNode}
+                          </pre>
+                        )}
+                        {(msg.content.trim() || msg.isStreaming) && (
+                          <div className="overflow-x-auto whitespace-pre">
+                            {msg.content.trim() || (msg.isStreaming ? "..." : "")}
+                            {msg.isStreaming && (
+                              <span className="inline-block w-2 h-4 bg-blue-500 dark:bg-blue-400 ml-1 animate-pulse" />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </details>
                   )}
                   {msg.thinking && (
                     <details className="mb-2">
@@ -603,7 +706,7 @@ export default function Chat({ params: { sessionId } }: Route.ServerComponentPro
                       </div>
                     </details>
                   )}
-                  {(msg.content.trim() || msg.isStreaming) && (
+                  {msg.role !== "tool" && (msg.content.trim() || msg.isStreaming) && (
                     <div className="whitespace-pre-wrap break-words">
                       {msg.content.trim() || (msg.isStreaming ? "..." : "")}
                       {msg.isStreaming && (
