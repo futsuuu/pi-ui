@@ -1,8 +1,11 @@
 import { MessageCircle, Wrench, Send, Plus, Layers, Sun, Moon } from "lucide-react";
 import { useEffect, useState, useRef, useCallback } from "react";
-import { useNavigate, useParams } from "react-router";
+import { redirect, useFetcher, useLoaderData, useParams } from "react-router";
+import * as v from "valibot";
 
+import { getPiServer } from "~/lib/pi-server";
 import { useTheme } from "~/lib/theme-context";
+import { MessageSchema } from "~/lib/validations";
 
 import type { Route } from "./+types/chat";
 
@@ -45,19 +48,13 @@ function uid(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
-  // Fallback: Math.random with timestamp
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/**
- * Convert an AgentMessage from the Pi SDK into our ChatMessage shape.
- * Returns a ChatMessage for ANY role (never null), so no messages are lost.
- */
 function convertAgentMessage(msg: Record<string, unknown>, index: number): ChatMessage {
   const role = (msg.role as string) || "unknown";
   const rawContent = msg.content;
 
-  // Extract text content regardless of whether it's a string or array of blocks
   const extractText = (content: unknown): string => {
     if (typeof content === "string") return content;
     if (Array.isArray(content)) {
@@ -65,7 +62,6 @@ function convertAgentMessage(msg: Record<string, unknown>, index: number): ChatM
         .map((block: Record<string, unknown>): string => {
           if (block.type === "text") return (block.text as string) ?? "";
           if (block.type === "tool_result" || block.type === "toolResult") {
-            // Nested tool result content
             return extractText(block.content);
           }
           return "";
@@ -75,7 +71,6 @@ function convertAgentMessage(msg: Record<string, unknown>, index: number): ChatM
     return "";
   };
 
-  // Extract thinking content from assistant messages
   const extractThinking = (content: unknown): string | undefined => {
     if (Array.isArray(content)) {
       const thinkBlocks = content.filter(
@@ -118,7 +113,6 @@ function convertAgentMessage(msg: Record<string, unknown>, index: number): ChatM
     };
   }
 
-  // Fallback: preserve any other role (system, etc.)
   return {
     id: `msg-${index}-${Date.now()}`,
     role: "system",
@@ -126,28 +120,111 @@ function convertAgentMessage(msg: Record<string, unknown>, index: number): ChatM
   };
 }
 
+// --- Server-side loader ---
+export async function loader({ params }: Route.LoaderArgs) {
+  const pi = getPiServer();
+  await pi.ensureInitialized();
+
+  // If sessionId is provided in URL, switch to it
+  if (params.sessionId && pi.getState().sessionId !== params.sessionId) {
+    const sessions = await pi.getSessionsList();
+    const match = sessions.find((s) => s.id === params.sessionId);
+    if (match) {
+      await pi.switchSession(match.path);
+    }
+  }
+
+  const state = pi.getState();
+  const messages = pi.getMessages();
+  const models = await pi.getModels();
+
+  return { state, messages, models };
+}
+
+// --- Server-side action ---
+export async function action({ request }: Route.ActionArgs) {
+  const pi = getPiServer();
+
+  // Parse JSON body (sent by fetcher.submit with encType: "application/json")
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return { error: "Invalid JSON body" };
+  }
+
+  const intent = body.intent as string | undefined;
+
+  if (intent === "abort") {
+    await pi.abort();
+    return { success: true };
+  }
+
+  if (intent === "prompt" || intent === "steer" || intent === "follow-up") {
+    const parsed = v.safeParse(MessageSchema, body);
+    if (!parsed.success) {
+      return { error: "Invalid message", issues: parsed.issues };
+    }
+
+    const { message, model, thinkingLevel } = parsed.output;
+
+    if (intent === "prompt") await pi.prompt(message, { model, thinkingLevel });
+    else if (intent === "steer") await pi.steer(message, { model, thinkingLevel });
+    else if (intent === "follow-up") await pi.followUp(message, { model, thinkingLevel });
+
+    return { success: true };
+  }
+
+  if (intent === "new-session") {
+    await pi.newSession();
+    const newSessionId = pi.getState().sessionId;
+    if (newSessionId) {
+      return redirect(`/chat/${encodeURIComponent(newSessionId)}`);
+    }
+    return { error: "Failed to create new session" };
+  }
+
+  return { error: "Unknown intent" };
+}
+
+// --- Component ---
 export default function Chat() {
-  const navigate = useNavigate();
   const { sessionId: sessionIdFromUrl } = useParams();
   const { theme, toggleTheme } = useTheme();
-  const [state, setState] = useState<PiState | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const {
+    state: loaderState,
+    messages: loaderMessages,
+    models: loaderModels,
+  } = useLoaderData<typeof loader>();
+
+  const [state, setState] = useState<PiState | null>(loaderState);
+  const [messages, setMessages] = useState<ChatMessage[]>(
+    (loaderMessages || []).map((msg, i) =>
+      convertAgentMessage(msg as unknown as Record<string, unknown>, i),
+    ),
+  );
   const [input, setInput] = useState("");
-  const [models, setModels] = useState<PiModel[]>([]);
+  const [models] = useState<PiModel[]>((loaderModels || []) as unknown as PiModel[]);
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [connected, setConnected] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [initError, setInitError] = useState<string | null>(null);
+  const [loading] = useState(false);
+  const [initError] = useState<string | null>(null);
 
-  // Local model/thinking selection — applied on prompt submit, not via separate API calls
+  // Local model/thinking selection — applied on prompt submit
   const [selectedModel, setSelectedModel] = useState<{ provider: string; modelId: string } | null>(
-    null,
+    loaderState?.model
+      ? { provider: loaderState.model.provider, modelId: loaderState.model.id }
+      : null,
   );
-  const [selectedThinkingLevel, setSelectedThinkingLevel] = useState<string>("medium");
+  const [selectedThinkingLevel, setSelectedThinkingLevel] = useState<string>(
+    loaderState?.thinkingLevel ?? "medium",
+  );
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const fetcher = useFetcher();
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -157,147 +234,60 @@ export default function Chat() {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  // Connect SSE for real-time updates
   useEffect(() => {
-    initChat().catch(console.error);
+    function connectSSE() {
+      eventSourceRef.current?.close();
+      const es = new EventSource("/api/pi/events");
+      eventSourceRef.current = es;
+
+      es.onopen = () => {
+        console.log("SSE connected");
+        setConnected(true);
+      };
+
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === "pi:state") {
+            const newState = data as PiState;
+            setState(newState);
+            if (newState.model) {
+              setSelectedModel({ provider: newState.model.provider, modelId: newState.model.id });
+            }
+            setSelectedThinkingLevel(newState.thinkingLevel);
+            if (newState.sessionId && newState.sessionId !== sessionIdFromUrl) {
+              window.history.replaceState(
+                null,
+                "",
+                `/chat/${encodeURIComponent(newState.sessionId)}`,
+              );
+            }
+            return;
+          }
+
+          handlePiEvent(data);
+        } catch (err) {
+          console.warn("SSE parse error:", err);
+        }
+      };
+
+      es.onerror = () => {
+        console.warn("SSE connection error, reconnecting in 3s");
+        setConnected(false);
+        es.close();
+        reconnectTimerRef.current = setTimeout(connectSSE, 3000);
+      };
+    }
+
+    connectSSE();
+
     return () => {
       eventSourceRef.current?.close();
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
     };
-  }, []);
-
-  async function initChat() {
-    try {
-      setInitError(null);
-      setLoading(true);
-
-      // If sessionId is provided in URL, switch to it first
-      if (sessionIdFromUrl) {
-        try {
-          // Check if we're already on the right session
-          const currentState = await (await fetch("/api/pi/state")).json();
-          if (currentState.sessionId !== sessionIdFromUrl) {
-            // Need to find the session file for this session ID
-            // List sessions to find the matching one
-            const sessionsRes = await fetch("/api/pi/sessions");
-            const sessionsData = await sessionsRes.json();
-            const sessions = sessionsData.sessions || [];
-            const matching = sessions.find((s: { id: string }) => s.id === sessionIdFromUrl);
-            if (matching) {
-              await fetch("/api/pi/switch-session", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ sessionPath: matching.path }),
-              });
-            }
-          }
-        } catch (e) {
-          console.warn("Could not switch to session from URL:", e);
-        }
-      }
-
-      // Fetch state and models in parallel
-      const [stateRes, modelsRes] = await Promise.all([
-        fetch("/api/pi/state"),
-        fetch("/api/pi/models"),
-      ]);
-
-      if (!stateRes.ok) throw new Error(`State API returned ${stateRes.status}`);
-      if (!modelsRes.ok) throw new Error(`Models API returned ${modelsRes.status}`);
-
-      const stateData: PiState = await stateRes.json();
-      const modelsData = await modelsRes.json();
-
-      setState(stateData);
-      setModels(modelsData.models || []);
-      // Initialize local model/thinking selection from server state
-      if (stateData.model) {
-        setSelectedModel({ provider: stateData.model.provider, modelId: stateData.model.id });
-      }
-      setSelectedThinkingLevel(stateData.thinkingLevel);
-
-      // Fetch messages
-      await fetchMessages();
-
-      // Connect SSE for real-time updates
-      connectSSE();
-    } catch (err) {
-      console.error("Chat init error:", err);
-      setInitError(String(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function fetchMessages() {
-    try {
-      const res = await fetch("/api/pi/messages");
-      if (!res.ok) {
-        console.warn("Fetch messages returned", res.status);
-        return;
-      }
-      const data = await res.json();
-      const raw = data.messages || [];
-
-      console.log(`Fetched ${raw.length} raw messages`);
-
-      if (raw.length > 0) {
-        const converted = raw.map(convertAgentMessage);
-        console.log(`Converted ${converted.length} messages`);
-        setMessages(converted);
-      }
-    } catch (err) {
-      console.error("fetchMessages error:", err);
-    }
-  }
-
-  function connectSSE() {
-    eventSourceRef.current?.close();
-    const es = new EventSource("/api/pi/events");
-    eventSourceRef.current = es;
-
-    es.onopen = () => {
-      console.log("SSE connected");
-      setConnected(true);
-    };
-
-    es.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-
-        // pi:state events update state and sync URL
-        if (data.type === "pi:state") {
-          const newState = data as PiState;
-          setState(newState);
-          // Sync local selection with server state only if no pending local selection
-          if (newState.model) {
-            setSelectedModel({ provider: newState.model.provider, modelId: newState.model.id });
-          }
-          setSelectedThinkingLevel(newState.thinkingLevel);
-          // Sync URL with current session ID
-          if (newState.sessionId && newState.sessionId !== sessionIdFromUrl) {
-            window.history.replaceState(
-              null,
-              "",
-              `/chat/${encodeURIComponent(newState.sessionId)}`,
-            );
-          }
-          return;
-        }
-
-        // All other events are Pi SDK events
-        handlePiEvent(data);
-      } catch (err) {
-        console.warn("SSE parse error:", err);
-      }
-    };
-
-    es.onerror = () => {
-      console.warn("SSE connection error, reconnecting in 3s");
-      setConnected(false);
-      es.close();
-      reconnectTimerRef.current = setTimeout(connectSSE, 3000);
-    };
-  }
+  }, [sessionIdFromUrl]);
 
   function handlePiEvent(event: Record<string, unknown>) {
     switch (event.type) {
@@ -346,10 +336,7 @@ export default function Chat() {
             const last = prev[prev.length - 1];
             if (last?.role === "assistant" && last.isStreaming) {
               const updated = [...prev];
-              updated[updated.length - 1] = {
-                ...last,
-                isStreaming: false,
-              };
+              updated[updated.length - 1] = { ...last, isStreaming: false };
               return updated;
             }
             return prev;
@@ -396,11 +383,7 @@ export default function Chat() {
           const last = prev[prev.length - 1];
           if (last?.role === "tool" && last.isStreaming) {
             const updated = [...prev];
-            updated[updated.length - 1] = {
-              ...last,
-              content: resultText,
-              isStreaming: false,
-            };
+            updated[updated.length - 1] = { ...last, content: resultText, isStreaming: false };
             return updated;
           }
           return prev;
@@ -416,47 +399,40 @@ export default function Chat() {
     }
   }
 
-  async function sendMessage() {
+  function sendMessage() {
     const text = input.trim();
     if (!text || state?.isStreaming) return;
     setInput("");
     setMessages((prev) => [...prev, { id: uid(), role: "user", content: text }]);
-    try {
-      // Include current model/thinking level selections in the prompt request
-      // so no separate API calls are needed
-      const body: Record<string, unknown> = { message: text };
-      if (selectedModel) {
-        body.model = { provider: selectedModel.provider, modelId: selectedModel.modelId };
-      }
-      if (selectedThinkingLevel) {
-        body.thinkingLevel = selectedThinkingLevel;
-      }
-      const res = await fetch("/api/pi/prompt", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) console.warn("Prompt returned", res.status);
-    } catch (err) {
-      console.error("Send error:", err);
+
+    const body: Record<string, unknown> = {
+      intent: "prompt",
+      message: text,
+    };
+    if (selectedModel) {
+      body.model = { provider: selectedModel.provider, modelId: selectedModel.modelId };
     }
+    if (selectedThinkingLevel) {
+      body.thinkingLevel = selectedThinkingLevel;
+    }
+
+    void fetcher.submit(body as Record<string, string>, {
+      method: "post",
+      encType: "application/json",
+    });
   }
 
-  async function abortMessage() {
-    try {
-      await fetch("/api/pi/abort", { method: "POST" });
-      setMessages((prev) => prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m)));
-    } catch {}
+  function abortMessage() {
+    void fetcher.submit({ intent: "abort" }, { method: "post", encType: "application/json" });
+    setMessages((prev) => prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m)));
   }
 
   function selectModel(provider: string, modelId: string) {
-    // Update local selection only — applied on next prompt submit
     setSelectedModel({ provider, modelId });
     setShowModelSelector(false);
   }
 
   function cycleThinking() {
-    // Update local selection only — applied on next prompt submit
     const currentIdx = THINKING_LEVELS.indexOf(
       (selectedThinkingLevel ||
         state?.thinkingLevel ||
@@ -466,22 +442,14 @@ export default function Chat() {
     setSelectedThinkingLevel(THINKING_LEVELS[nextIdx]);
   }
 
-  async function newSessionFromChat() {
-    try {
-      const res = await fetch("/api/pi/new-session", { method: "POST" });
-      const data = await res.json();
-      const newSessionId = data.sessionId;
-      if (newSessionId) {
-        void navigate(`/chat/${encodeURIComponent(newSessionId)}`, { replace: true });
-      }
-      setMessages([]);
-    } catch {}
+  function newSessionFromChat() {
+    void fetcher.submit({ intent: "new-session" }, { method: "post", encType: "application/json" });
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      void sendMessage();
+      sendMessage();
     }
   }
 
@@ -524,7 +492,7 @@ export default function Chat() {
                       (m) =>
                         m.provider === selectedModel.provider && m.id === selectedModel.modelId,
                     )?.name ?? selectedModel.modelId)
-                  : (state.model?.name ?? "Select Model")}
+                  : (state?.model?.name ?? "Select Model")}
               </button>
               <button
                 onClick={cycleThinking}
@@ -648,7 +616,7 @@ export default function Chat() {
                     </details>
                   )}
                   <div className="whitespace-pre-wrap break-words">
-                    {msg.content || (msg.isStreaming ? "..." : "")}
+                    {msg.content.trim() || (msg.isStreaming ? "..." : "")}
                     {msg.isStreaming && (
                       <span className="inline-block w-2 h-4 bg-blue-500 dark:bg-blue-400 ml-1 animate-pulse" />
                     )}

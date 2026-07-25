@@ -1,8 +1,11 @@
 import { Folder, ArrowLeft, File, ArrowRight, Layers, Sun, Moon } from "lucide-react";
-import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useCallback, useEffect } from "react";
+import { useFetcher, useLoaderData, useNavigate } from "react-router";
+import * as v from "valibot";
 
+import { getPiServer } from "~/lib/pi-server";
 import { useTheme } from "~/lib/theme-context";
+import { CwdSchema } from "~/lib/validations";
 
 import type { Route } from "./+types/home";
 
@@ -10,113 +13,91 @@ export function meta(_: Route.MetaArgs) {
   return [{ title: "Pi UI - Select Directory" }];
 }
 
-interface DirEntry {
-  name: string;
-  path: string;
-  isDirectory: boolean;
+export async function loader({ request }: Route.LoaderArgs) {
+  const pi = getPiServer();
+  await pi.ensureInitialized();
+
+  const url = new URL(request.url);
+  const dirFromUrl = url.searchParams.get("dir");
+
+  const cwd = pi.cwd;
+  const homeDir = pi.getHomeDir();
+  const recentDirs = pi.getRecentDirs();
+  const currentDir = dirFromUrl || cwd || homeDir;
+  const entries = await pi.listDirectory(currentDir);
+
+  // Build breadcrumbs from currentDir
+  const parts = currentDir.split("/").filter(Boolean);
+  const breadcrumbs: { name: string; path: string }[] = [];
+  let cum = "";
+  for (const part of parts) {
+    cum += "/" + part;
+    breadcrumbs.push({ name: part, path: cum });
+  }
+  if (breadcrumbs.length === 0) breadcrumbs.push({ name: "/", path: "/" });
+
+  return { cwd, homeDir, recentDirs, currentDir, entries, breadcrumbs };
 }
 
-interface RecentDir {
-  path: string;
-  lastOpened: number;
+export async function action({ request }: Route.ActionArgs) {
+  const pi = getPiServer();
+  const body: Record<string, unknown> = await request.json();
+  const intent = body.intent as string | undefined;
+
+  if (intent === "change-cwd") {
+    const cwdRaw = body.cwd;
+    const parsed = v.safeParse(CwdSchema, { cwd: cwdRaw });
+    if (!parsed.success) {
+      return { error: "Invalid cwd" };
+    }
+    await pi.changeCwd(parsed.output.cwd);
+    return { success: true, cwd: parsed.output.cwd };
+  }
+
+  return { error: "Unknown intent" };
 }
 
 export default function Home() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const { theme, toggleTheme } = useTheme();
-  const [currentCwd, setCurrentCwd] = useState("");
-  const [currentDir, setCurrentDir] = useState("");
-  const [entries, setEntries] = useState<DirEntry[]>([]);
-  const [recentDirs, setRecentDirs] = useState<RecentDir[]>([]);
-  const [homeDir, setHomeDir] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [selecting, setSelecting] = useState(false);
-  const [breadcrumbs, setBreadcrumbs] = useState<{ name: string; path: string }[]>([]);
+  const { cwd, homeDir, recentDirs, currentDir, entries, breadcrumbs } =
+    useLoaderData<typeof loader>();
 
+  const fetcher = useFetcher();
+
+  // Navigate after successful cwd change
+  const fetcherData = fetcher.data as { error?: string; cwd?: string } | undefined;
   useEffect(() => {
-    loadInitial().catch(console.error);
-  }, []);
-
-  async function loadInitial() {
-    setLoading(true);
-    try {
-      const [stateRes, homeRes] = await Promise.all([
-        fetch("/api/pi/state"),
-        fetch("/api/fs/home-dir"),
-      ]);
-      const state = await stateRes.json();
-      const home = await homeRes.json();
-
-      setCurrentCwd(state.cwd || "");
-
-      // Start from the dir passed in URL, or current cwd, or home
-      const dirFromUrl = searchParams.get("dir");
-      const startDir = dirFromUrl || state.cwd || home.homeDir;
-      setCurrentDir(startDir);
-      setHomeDir(home.homeDir);
-      setRecentDirs(home.recentDirs || []);
-
-      await loadDir(startDir);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
+    if (fetcher.state === "idle" && fetcher.data && !fetcherData?.error && fetcherData?.cwd) {
+      void navigate(`/sessions?dir=${encodeURIComponent(fetcherData.cwd)}`);
     }
-  }
+  }, [fetcher.state, fetcher.data, fetcherData?.cwd, fetcherData?.error, navigate]);
 
-  async function loadDir(dirPath: string) {
-    setCurrentDir(dirPath);
-    try {
-      const res = await fetch(`/api/fs/dirs?path=${encodeURIComponent(dirPath)}`);
-      const data = await res.json();
-      setEntries(data.entries || []);
-    } catch {
-      setEntries([]);
-    }
+  const loadDir = useCallback(
+    (dirPath: string) => {
+      // Navigate with search param to trigger loader re-run
+      void navigate(`/?dir=${encodeURIComponent(dirPath)}`, { replace: true });
+    },
+    [navigate],
+  );
 
-    const parts = dirPath.split("/").filter(Boolean);
-    const crumbs: { name: string; path: string }[] = [];
-    let cum = "";
-    for (const part of parts) {
-      cum += "/" + part;
-      crumbs.push({ name: part, path: cum });
-    }
-    if (crumbs.length === 0) crumbs.push({ name: "/", path: "/" });
-    setBreadcrumbs(crumbs);
-  }
-
-  async function selectDir(dirPath: string) {
-    setSelecting(true);
-    try {
-      await fetch("/api/pi/change-cwd", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd: dirPath }),
-      });
-      void navigate(`/sessions?dir=${encodeURIComponent(dirPath)}`);
-    } catch (err) {
-      console.error(err);
-      setSelecting(false);
-    }
+  function selectDir(dirPath: string) {
+    void fetcher.submit(
+      { intent: "change-cwd", cwd: dirPath },
+      { method: "post", encType: "application/json" },
+    );
   }
 
   function goUp() {
     const parent = currentDir.substring(0, currentDir.lastIndexOf("/")) || "/";
-    void loadDir(parent);
+    loadDir(parent);
   }
 
   function goToHome() {
-    void loadDir(homeDir);
+    loadDir(homeDir);
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
+  const selecting = fetcher.state !== "idle";
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -139,16 +120,16 @@ export default function Home() {
       </div>
 
       <div className="flex-1 max-w-3xl mx-auto w-full p-6">
-        {currentCwd && (
+        {cwd && (
           <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-6">
             <p className="text-sm text-blue-700 dark:text-blue-300">
-              <span className="font-medium">Current:</span> {currentCwd}
+              <span className="font-medium">Current:</span> {cwd}
             </p>
           </div>
         )}
 
         {/* Recent Directories */}
-        {recentDirs.length > 0 && !currentCwd && (
+        {recentDirs.length > 0 && !cwd && (
           <div className="mb-6">
             <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Recent Directories
