@@ -26,13 +26,6 @@ interface PiState {
   error: string | null;
 }
 
-interface PiModel {
-  id: string;
-  name: string;
-  provider: string;
-  api: string;
-}
-
 interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "tool" | "thinking" | "system";
@@ -575,12 +568,14 @@ export default function Chat() {
                       </div>
                     </details>
                   )}
-                  <div className="whitespace-pre-wrap break-words">
-                    {msg.content.trim() || (msg.isStreaming ? "..." : "")}
-                    {msg.isStreaming && (
-                      <span className="inline-block w-2 h-4 bg-blue-500 dark:bg-blue-400 ml-1 animate-pulse" />
-                    )}
-                  </div>
+                  {(msg.content.trim() || msg.isStreaming) && (
+                    <div className="whitespace-pre-wrap break-words">
+                      {msg.content.trim() || (msg.isStreaming ? "..." : "")}
+                      {msg.isStreaming && (
+                        <span className="inline-block w-2 h-4 bg-blue-500 dark:bg-blue-400 ml-1 animate-pulse" />
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             ))
