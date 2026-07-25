@@ -192,21 +192,21 @@ export default function Chat({ params: { sessionId } }: Route.ServerComponentPro
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  // Reset local state when navigating to a different session
-  // (same route component, so useState inits only once)
+  // Reset local state when navigating to a different session.
+  // Only depend on sessionId so that loader re-validation after actions
+  // doesn't overwrite SSE-streamed messages.
   useEffect(() => {
     setState(loaderState);
     setMessages((loaderMessages || []).map((msg, i) => toChatMessage(msg, i)));
     setInput("");
     setShowModelSelector(false);
-    setConnected(false);
     setSelectedModel(
       loaderState?.model
         ? { provider: loaderState.model.provider, modelId: loaderState.model.id }
         : null,
     );
     setSelectedThinkingLevel(loaderState?.thinkingLevel ?? "medium");
-  }, [sessionId, loaderState, loaderMessages]);
+  }, [sessionId]);
 
   // Connect SSE for real-time updates
   useEffect(() => {

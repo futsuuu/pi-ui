@@ -1,6 +1,6 @@
 import { Plus, Clock, Layers, Sun, Moon } from "lucide-react";
 import { useEffect } from "react";
-import { useFetcher, useLoaderData, useNavigate } from "react-router";
+import { redirect, useFetcher, useLoaderData, useNavigate } from "react-router";
 import * as v from "valibot";
 
 import { getPiServer } from "~/lib/pi-server";
@@ -19,7 +19,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const dir = url.searchParams.get("dir");
   if (!dir) {
-    return { sessions: [], cwd: null };
+    throw redirect("/");
   }
 
   // Track recent directory
@@ -61,19 +61,12 @@ export async function action({ request }: Route.ActionArgs) {
 export default function Sessions() {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
-  const { sessions, cwd } = useLoaderData<typeof loader>();
+  const { sessions } = useLoaderData<typeof loader>();
 
   const fetcher = useFetcher();
   const fetcherData = fetcher.data as
     | { success?: boolean; sessionId?: string; action?: string; error?: string }
     | undefined;
-
-  // Redirect if no dir
-  useEffect(() => {
-    if (!cwd) {
-      void navigate("/", { replace: true });
-    }
-  }, [cwd, navigate]);
 
   // Navigate after successful session open/new
   useEffect(() => {
