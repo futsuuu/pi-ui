@@ -1,3 +1,4 @@
+import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
 import { MessageCircle, Wrench, Send, Plus, Layers, Sun, Moon } from "lucide-react";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { redirect, useFetcher, useLoaderData, useParams } from "react-router";
@@ -51,73 +52,48 @@ function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function convertAgentMessage(msg: Record<string, unknown>, index: number): ChatMessage {
-  const role = (msg.role as string) || "unknown";
-  const rawContent = msg.content;
+function toChatMessage(msg: AgentMessage, index: number): ChatMessage {
+  const id = `msg-${index}-${Date.now()}`;
 
-  const extractText = (content: unknown): string => {
-    if (typeof content === "string") return content;
-    if (Array.isArray(content)) {
-      return content
-        .map((block: Record<string, unknown>): string => {
-          if (block.type === "text") return (block.text as string) ?? "";
-          if (block.type === "tool_result" || block.type === "toolResult") {
-            return extractText(block.content);
-          }
-          return "";
-        })
-        .join("\n");
-    }
-    return "";
-  };
-
-  const extractThinking = (content: unknown): string | undefined => {
-    if (Array.isArray(content)) {
-      const thinkBlocks = content.filter(
-        (block: Record<string, unknown>) => block.type === "thinking",
-      );
-      if (thinkBlocks.length > 0) {
-        return thinkBlocks
-          .map((b: Record<string, unknown>) => (b.thinking as string) ?? "")
-          .join("\n");
-      }
-    }
-    return undefined;
-  };
-
-  if (role === "user") {
-    return {
-      id: `msg-${index}-${Date.now()}`,
-      role: "user",
-      content: extractText(rawContent),
-    };
+  if (msg.role === "user") {
+    const content =
+      typeof msg.content === "string"
+        ? msg.content
+        : msg.content
+            .filter((b): b is { type: "text"; text: string } => b.type === "text")
+            .map((b) => b.text)
+            .join("\n");
+    return { id, role: "user", content };
   }
 
-  if (role === "assistant") {
-    return {
-      id: `msg-${index}-${Date.now()}`,
-      role: "assistant",
-      content: extractText(rawContent),
-      thinking: extractThinking(rawContent),
-    };
+  if (msg.role === "assistant") {
+    const content = msg.content
+      .filter((b): b is { type: "text"; text: string } => b.type === "text")
+      .map((b) => b.text)
+      .join("\n");
+    const thinking =
+      msg.content
+        .filter((b): b is { type: "thinking"; thinking: string } => b.type === "thinking")
+        .map((b) => b.thinking)
+        .join("\n") || undefined;
+    return { id, role: "assistant", content, thinking };
   }
 
-  if (role === "toolResult" || role === "tool_result" || role === "tool") {
-    const toolName = (msg.toolName as string) || (msg.name as string) || "tool";
-    const toolCallId = (msg.toolCallId as string) || `tool-${index}`;
+  if (msg.role === "toolResult") {
+    const content = msg.content
+      .filter((b): b is { type: "text"; text: string } => b.type === "text")
+      .map((b) => b.text)
+      .join("\n");
     return {
-      id: toolCallId,
+      id: msg.toolCallId || `tool-${index}`,
       role: "tool",
-      content: extractText(rawContent),
-      toolName,
+      content,
+      toolName: msg.toolName,
     };
   }
 
-  return {
-    id: `msg-${index}-${Date.now()}`,
-    role: "system",
-    content: extractText(rawContent),
-  };
+  // Fallback for unknown/custom message types
+  return { id, role: "system", content: "" };
 }
 
 // --- Server-side loader ---
@@ -146,14 +122,20 @@ export async function action({ request }: Route.ActionArgs) {
   const pi = getPiServer();
 
   // Parse JSON body (sent by fetcher.submit with encType: "application/json")
-  let body: Record<string, unknown>;
+  let body: unknown;
   try {
     body = await request.json();
   } catch {
     return { error: "Invalid JSON body" };
   }
 
-  const intent = body.intent as string | undefined;
+  const data = body as {
+    intent?: string;
+    message?: string;
+    model?: { provider: string; modelId: string };
+    thinkingLevel?: string;
+  };
+  const intent = data.intent;
 
   if (intent === "abort") {
     await pi.abort();
@@ -191,24 +173,15 @@ export async function action({ request }: Route.ActionArgs) {
 export default function Chat() {
   const { sessionId: sessionIdFromUrl } = useParams();
   const { theme, toggleTheme } = useTheme();
-  const {
-    state: loaderState,
-    messages: loaderMessages,
-    models: loaderModels,
-  } = useLoaderData<typeof loader>();
+  const { state: loaderState, messages: loaderMessages, models } = useLoaderData<typeof loader>();
 
   const [state, setState] = useState<PiState | null>(loaderState);
   const [messages, setMessages] = useState<ChatMessage[]>(
-    (loaderMessages || []).map((msg, i) =>
-      convertAgentMessage(msg as unknown as Record<string, unknown>, i),
-    ),
+    (loaderMessages || []).map((msg, i) => toChatMessage(msg, i)),
   );
   const [input, setInput] = useState("");
-  const [models] = useState<PiModel[]>((loaderModels || []) as unknown as PiModel[]);
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [connected, setConnected] = useState(false);
-  const [loading] = useState(false);
-  const [initError] = useState<string | null>(null);
 
   // Local model/thinking selection — applied on prompt submit
   const [selectedModel, setSelectedModel] = useState<{ provider: string; modelId: string } | null>(
@@ -289,42 +262,36 @@ export default function Chat() {
     };
   }, [sessionIdFromUrl]);
 
-  function handlePiEvent(event: Record<string, unknown>) {
+  function handlePiEvent(event: AgentEvent | { type: "agent_settled" }) {
     switch (event.type) {
       case "message_start": {
-        const msg = event.message as Record<string, unknown> | undefined;
-        if (msg?.role === "assistant") {
-          setMessages((prev) => [
-            ...prev,
-            { id: uid(), role: "assistant", content: "", isStreaming: true },
-          ]);
-        }
+        setMessages((prev) => [
+          ...prev,
+          { id: uid(), role: "assistant", content: "", isStreaming: true },
+        ]);
         break;
       }
       case "message_update": {
-        const msgEvent = event.assistantMessageEvent as Record<string, unknown> | undefined;
-        if (!msgEvent) break;
+        const msgEvent = event.assistantMessageEvent;
         if (msgEvent.type === "text_delta") {
-          const delta = msgEvent.delta as string;
           setMessages((prev) => {
             const last = prev[prev.length - 1];
             if (last?.role === "assistant" && last.isStreaming) {
               const updated = [...prev];
-              updated[updated.length - 1] = { ...last, content: last.content + delta };
+              updated[updated.length - 1] = { ...last, content: last.content + msgEvent.delta };
               return updated;
             }
             return prev;
           });
         }
         if (msgEvent.type === "thinking_delta") {
-          const delta = msgEvent.delta as string;
           setMessages((prev) => {
             const last = prev[prev.length - 1];
             if (last?.role === "assistant" && last.isStreaming) {
               const updated = [...prev];
               updated[updated.length - 1] = {
                 ...last,
-                thinking: (last.thinking || "") + delta,
+                thinking: (last.thinking || "") + msgEvent.delta,
               };
               return updated;
             }
@@ -349,14 +316,13 @@ export default function Chat() {
         break;
       }
       case "tool_execution_start": {
-        const toolName = (event.toolName as string) || "tool";
         setMessages((prev) => [
           ...prev,
           {
             id: uid(),
             role: "tool",
-            content: `Running ${toolName}...`,
-            toolName,
+            content: `Running ${event.toolName}...`,
+            toolName: event.toolName,
             isStreaming: true,
           },
         ]);
@@ -405,7 +371,12 @@ export default function Chat() {
     setInput("");
     setMessages((prev) => [...prev, { id: uid(), role: "user", content: text }]);
 
-    const body: Record<string, unknown> = {
+    const body: {
+      intent: string;
+      message: string;
+      model?: { provider: string; modelId: string };
+      thinkingLevel?: string;
+    } = {
       intent: "prompt",
       message: text,
     };
@@ -416,7 +387,7 @@ export default function Chat() {
       body.thinkingLevel = selectedThinkingLevel;
     }
 
-    void fetcher.submit(body as Record<string, string>, {
+    void fetcher.submit(body, {
       method: "post",
       encType: "application/json",
     });
@@ -558,21 +529,10 @@ export default function Chat() {
         </div>
       )}
 
-      {initError && (
-        <div className="bg-yellow-50 dark:bg-yellow-900/30 border-b border-yellow-200 dark:border-yellow-800 px-6 py-2">
-          <p className="text-sm text-yellow-700 dark:text-yellow-300">Init Error: {initError}</p>
-        </div>
-      )}
-
       {/* Messages */}
       <div className="flex-1 overflow-y-auto min-h-0 w-full">
         <div className="max-w-5xl mx-auto px-4 py-4 space-y-4 min-h-full">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center h-full text-center py-16">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
-              <p className="text-gray-400">Loading chat...</p>
-            </div>
-          ) : messages.length === 0 ? (
+          {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center py-16">
               <MessageCircle
                 className="w-16 h-16 mb-4 text-gray-300 dark:text-gray-600"

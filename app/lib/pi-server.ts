@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { Model, Api } from "@earendil-works/pi-ai";
 import {
   createAgentSessionFromServices,
   createAgentSessionRuntime,
@@ -187,7 +188,7 @@ class PiServer {
     };
   }
 
-  async getModels() {
+  async getModels(): Promise<readonly Model<Api>[]> {
     await this.ensureInitialized();
     if (!this.modelRuntime) return [];
     return this.modelRuntime.getAvailable();
