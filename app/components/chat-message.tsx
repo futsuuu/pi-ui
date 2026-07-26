@@ -1,6 +1,6 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { TextContent, ThinkingContent } from "@earendil-works/pi-ai";
-import { Check, Wrench, X } from "lucide-react";
+import type { TextContent, ThinkingContent, StopReason } from "@earendil-works/pi-ai";
+import { Check, Wrench, X, CircleSlash, CircleX } from "lucide-react";
 
 export type ChatMessage = UserMessage | AssistantMessage | ToolMessage | SystemMessage;
 
@@ -16,6 +16,8 @@ export type AssistantMessage = {
   content: string;
   thinking?: string;
   isStreaming?: boolean;
+  stopReason?: StopReason;
+  errorMessage?: string;
 };
 
 export type ToolMessage = {
@@ -23,6 +25,7 @@ export type ToolMessage = {
   role: "tool";
   content: string;
   toolName: string;
+  toolCallId?: string;
   toolArgs?: unknown;
   isError?: boolean;
   isStreaming?: boolean;
@@ -59,7 +62,14 @@ function toChatMessage(msg: AgentMessage, index: number): ChatMessage {
         .filter((b): b is ThinkingContent => b.type === "thinking")
         .map((b) => b.thinking)
         .join("\n") || undefined;
-    return { id, role: "assistant", content, thinking };
+    return {
+      id,
+      role: "assistant",
+      content,
+      thinking,
+      stopReason: msg.stopReason,
+      errorMessage: msg.errorMessage,
+    };
   }
 
   if (msg.role === "toolResult") {
@@ -72,6 +82,7 @@ function toChatMessage(msg: AgentMessage, index: number): ChatMessage {
       role: "tool",
       content,
       toolName: msg.toolName,
+      toolCallId: msg.toolCallId,
       isError: msg.isError,
     };
   }
@@ -150,14 +161,17 @@ function ToolMessageEntry({ msg }: { msg: ToolMessage }) {
   }
   return (
     <div className="flex justify-start">
-      <div className="rounded-xl py-3 w-full text-gray-700 dark:text-gray-300 font-mono text-sm border border-gray-200 dark:border-gray-700 px-4">
+      <div className="rounded-xl py-3 w-full text-gray-700 dark:text-gray-300 text-sm border border-gray-200 dark:border-gray-700 px-4">
         {msg.toolName && (
           <details className="group" open={msg.isStreaming || undefined}>
             <summary className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden [&::marker]:hidden">
               <Wrench className="w-3 h-3 shrink-0 text-gray-400" />
               <span className="font-medium shrink-0 text-gray-400">{msg.toolName}</span>
               {summary ? (
-                <span className="truncate text-gray-600 dark:text-gray-300" title={summary}>
+                <span
+                  className="font-mono truncate text-gray-600 dark:text-gray-300"
+                  title={summary}
+                >
                   {summary}
                 </span>
               ) : null}
@@ -170,11 +184,11 @@ function ToolMessageEntry({ msg }: { msg: ToolMessage }) {
             </summary>
             <div className="mt-2 space-y-2">
               {msg.toolArgs != null && (
-                <pre className="p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs text-gray-500 dark:text-gray-200 overflow-x-auto max-h-48 whitespace-pre">
+                <pre className="p-2 bg-gray-100 dark:bg-gray-800 rounded font-mono text-xs text-gray-500 dark:text-gray-200 overflow-x-auto max-h-48 whitespace-pre">
                   {JSON.stringify(msg.toolArgs, null, 2)}
                 </pre>
               )}
-              <div className="overflow-x-auto whitespace-pre">
+              <div className="overflow-x-auto font-mono whitespace-pre">
                 {msg.content || (msg.isStreaming ? "..." : "")}
                 {msg.isStreaming && <StreamingCursor />}
               </div>
@@ -189,7 +203,8 @@ function ToolMessageEntry({ msg }: { msg: ToolMessage }) {
 function AssistantMessageEntry({ msg }: { msg: AssistantMessage }) {
   const thinking = msg.thinking?.trim();
   const content = msg.content.trim();
-  if (!thinking && !content && !msg.isStreaming) return null;
+  const isError = msg.stopReason === "error" || msg.stopReason === "aborted" || !!msg.errorMessage;
+  if (!thinking && !content && !msg.isStreaming && !isError) return null;
   return (
     <div className="flex justify-start">
       <div className="rounded-xl py-3 w-full text-gray-900 dark:text-gray-100">
@@ -207,6 +222,27 @@ function AssistantMessageEntry({ msg }: { msg: AssistantMessage }) {
           <div className="whitespace-pre-wrap break-words">
             {content || (msg.isStreaming ? "..." : "")}
             {msg.isStreaming && <StreamingCursor />}
+          </div>
+        )}
+
+        {/* Error display */}
+        {(isError || msg.errorMessage) && (
+          <div className="mt-2 p-2 rounded text-sm text-red-700 dark:text-red-400 whitespace-pre-wrap break-words">
+            <div className="flex items-center gap-1.5 font-medium mb-1">
+              {msg.stopReason === "aborted" && <CircleSlash className="w-4 h-4 shrink-0" />}
+              {msg.stopReason !== "aborted" && <CircleX className="w-4 h-4 shrink-0" />}
+              <span>
+                {msg.stopReason === "aborted"
+                  ? "Aborted"
+                  : msg.stopReason === "error"
+                    ? "Error"
+                    : "Error"}
+              </span>
+            </div>
+            {msg.errorMessage && <p className="font-mono opacity-80">{msg.errorMessage}</p>}
+            {msg.stopReason && !msg.errorMessage && (
+              <p className="font-mono opacity-80">stopReason: {msg.stopReason}</p>
+            )}
           </div>
         )}
       </div>

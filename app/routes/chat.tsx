@@ -1,9 +1,20 @@
+import type {
+  TextContent,
+  ThinkingContent,
+  AssistantMessage,
+  StopReason,
+} from "@earendil-works/pi-ai";
 import { MessageCircle, Send, Plus, Layers, Sun, Moon } from "lucide-react";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { redirect, useFetcher, useLoaderData, useNavigate } from "react-router";
 import * as v from "valibot";
 
-import { MessageEntry, toChatMessages, type ChatMessage } from "~/components/chat-message";
+import {
+  MessageEntry,
+  toChatMessages,
+  type ChatMessage,
+  type ToolMessage,
+} from "~/components/chat-message";
 import { getPiServer, type PiState, type SseEvent } from "~/lib/pi-server";
 import { useTheme } from "~/lib/theme-context";
 import { MessageSchema } from "~/lib/validations";
@@ -100,6 +111,32 @@ export async function action({ request, params: { sessionId } }: Route.ActionArg
   }
 }
 
+/** Extract text content from an AssistantMessage content array */
+function extractTextContent(content: AssistantMessage["content"] | undefined | null): string {
+  if (!content) return "";
+  return content
+    .filter((b): b is TextContent => b.type === "text")
+    .map((b: TextContent) => b.text)
+    .join("\n");
+}
+
+/** Extract thinking content from an AssistantMessage content array */
+function extractThinkingContent(
+  content: AssistantMessage["content"] | undefined | null,
+): string | undefined {
+  if (!content) return undefined;
+  const thinking = content
+    .filter((b): b is ThinkingContent => b.type === "thinking")
+    .map((b: ThinkingContent) => b.thinking)
+    .join("\n");
+  return thinking || undefined;
+}
+
+/** Find the index of a tool message by its toolCallId */
+function findToolIndex(messages: ChatMessage[], toolCallId: string): number {
+  return messages.findIndex((m) => m.role === "tool" && m.toolCallId === toolCallId);
+}
+
 function handlePiEvent(
   event: Exclude<SseEvent, { type: "internal:state" }>,
 ): React.SetStateAction<ChatMessage[]> {
@@ -109,6 +146,8 @@ function handlePiEvent(
     }
     case "message_update": {
       const msgEvent = event.assistantMessageEvent;
+
+      // text_delta / thinking_delta: accumulate streaming content
       if (msgEvent.type === "text_delta") {
         return (prev) => {
           const last = prev[prev.length - 1];
@@ -120,6 +159,7 @@ function handlePiEvent(
           return prev;
         };
       }
+
       if (msgEvent.type === "thinking_delta") {
         return (prev) => {
           const last = prev[prev.length - 1];
@@ -134,21 +174,56 @@ function handlePiEvent(
           return prev;
         };
       }
+
+      // done / error: finalise the assistant message with full content and error info
       if (msgEvent.type === "done" || msgEvent.type === "error") {
+        const finalMessage = msgEvent.type === "done" ? msgEvent.message : msgEvent.error;
+        const finalContent = extractTextContent(finalMessage?.content);
+        const finalThinking = extractThinkingContent(finalMessage?.content);
+        const stopReason = finalMessage?.stopReason;
+        const errorMessage = finalMessage?.errorMessage;
+
         return (prev) => {
           const last = prev[prev.length - 1];
           if (last?.role === "assistant" && last.isStreaming) {
             const updated = [...prev];
-            updated[updated.length - 1] = { ...last, isStreaming: false };
+            updated[updated.length - 1] = {
+              ...last,
+              content: finalContent || last.content,
+              thinking: finalThinking || last.thinking,
+              isStreaming: false,
+              stopReason,
+              errorMessage,
+            };
             return updated;
           }
           return prev;
         };
       }
-      // unimplemented
+
+      // text_end / thinking_end: ignore — content already accumulated via deltas
+      if (
+        msgEvent.type === "text_end" ||
+        msgEvent.type === "thinking_end" ||
+        msgEvent.type === "text_start" ||
+        msgEvent.type === "thinking_start" ||
+        msgEvent.type === "toolcall_start" ||
+        msgEvent.type === "toolcall_delta" ||
+        msgEvent.type === "toolcall_end"
+      ) {
+        return (prev) => prev;
+      }
+
+      // start event: ignore, first message_update with content will follow
+      if (msgEvent.type === "start") {
+        return (prev) => prev;
+      }
+
+      msgEvent satisfies never;
       return (prev) => prev;
     }
     case "message_end": {
+      // If we haven't seen done/error yet (e.g. empty response), finalise streaming here
       return (prev) =>
         prev.map((m) =>
           (m.role === "assistant" || m.role === "tool") && m.isStreaming
@@ -164,52 +239,89 @@ function handlePiEvent(
           role: "tool",
           content: `Running ${event.toolName}...`,
           toolName: event.toolName,
+          toolCallId: event.toolCallId,
           toolArgs: event.args,
           isStreaming: true,
         },
       ];
     }
     case "tool_execution_update": {
-      const partial = (event as { partialResult?: { content?: { text?: string }[] } })
+      const partialResult = (event as { partialResult?: { content?: { text?: string }[] } })
         .partialResult;
-      const text = partial?.content?.[0]?.text ?? "";
+      const text = partialResult?.content?.[0]?.text ?? "";
+
       return (prev) => {
-        const last = prev[prev.length - 1];
-        if (last?.role === "tool" && last.isStreaming) {
-          const updated = [...prev];
-          updated[updated.length - 1] = { ...last, content: text };
-          return updated;
-        }
-        return prev;
+        const idx = findToolIndex(prev, event.toolCallId);
+        if (idx === -1) return prev;
+        const updated = [...prev];
+        updated[idx] = { ...(updated[idx] as ToolMessage), content: text };
+        return updated;
       };
     }
     case "tool_execution_end": {
       const result = (event as { result?: { content?: { text?: string }[] } }).result;
       const resultText = result?.content?.[0]?.text ?? "";
+
       return (prev) => {
-        const last = prev[prev.length - 1];
-        if (last?.role === "tool" && last.isStreaming) {
-          const updated = [...prev];
-          updated[updated.length - 1] = {
-            ...last,
-            content: resultText,
-            isStreaming: false,
-            isError: event.isError,
-          };
-          return updated;
-        }
-        return prev;
+        const idx = findToolIndex(prev, event.toolCallId);
+        if (idx === -1) return prev;
+        const updated = [...prev];
+        updated[idx] = {
+          ...(updated[idx] as ToolMessage),
+          content: resultText,
+          isStreaming: false,
+          isError: event.isError,
+        };
+        return updated;
       };
     }
     case "turn_end":
-    case "agent_settled":
-    case "agent_end": {
+    case "agent_settled": {
       return (prev) =>
         prev.map((m) =>
           (m.role === "assistant" || m.role === "tool") && m.isStreaming
             ? { ...m, isStreaming: false }
             : m,
         );
+    }
+    case "agent_end": {
+      // Extract error info from the final messages
+      let stopReason: StopReason = "stop";
+      let errorMessage: string | undefined;
+      if (event.messages) {
+        for (let i = event.messages.length - 1; i >= 0; i--) {
+          const msg = event.messages[i];
+          if (msg.role === "assistant") {
+            stopReason = msg.stopReason;
+            errorMessage = msg.errorMessage;
+            break;
+          }
+        }
+      }
+
+      return (prev) => {
+        let updated = [...prev];
+
+        // If the last assistant message is still streaming, finalise it with error info
+        if (updated.length > 0) {
+          const last = updated[updated.length - 1];
+          if (last?.role === "assistant" && last.isStreaming) {
+            updated[updated.length - 1] = {
+              ...last,
+              isStreaming: false,
+              stopReason,
+              ...(errorMessage ? { errorMessage } : {}),
+            };
+          }
+        }
+
+        // Close any remaining streaming messages (tool, assistant)
+        return updated.map((m) =>
+          (m.role === "assistant" || m.role === "tool") && m.isStreaming
+            ? { ...m, isStreaming: false }
+            : m,
+        );
+      };
     }
     case "agent_start":
     case "auto_retry_start":
