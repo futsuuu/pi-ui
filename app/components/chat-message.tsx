@@ -2,47 +2,39 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { TextContent, ThinkingContent } from "@earendil-works/pi-ai";
 import { Check, Wrench, X } from "lucide-react";
 
-// --- Types ---
-export interface ChatMessage {
+export type ChatMessage = UserMessage | AssistantMessage | ToolMessage | SystemMessage;
+
+export type UserMessage = {
   id: string;
-  role: "user" | "assistant" | "tool" | "thinking" | "system";
+  role: "user";
+  content: string;
+};
+
+export type AssistantMessage = {
+  id: string;
+  role: "assistant";
   content: string;
   thinking?: string;
-  toolName?: string;
+  isStreaming?: boolean;
+};
+
+export type ToolMessage = {
+  id: string;
+  role: "tool";
+  content: string;
+  toolName: string;
   toolArgs?: unknown;
   isError?: boolean;
   isStreaming?: boolean;
-}
+};
+
+export type SystemMessage = {
+  id: string;
+  role: "system";
+  content: string;
+};
 
 /** Extract a short summary of tool args for inline display */
-export function summarizeToolArgs(toolName: string, args: unknown): string | undefined {
-  if (!args || typeof args !== "object") return undefined;
-  const record = args as Record<string, unknown>;
-
-  switch (toolName) {
-    case "read":
-    case "write":
-    case "edit": {
-      const path = record.path;
-      if (typeof path === "string") return path;
-      return undefined;
-    }
-    case "bash": {
-      const command = record.command;
-      if (typeof command === "string") return command;
-      return undefined;
-    }
-    case "rg":
-    case "grep": {
-      const pattern = record.pattern;
-      if (typeof pattern === "string") return pattern;
-      return undefined;
-    }
-    default:
-      return undefined;
-  }
-}
-
 function toChatMessage(msg: AgentMessage, index: number): ChatMessage {
   const id = `msg-${index}-${msg.timestamp}`;
 
@@ -105,7 +97,7 @@ export function toChatMessages(msgs: AgentMessage[]): ChatMessage[] {
   // Second pass: convert messages, injecting args for tool results
   return msgs.map((msg, i) => {
     const cm = toChatMessage(msg, i);
-    if (msg.role === "toolResult") {
+    if (msg.role === "toolResult" && cm.role === "tool") {
       const tc = toolCallMap.get(msg.toolCallId);
       if (tc) {
         cm.toolArgs = tc.args;
@@ -116,41 +108,59 @@ export function toChatMessages(msgs: AgentMessage[]): ChatMessage[] {
   });
 }
 
-export function MessageEntry({ msg }: { msg: ChatMessage }) {
-  if (msg.role === "user") {
-    return (
-      <div className="flex justify-end">
-        <div className="rounded-xl px-4 py-3 whitespace-pre-wrap break-words max-w-[80%] bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700">
-          {msg.content.trim()}
-        </div>
+/** Animated cursor shown while streaming */
+function StreamingCursor() {
+  return <span className="inline-block w-2 h-4 bg-blue-500 dark:bg-blue-400 ml-1 animate-pulse" />;
+}
+
+function UserMessageEntry({ msg }: { msg: UserMessage }) {
+  return (
+    <div className="flex justify-end">
+      <div className="rounded-xl px-4 py-3 whitespace-pre-wrap break-words max-w-[80%] bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700">
+        {msg.content.trim()}
       </div>
-    );
+    </div>
+  );
+}
+
+function ToolMessageEntry({ msg }: { msg: ToolMessage }) {
+  let summary: string | undefined;
+  if (msg.toolArgs != null && typeof msg.toolArgs === "object") {
+    const record = msg.toolArgs as Record<string, unknown>;
+    switch (msg.toolName) {
+      case "read":
+      case "write":
+      case "edit": {
+        const path = record.path;
+        if (typeof path === "string") summary = path;
+        break;
+      }
+      case "bash": {
+        const command = record.command;
+        if (typeof command === "string") summary = command;
+        break;
+      }
+      case "rg":
+      case "grep": {
+        const pattern = record.pattern;
+        if (typeof pattern === "string") summary = pattern;
+        break;
+      }
+    }
   }
   return (
     <div className="flex justify-start">
-      <div
-        className={`rounded-xl py-3 ${
-          msg.role === "tool"
-            ? "w-full text-gray-700 dark:text-gray-300 font-mono text-sm border border-gray-200 dark:border-gray-700 px-4"
-            : "w-full text-gray-900 dark:text-gray-100"
-        }`}
-      >
-        {msg.toolName && msg.role === "tool" && (
+      <div className="rounded-xl py-3 w-full text-gray-700 dark:text-gray-300 font-mono text-sm border border-gray-200 dark:border-gray-700 px-4">
+        {msg.toolName && (
           <details className="group" open={msg.isStreaming || undefined}>
             <summary className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden [&::marker]:hidden">
-              <Wrench className="w-3 h-3 shrink-0 text-gray-500 dark:text-gray-400" />
-              <span className="font-medium shrink-0 text-gray-500 dark:text-gray-400">
-                {msg.toolName}
-              </span>
-              {(() => {
-                const summary =
-                  msg.toolArgs != null ? summarizeToolArgs(msg.toolName!, msg.toolArgs) : undefined;
-                return summary ? (
-                  <span className="truncate text-gray-600 dark:text-gray-300" title={summary}>
-                    {summary}
-                  </span>
-                ) : null;
-              })()}
+              <Wrench className="w-3 h-3 shrink-0 text-gray-400" />
+              <span className="font-medium shrink-0 text-gray-400">{msg.toolName}</span>
+              {summary ? (
+                <span className="truncate text-gray-600 dark:text-gray-300" title={summary}>
+                  {summary}
+                </span>
+              ) : null}
               {msg.isError !== undefined &&
                 (msg.isError ? (
                   <X className="ml-auto w-4 h-4 text-red-500 dark:text-red-400 shrink-0" />
@@ -164,18 +174,26 @@ export function MessageEntry({ msg }: { msg: ChatMessage }) {
                   {JSON.stringify(msg.toolArgs, null, 2)}
                 </pre>
               )}
-              {(msg.content.trim() || msg.isStreaming) && (
-                <div className="overflow-x-auto whitespace-pre">
-                  {msg.content.trim() || (msg.isStreaming ? "..." : "")}
-                  {msg.isStreaming && (
-                    <span className="inline-block w-2 h-4 bg-blue-500 dark:bg-blue-400 ml-1 animate-pulse" />
-                  )}
-                </div>
-              )}
+              <div className="overflow-x-auto whitespace-pre">
+                {msg.content || (msg.isStreaming ? "..." : "")}
+                {msg.isStreaming && <StreamingCursor />}
+              </div>
             </div>
           </details>
         )}
-        {msg.thinking && (
+      </div>
+    </div>
+  );
+}
+
+function AssistantMessageEntry({ msg }: { msg: AssistantMessage }) {
+  const thinking = msg.thinking?.trim();
+  const content = msg.content.trim();
+  if (!thinking && !content && !msg.isStreaming) return null;
+  return (
+    <div className="flex justify-start">
+      <div className="rounded-xl py-3 w-full text-gray-900 dark:text-gray-100">
+        {thinking && (
           <details className="mb-2">
             <summary className="text-xs text-amber-600 dark:text-amber-400 cursor-pointer hover:text-amber-700 dark:hover:text-amber-300 select-none">
               Thinking
@@ -185,15 +203,38 @@ export function MessageEntry({ msg }: { msg: ChatMessage }) {
             </div>
           </details>
         )}
-        {msg.role !== "tool" && (msg.content.trim() || msg.isStreaming) && (
+        {(content || msg.isStreaming) && (
           <div className="whitespace-pre-wrap break-words">
-            {msg.content.trim() || (msg.isStreaming ? "..." : "")}
-            {msg.isStreaming && (
-              <span className="inline-block w-2 h-4 bg-blue-500 dark:bg-blue-400 ml-1 animate-pulse" />
-            )}
+            {content || (msg.isStreaming ? "..." : "")}
+            {msg.isStreaming && <StreamingCursor />}
           </div>
         )}
       </div>
     </div>
   );
+}
+
+function SystemMessageEntry({ msg }: { msg: SystemMessage }) {
+  const content = msg.content.trim();
+  if (!content) return null;
+  return (
+    <div className="flex justify-start">
+      <div className="rounded-xl py-3 w-full text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words">
+        {content}
+      </div>
+    </div>
+  );
+}
+
+export function MessageEntry({ msg }: { msg: ChatMessage }) {
+  switch (msg.role) {
+    case "user":
+      return <UserMessageEntry msg={msg} />;
+    case "tool":
+      return <ToolMessageEntry msg={msg} />;
+    case "assistant":
+      return <AssistantMessageEntry msg={msg} />;
+    case "system":
+      return <SystemMessageEntry msg={msg} />;
+  }
 }

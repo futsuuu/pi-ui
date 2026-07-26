@@ -149,7 +149,12 @@ function handlePiEvent(
       return (prev) => prev;
     }
     case "message_end": {
-      return (prev) => prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m));
+      return (prev) =>
+        prev.map((m) =>
+          (m.role === "assistant" || m.role === "tool") && m.isStreaming
+            ? { ...m, isStreaming: false }
+            : m,
+        );
     }
     case "tool_execution_start": {
       return (prev) => [
@@ -199,7 +204,12 @@ function handlePiEvent(
     case "turn_end":
     case "agent_settled":
     case "agent_end": {
-      return (prev) => prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m));
+      return (prev) =>
+        prev.map((m) =>
+          (m.role === "assistant" || m.role === "tool") && m.isStreaming
+            ? { ...m, isStreaming: false }
+            : m,
+        );
     }
     case "agent_start":
     case "auto_retry_start":
@@ -215,6 +225,11 @@ function handlePiEvent(
     case "thinking_level_changed":
     case "turn_start": {
       // unimplemented
+      return (prev) => prev;
+    }
+    default: {
+      event satisfies never;
+      console.error("Unhandled SSE event type:", (event as { type: string }).type);
       return (prev) => prev;
     }
   }
@@ -358,7 +373,13 @@ export default function Chat({ params: { sessionId } }: Route.ServerComponentPro
       { sessionId: sessionId, intent: "abort" },
       { method: "post", encType: "application/json" },
     );
-    setMessages((prev) => prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m)));
+    setMessages((prev) =>
+      prev.map((m) =>
+        (m.role === "assistant" || m.role === "tool") && m.isStreaming
+          ? { ...m, isStreaming: false }
+          : m,
+      ),
+    );
   }
 
   function selectModel(provider: string, modelId: string) {
