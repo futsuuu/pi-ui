@@ -5,14 +5,23 @@
 
 @theme {
   --font-sans:
-    "Inter", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
-    "Segoe UI Symbol", "Noto Color Emoji";
+    "Inter", "Noto Sans JP", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
+    "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
 /* Theme is managed by ThemeContext with .dark class on <html> */
 html,
 body {
   @apply bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100;
+  text-autospace: normal;
+  font-variant-ligatures: common-ligatures contextual;
+  font-variant-alternates: styleset(ss02);
+}
+
+.font-mono {
+  text-autospace: no-autospace;
+  font-variant-alternates: normal;
 }
 
 /* Scrollbar styling */
