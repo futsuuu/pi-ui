@@ -15,13 +15,12 @@ import {
   type CreateAgentSessionRuntimeFactory,
   type AgentSession,
   type AgentSessionRuntime,
+  type AgentSessionEvent,
 } from "@earendil-works/pi-coding-agent";
 
-export type SseEvent = {
-  type: string;
-  sessionId?: string | null;
-  [key: string]: unknown;
-};
+export type SseEvent =
+  | (AgentSessionEvent & { sessionId: string })
+  | (PiState & { type: "internal:state" });
 
 export interface PiState {
   cwd: string;
@@ -89,7 +88,7 @@ class PiServer {
 
   private subscribeToSession(session: AgentSession, sessionId: string) {
     session.subscribe((event) => {
-      this.broadcast({ ...event, sessionId } as unknown as SseEvent);
+      this.broadcast({ ...event, sessionId });
 
       // Broadcast state snapshot on key state changes so the client can
       // update isStreaming, model, thinkingLevel, etc.
@@ -102,15 +101,13 @@ class PiServer {
         event.type === "thinking_level_changed" ||
         event.type === "session_info_changed"
       ) {
-        void this.getState(sessionId).then((state) => {
-          this.broadcast({ type: "pi:state", ...state });
-        });
+        void this.broadcastState(sessionId);
       }
     });
   }
 
   private async broadcastState(sessionId: string) {
-    this.broadcast({ type: "pi:state", ...(await this.getState(sessionId)) });
+    this.broadcast({ type: "internal:state", ...(await this.getState(sessionId)) });
   }
 
   /**

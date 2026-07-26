@@ -1,11 +1,10 @@
-import type { AgentEvent } from "@earendil-works/pi-agent-core";
 import { MessageCircle, Send, Plus, Layers, Sun, Moon } from "lucide-react";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { redirect, useFetcher, useLoaderData, useNavigate } from "react-router";
 import * as v from "valibot";
 
 import { MessageEntry, toChatMessages, type ChatMessage } from "~/components/chat-message";
-import { getPiServer, type PiState } from "~/lib/pi-server";
+import { getPiServer, type PiState, type SseEvent } from "~/lib/pi-server";
 import { useTheme } from "~/lib/theme-context";
 import { MessageSchema } from "~/lib/validations";
 
@@ -101,6 +100,126 @@ export async function action({ request, params: { sessionId } }: Route.ActionArg
   }
 }
 
+function handlePiEvent(
+  event: Exclude<SseEvent, { type: "internal:state" }>,
+): React.SetStateAction<ChatMessage[]> {
+  switch (event.type) {
+    case "message_start": {
+      return (prev) => [...prev, { id: uid(), role: "assistant", content: "", isStreaming: true }];
+    }
+    case "message_update": {
+      const msgEvent = event.assistantMessageEvent;
+      if (msgEvent.type === "text_delta") {
+        return (prev) => {
+          const last = prev[prev.length - 1];
+          if (last?.role === "assistant" && last.isStreaming) {
+            const updated = [...prev];
+            updated[updated.length - 1] = { ...last, content: last.content + msgEvent.delta };
+            return updated;
+          }
+          return prev;
+        };
+      }
+      if (msgEvent.type === "thinking_delta") {
+        return (prev) => {
+          const last = prev[prev.length - 1];
+          if (last?.role === "assistant" && last.isStreaming) {
+            const updated = [...prev];
+            updated[updated.length - 1] = {
+              ...last,
+              thinking: (last.thinking || "") + msgEvent.delta,
+            };
+            return updated;
+          }
+          return prev;
+        };
+      }
+      if (msgEvent.type === "done" || msgEvent.type === "error") {
+        return (prev) => {
+          const last = prev[prev.length - 1];
+          if (last?.role === "assistant" && last.isStreaming) {
+            const updated = [...prev];
+            updated[updated.length - 1] = { ...last, isStreaming: false };
+            return updated;
+          }
+          return prev;
+        };
+      }
+      // unimplemented
+      return (prev) => prev;
+    }
+    case "message_end": {
+      return (prev) => prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m));
+    }
+    case "tool_execution_start": {
+      return (prev) => [
+        ...prev,
+        {
+          id: uid(),
+          role: "tool",
+          content: `Running ${event.toolName}...`,
+          toolName: event.toolName,
+          toolArgs: event.args,
+          isStreaming: true,
+        },
+      ];
+    }
+    case "tool_execution_update": {
+      const partial = (event as { partialResult?: { content?: { text?: string }[] } })
+        .partialResult;
+      const text = partial?.content?.[0]?.text ?? "";
+      return (prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.role === "tool" && last.isStreaming) {
+          const updated = [...prev];
+          updated[updated.length - 1] = { ...last, content: text };
+          return updated;
+        }
+        return prev;
+      };
+    }
+    case "tool_execution_end": {
+      const result = (event as { result?: { content?: { text?: string }[] } }).result;
+      const resultText = result?.content?.[0]?.text ?? "";
+      return (prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.role === "tool" && last.isStreaming) {
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            ...last,
+            content: resultText,
+            isStreaming: false,
+            isError: event.isError,
+          };
+          return updated;
+        }
+        return prev;
+      };
+    }
+    case "turn_end":
+    case "agent_settled":
+    case "agent_end": {
+      return (prev) => prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m));
+    }
+    case "agent_start":
+    case "auto_retry_start":
+    case "auto_retry_end":
+    case "compaction_start":
+    case "compaction_end":
+    case "entry_appended":
+    case "queue_update":
+    case "session_info_changed":
+    case "summarization_retry_scheduled":
+    case "summarization_retry_attempt_start":
+    case "summarization_retry_finished":
+    case "thinking_level_changed":
+    case "turn_start": {
+      // unimplemented
+      return (prev) => prev;
+    }
+  }
+}
+
 // --- Component ---
 export default function Chat({ params: { sessionId } }: Route.ServerComponentProps) {
   const { theme, toggleTheme } = useTheme();
@@ -142,7 +261,7 @@ export default function Chat({ params: { sessionId } }: Route.ServerComponentPro
   // doesn't overwrite SSE-streamed messages.
   useEffect(() => {
     setState(loaderState);
-    setMessages(toChatMessages(loaderMessages || []));
+    setMessages(toChatMessages(loaderMessages));
     setInput("");
     setShowModelSelector(false);
     setSelectedModel(
@@ -167,29 +286,24 @@ export default function Chat({ params: { sessionId } }: Route.ServerComponentPro
 
       es.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data);
+          const data = JSON.parse(event.data) as SseEvent;
 
           // Filter events for this session
           if (data.sessionId && data.sessionId !== sessionId) return;
 
-          if (data.type === "pi:state") {
-            const newState = data as PiState;
-            setState(newState);
-            if (newState.model) {
-              setSelectedModel({ provider: newState.model.provider, modelId: newState.model.id });
+          if (data.type === "internal:state") {
+            setState(data);
+            if (data.model) {
+              setSelectedModel({ provider: data.model.provider, modelId: data.model.id });
             }
-            setSelectedThinkingLevel(newState.thinkingLevel);
-            if (newState.sessionId && newState.sessionId !== sessionId) {
-              window.history.replaceState(
-                null,
-                "",
-                `/chat/${encodeURIComponent(newState.sessionId)}`,
-              );
+            setSelectedThinkingLevel(data.thinkingLevel);
+            if (data.sessionId && data.sessionId !== sessionId) {
+              window.history.replaceState(null, "", `/chat/${encodeURIComponent(data.sessionId)}`);
             }
             return;
           }
 
-          handlePiEvent(data);
+          setMessages(handlePiEvent(data));
         } catch (err) {
           console.warn("SSE parse error:", err);
         }
@@ -210,116 +324,6 @@ export default function Chat({ params: { sessionId } }: Route.ServerComponentPro
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
     };
   }, [sessionId]);
-
-  function handlePiEvent(event: AgentEvent | { type: "agent_settled" }) {
-    switch (event.type) {
-      case "message_start": {
-        setMessages((prev) => [
-          ...prev,
-          { id: uid(), role: "assistant", content: "", isStreaming: true },
-        ]);
-        break;
-      }
-      case "message_update": {
-        const msgEvent = event.assistantMessageEvent;
-        if (msgEvent.type === "text_delta") {
-          setMessages((prev) => {
-            const last = prev[prev.length - 1];
-            if (last?.role === "assistant" && last.isStreaming) {
-              const updated = [...prev];
-              updated[updated.length - 1] = { ...last, content: last.content + msgEvent.delta };
-              return updated;
-            }
-            return prev;
-          });
-        }
-        if (msgEvent.type === "thinking_delta") {
-          setMessages((prev) => {
-            const last = prev[prev.length - 1];
-            if (last?.role === "assistant" && last.isStreaming) {
-              const updated = [...prev];
-              updated[updated.length - 1] = {
-                ...last,
-                thinking: (last.thinking || "") + msgEvent.delta,
-              };
-              return updated;
-            }
-            return prev;
-          });
-        }
-        if (msgEvent.type === "done" || msgEvent.type === "error") {
-          setMessages((prev) => {
-            const last = prev[prev.length - 1];
-            if (last?.role === "assistant" && last.isStreaming) {
-              const updated = [...prev];
-              updated[updated.length - 1] = { ...last, isStreaming: false };
-              return updated;
-            }
-            return prev;
-          });
-        }
-        break;
-      }
-      case "message_end": {
-        setMessages((prev) => prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m)));
-        break;
-      }
-      case "tool_execution_start": {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: uid(),
-            role: "tool",
-            content: `Running ${event.toolName}...`,
-            toolName: event.toolName,
-            toolArgs: event.args,
-            isStreaming: true,
-          },
-        ]);
-        break;
-      }
-      case "tool_execution_update": {
-        const partial = (event as { partialResult?: { content?: { text?: string }[] } })
-          .partialResult;
-        const text = partial?.content?.[0]?.text ?? "";
-        setMessages((prev) => {
-          const last = prev[prev.length - 1];
-          if (last?.role === "tool" && last.isStreaming) {
-            const updated = [...prev];
-            updated[updated.length - 1] = { ...last, content: text };
-            return updated;
-          }
-          return prev;
-        });
-        break;
-      }
-      case "tool_execution_end": {
-        const result = (event as { result?: { content?: { text?: string }[] } }).result;
-        const resultText = result?.content?.[0]?.text ?? "";
-        setMessages((prev) => {
-          const last = prev[prev.length - 1];
-          if (last?.role === "tool" && last.isStreaming) {
-            const updated = [...prev];
-            updated[updated.length - 1] = {
-              ...last,
-              content: resultText,
-              isStreaming: false,
-              isError: event.isError,
-            };
-            return updated;
-          }
-          return prev;
-        });
-        break;
-      }
-      case "turn_end":
-      case "agent_settled":
-      case "agent_end": {
-        setMessages((prev) => prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m)));
-        break;
-      }
-    }
-  }
 
   function sendMessage() {
     const text = input.trim();

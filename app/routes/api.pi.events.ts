@@ -1,4 +1,4 @@
-import { getPiServer } from "~/lib/pi-server";
+import { getPiServer, type SseEvent } from "~/lib/pi-server";
 
 import type { Route } from "./+types/api.pi.events";
 
@@ -39,7 +39,8 @@ export async function loader({ request }: Route.LoaderArgs) {
         void pi
           .getState(sessionId)
           .then((state) => {
-            const initial = `data: ${JSON.stringify({ type: "pi:state", ...state })}\n\n`;
+            const event: SseEvent = { type: "internal:state", ...state };
+            const initial = `data: ${JSON.stringify(event)}\n\n`;
             try {
               controller.enqueue(encoder.encode(initial));
             } catch {}
