@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import {
   isRouteErrorResponse,
   Links,
@@ -24,11 +25,34 @@ export const links: Route.LinksFunction = () => [
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  // Global visualViewport handler – updates --visual-viewport-height on :root
+  // so all pages can use var(--visual-viewport-height, 100dvh) for correct
+  // layout on mobile browsers where the virtual keyboard changes the viewport.
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.visualViewport) return;
+
+    const root = document.documentElement;
+
+    const updateHeight = () => {
+      root.style.setProperty("--visual-viewport-height", `${window.visualViewport!.height}px`);
+    };
+
+    window.visualViewport.addEventListener("resize", updateHeight);
+    updateHeight();
+
+    return () => {
+      window.visualViewport?.removeEventListener("resize", updateHeight);
+    };
+  }, []);
+
   return (
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1, interactive-widget=resizes-content"
+        />
         <Meta />
         <Links />
         {/* Restore theme from localStorage immediately, before any React code runs.
@@ -39,8 +63,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
           }}
         />
       </head>
-      <body className="bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 min-h-screen">
-        <ThemeProvider>{children}</ThemeProvider>
+      <body className="bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 h-[var(--visual-viewport-height,100dvh)] flex flex-col">
+        <ThemeProvider>
+          <div className="flex-1 min-h-0 flex flex-col">{children}</div>
+        </ThemeProvider>
         <ScrollRestoration />
         <Scripts />
       </body>

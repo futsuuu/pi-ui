@@ -41,7 +41,7 @@ export default function Home() {
   const parentDir = currentDir.substring(0, currentDir.lastIndexOf("/")) || "/";
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="h-full flex flex-col">
       {/* Top bar */}
       <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
         <div className="max-w-3xl mx-auto px-4 h-14 flex items-center gap-3">

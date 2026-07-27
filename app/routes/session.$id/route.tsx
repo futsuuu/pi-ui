@@ -553,7 +553,7 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
   const hasModel = state?.model != null;
   const hasCwd = state?.cwd != null && state.cwd !== "";
   return (
-    <div className="h-[100dvh] flex flex-col">
+    <div className="h-full flex flex-col">
       {/* Top bar — fixed at top */}
       <div className="flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center gap-3">
