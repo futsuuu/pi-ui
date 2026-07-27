@@ -1,11 +1,6 @@
-import type {
-  TextContent,
-  ThinkingContent,
-  AssistantMessage,
-  StopReason,
-} from "@earendil-works/pi-ai";
-import { MessageCircle, Send, Plus, Layers, Sun, Moon } from "lucide-react";
-import { useEffect, useState, useRef, useCallback } from "react";
+import type { StopReason } from "@earendil-works/pi-ai";
+import { Layers, MessageCircle, Moon, Plus, Send, Sun } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useFetcher, useLoaderData, useNavigate } from "react-router";
 import * as v from "valibot";
 
@@ -14,7 +9,8 @@ import { useTheme } from "~/lib/theme-context";
 import { MessageSchema } from "~/lib/validations";
 
 import type { Route } from "./+types/route";
-import { MessageEntry, toChatMessages, type ChatMessage, type ToolMessage } from "./chat-message";
+import { AgentMessage, type Props as AgentMessageProps } from "./agent-message";
+import { buildToolCallMap, ToolCallContext } from "./tool-call-context";
 
 export function meta(_: Route.MetaArgs) {
   return [{ title: "Pi UI - Chat" }];
@@ -99,97 +95,73 @@ export async function action({ request, params: { id: sessionId } }: Route.Actio
   }
 }
 
-/** Extract text content from an AssistantMessage content array */
-function extractTextContent(content: AssistantMessage["content"] | undefined | null): string {
-  if (!content) return "";
-  return content
-    .filter((b): b is TextContent => b.type === "text")
-    .map((b: TextContent) => b.text)
-    .join("\n");
+/** Find the index of a tool result message by its toolCallId */
+function findToolIndex(messages: AgentMessageProps[], toolCallId: string): number {
+  return messages.findIndex((m) => m.role === "toolResult" && m.toolCallId === toolCallId);
 }
 
-/** Extract thinking content from an AssistantMessage content array */
-function extractThinkingContent(
-  content: AssistantMessage["content"] | undefined | null,
-): string | undefined {
-  if (!content) return undefined;
-  const thinking = content
-    .filter((b): b is ThinkingContent => b.type === "thinking")
-    .map((b: ThinkingContent) => b.thinking)
-    .join("\n");
-  return thinking || undefined;
-}
+type AgentMessagePropsWithKey = AgentMessageProps & { _key: string };
 
-/** Find the index of a tool message by its toolCallId */
-function findToolIndex(messages: ChatMessage[], toolCallId: string): number {
-  return messages.findIndex((m) => m.role === "tool" && m.toolCallId === toolCallId);
-}
-
-function handlePiEvent(
-  event: Exclude<SseEvent, { type: "internal:state" }>,
-): React.SetStateAction<ChatMessage[]> {
+function handlePiEvent(event: Exclude<SseEvent, { type: "internal:state" }>): {
+  messages: React.SetStateAction<AgentMessagePropsWithKey[]>;
+  toolCallMap?: React.SetStateAction<Map<string, { toolName: string; args: unknown }>>;
+} {
   switch (event.type) {
     case "message_start": {
-      return (prev) => [...prev, { id: uid(), role: "assistant", content: "", isStreaming: true }];
+      return {
+        messages: (prev) => [...prev, { _key: uid(), role: "assistant", content: [] }],
+      };
     }
     case "message_update": {
       const msgEvent = event.assistantMessageEvent;
 
-      // text_delta / thinking_delta: accumulate streaming content
       if (msgEvent.type === "text_delta") {
-        return (prev) => {
-          const last = prev[prev.length - 1];
-          if (last?.role === "assistant" && last.isStreaming) {
+        return {
+          messages: (prev) => {
+            const last = prev[prev.length - 1];
+            if (last?.role !== "assistant") return prev;
             const updated = [...prev];
-            updated[updated.length - 1] = { ...last, content: last.content + msgEvent.delta };
+            updated[updated.length - 1] = {
+              ...last,
+              content: [...last.content, { type: "text", text: msgEvent.delta }],
+            };
             return updated;
-          }
-          return prev;
+          },
         };
       }
 
       if (msgEvent.type === "thinking_delta") {
-        return (prev) => {
-          const last = prev[prev.length - 1];
-          if (last?.role === "assistant" && last.isStreaming) {
+        return {
+          messages: (prev) => {
+            const last = prev[prev.length - 1];
+            if (last?.role !== "assistant") return prev;
             const updated = [...prev];
             updated[updated.length - 1] = {
               ...last,
-              thinking: (last.thinking || "") + msgEvent.delta,
+              content: [...last.content, { type: "thinking", thinking: msgEvent.delta }],
             };
             return updated;
-          }
-          return prev;
+          },
         };
       }
 
-      // done / error: finalise the assistant message with full content and error info
       if (msgEvent.type === "done" || msgEvent.type === "error") {
         const finalMessage = msgEvent.type === "done" ? msgEvent.message : msgEvent.error;
-        const finalContent = extractTextContent(finalMessage?.content);
-        const finalThinking = extractThinkingContent(finalMessage?.content);
-        const stopReason = finalMessage?.stopReason;
-        const errorMessage = finalMessage?.errorMessage;
-
-        return (prev) => {
-          const last = prev[prev.length - 1];
-          if (last?.role === "assistant" && last.isStreaming) {
+        return {
+          messages: (prev) => {
+            const last = prev[prev.length - 1];
+            if (last?.role !== "assistant") return prev;
             const updated = [...prev];
             updated[updated.length - 1] = {
-              ...last,
-              content: finalContent || last.content,
-              thinking: finalThinking || last.thinking,
-              isStreaming: false,
-              stopReason,
-              errorMessage,
+              _key: last._key,
+              ...finalMessage,
             };
             return updated;
-          }
-          return prev;
+          },
         };
       }
 
-      // text_end / thinking_end: ignore — content already accumulated via deltas
+      // Sub-events that don't need UI updates
       if (
         msgEvent.type === "text_end" ||
         msgEvent.type === "thinking_end" ||
@@ -197,80 +169,100 @@ function handlePiEvent(
         msgEvent.type === "thinking_start" ||
         msgEvent.type === "toolcall_start" ||
         msgEvent.type === "toolcall_delta" ||
-        msgEvent.type === "toolcall_end"
+        msgEvent.type === "toolcall_end" ||
+        msgEvent.type === "start"
       ) {
-        return (prev) => prev;
-      }
-
-      // start event: ignore, first message_update with content will follow
-      if (msgEvent.type === "start") {
-        return (prev) => prev;
+        return { messages: (prev) => prev };
       }
 
       msgEvent satisfies never;
-      return (prev) => prev;
+      return { messages: (prev) => prev };
     }
     case "message_end": {
-      // If we haven't seen done/error yet (e.g. empty response), finalise streaming here
-      return (prev) =>
-        prev.map((m) =>
-          (m.role === "assistant" || m.role === "tool") && m.isStreaming
-            ? { ...m, isStreaming: false }
-            : m,
-        );
+      return {
+        messages: (prev) =>
+          prev.map((m) =>
+            m.role === "assistant" && m.stopReason === undefined ? { ...m, stopReason: "stop" } : m,
+          ),
+      };
     }
     case "tool_execution_start": {
-      return (prev) => [
-        ...prev,
-        {
-          id: uid(),
-          role: "tool",
-          content: `Running ${event.toolName}...`,
-          toolName: event.toolName,
-          toolCallId: event.toolCallId,
-          toolArgs: event.args,
-          isStreaming: true,
-        },
-      ];
+      return {
+        messages: (prev) => [
+          ...prev,
+          {
+            _key: uid(),
+            role: "toolResult",
+            content: [],
+            toolName: event.toolName,
+            toolCallId: event.toolCallId,
+            isError: false,
+            isStreaming: true,
+          },
+        ],
+        toolCallMap: (prev) =>
+          new Map(prev).set(event.toolCallId, {
+            toolName: event.toolName,
+            args: event.args,
+          }),
+      };
     }
     case "tool_execution_update": {
-      const partialResult = (event as { partialResult?: { content?: { text?: string }[] } })
-        .partialResult;
-      const text = partialResult?.content?.[0]?.text ?? "";
+      const partialResult = (
+        event as {
+          partialResult?: { content?: { type: string; text?: string }[] };
+        }
+      ).partialResult;
+      const updateText = partialResult?.content?.[0]?.text ?? "";
 
-      return (prev) => {
-        const idx = findToolIndex(prev, event.toolCallId);
-        if (idx === -1) return prev;
-        const updated = [...prev];
-        updated[idx] = { ...(updated[idx] as ToolMessage), content: text };
-        return updated;
+      return {
+        messages: (prev) => {
+          const idx = findToolIndex(prev, event.toolCallId);
+          if (idx === -1) return prev;
+          const updated = [...prev];
+          updated[idx] = {
+            ...(updated[idx] as Extract<AgentMessagePropsWithKey, { role: "toolResult" }>),
+            content: updateText ? [{ type: "text", text: updateText }] : [],
+          };
+          return updated;
+        },
       };
     }
     case "tool_execution_end": {
-      const result = (event as { result?: { content?: { text?: string }[] } }).result;
+      const result = (
+        event as {
+          result?: { content?: { type: string; text?: string }[] };
+        }
+      ).result;
       const resultText = result?.content?.[0]?.text ?? "";
 
-      return (prev) => {
-        const idx = findToolIndex(prev, event.toolCallId);
-        if (idx === -1) return prev;
-        const updated = [...prev];
-        updated[idx] = {
-          ...(updated[idx] as ToolMessage),
-          content: resultText,
-          isStreaming: false,
-          isError: event.isError,
-        };
-        return updated;
+      return {
+        messages: (prev) => {
+          const idx = findToolIndex(prev, event.toolCallId);
+          if (idx === -1) return prev;
+          const updated = [...prev];
+          updated[idx] = {
+            ...(updated[idx] as Extract<AgentMessagePropsWithKey, { role: "toolResult" }>),
+            content: resultText ? [{ type: "text", text: resultText }] : [],
+            isStreaming: false,
+            isError: event.isError,
+          };
+          return updated;
+        },
       };
     }
     case "turn_end":
     case "agent_settled": {
-      return (prev) =>
-        prev.map((m) =>
-          (m.role === "assistant" || m.role === "tool") && m.isStreaming
-            ? { ...m, isStreaming: false }
-            : m,
-        );
+      return {
+        messages: (prev) =>
+          prev.map((m) =>
+            m.role === "assistant" && m.stopReason === undefined
+              ? { ...m, stopReason: "stop" }
+              : m.role === "toolResult" && m.isStreaming
+                ? { ...m, isStreaming: false }
+                : m,
+          ),
+      };
     }
     case "agent_end": {
       // Extract error info from the final messages
@@ -287,28 +279,33 @@ function handlePiEvent(
         }
       }
 
-      return (prev) => {
-        let updated = [...prev];
+      return {
+        messages: (prev) => {
+          let updated = [...prev];
 
-        // If the last assistant message is still streaming, finalise it with error info
-        if (updated.length > 0) {
-          const last = updated[updated.length - 1];
-          if (last?.role === "assistant" && last.isStreaming) {
-            updated[updated.length - 1] = {
-              ...last,
-              isStreaming: false,
-              stopReason,
-              ...(errorMessage ? { errorMessage } : {}),
-            };
+          // If the last assistant message is still streaming, finalise it with error info
+          if (updated.length > 0) {
+            const last = updated[updated.length - 1];
+            if (last?.role === "assistant" && last.stopReason === undefined) {
+              updated[updated.length - 1] = {
+                _key: last._key,
+                role: "assistant",
+                content: last.content,
+                stopReason,
+                ...(errorMessage ? { errorMessage } : {}),
+              };
+            }
           }
-        }
 
-        // Close any remaining streaming messages (tool, assistant)
-        return updated.map((m) =>
-          (m.role === "assistant" || m.role === "tool") && m.isStreaming
-            ? { ...m, isStreaming: false }
-            : m,
-        );
+          // Close any remaining streaming messages
+          return updated.map((m) =>
+            m.role === "assistant" && m.stopReason === undefined
+              ? { ...m, stopReason: "stop" }
+              : m.role === "toolResult" && m.isStreaming
+                ? { ...m, isStreaming: false }
+                : m,
+          );
+        },
       };
     }
     case "agent_start":
@@ -324,13 +321,12 @@ function handlePiEvent(
     case "summarization_retry_finished":
     case "thinking_level_changed":
     case "turn_start": {
-      // unimplemented
-      return (prev) => prev;
+      return { messages: (prev) => prev };
     }
     default: {
       event satisfies never;
       console.error("Unhandled SSE event type:", (event as { type: string }).type);
-      return (prev) => prev;
+      return { messages: (prev) => prev };
     }
   }
 }
@@ -338,22 +334,35 @@ function handlePiEvent(
 // --- Component ---
 export default function Chat({ params: { id: sessionId } }: Route.ServerComponentProps) {
   const { theme, toggleTheme } = useTheme();
-  const { state: loaderState, messages: loaderMessages, models } = useLoaderData<typeof loader>();
+  const { state: loadedState, messages: loadedMessages, models } = useLoaderData<typeof loader>();
 
-  const [state, setState] = useState<PiState | null>(loaderState);
-  const [messages, setMessages] = useState<ChatMessage[]>(toChatMessages(loaderMessages));
+  const [state, setState] = useState<PiState | null>(loadedState);
+  const [eventMessages, setEventMessages] = useState<AgentMessagePropsWithKey[]>([]);
+  {
+    // If the loader re-validates, event messages are now included in loader data.
+    const prevLoadedMessages = useRef(loadedMessages);
+    if (loadedMessages !== prevLoadedMessages.current) {
+      prevLoadedMessages.current = loadedMessages;
+      // Render-time setState is safe here because:
+      // - it's conditional (only when loadedMessages reference changes), preventing infinite loop
+      // - React applies it synchronously within the render phase, before commit
+      // - this avoids race conditions with SSE events that useEffect would have
+      setEventMessages([]);
+    }
+  }
+  const [toolCallMap, setToolCallMap] = useState(() => buildToolCallMap(loadedMessages));
   const [input, setInput] = useState("");
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [connected, setConnected] = useState(false);
 
   // Local model/thinking selection — applied on prompt submit
   const [selectedModel, setSelectedModel] = useState<{ provider: string; modelId: string } | null>(
-    loaderState?.model
-      ? { provider: loaderState.model.provider, modelId: loaderState.model.id }
+    loadedState?.model
+      ? { provider: loadedState.model.provider, modelId: loadedState.model.id }
       : null,
   );
   const [selectedThinkingLevel, setSelectedThinkingLevel] = useState<string>(
-    loaderState?.thinkingLevel ?? "medium",
+    loadedState?.thinkingLevel ?? "medium",
   );
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -369,22 +378,23 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, scrollToBottom]);
+  }, [eventMessages, scrollToBottom]);
 
   // Reset local state when navigating to a different session.
   // Only depend on sessionId so that loader re-validation after actions
   // doesn't overwrite SSE-streamed messages.
   useEffect(() => {
-    setState(loaderState);
-    setMessages(toChatMessages(loaderMessages));
+    setState(loadedState);
+    setEventMessages([]);
+    setToolCallMap(buildToolCallMap(loadedMessages));
     setInput("");
     setShowModelSelector(false);
     setSelectedModel(
-      loaderState?.model
-        ? { provider: loaderState.model.provider, modelId: loaderState.model.id }
+      loadedState?.model
+        ? { provider: loadedState.model.provider, modelId: loadedState.model.id }
         : null,
     );
-    setSelectedThinkingLevel(loaderState?.thinkingLevel ?? "medium");
+    setSelectedThinkingLevel(loadedState?.thinkingLevel ?? "medium");
   }, [sessionId]);
 
   // Connect SSE for real-time updates
@@ -422,7 +432,11 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
             return;
           }
 
-          setMessages(handlePiEvent(data));
+          {
+            const result = handlePiEvent(data);
+            setEventMessages(result.messages);
+            if (result.toolCallMap) setToolCallMap(result.toolCallMap);
+          }
         } catch (err) {
           console.warn("SSE parse error:", err);
         }
@@ -448,7 +462,7 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
     const text = input.trim();
     if (!text || state?.isStreaming) return;
     setInput("");
-    setMessages((prev) => [...prev, { id: uid(), role: "user", content: text }]);
+    setEventMessages((prev) => [...prev, { _key: uid(), role: "user", content: text }]);
 
     const body: {
       intent: string;
@@ -477,11 +491,13 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
       { sessionId: sessionId, intent: "abort" },
       { method: "post", encType: "application/json" },
     );
-    setMessages((prev) =>
+    setEventMessages((prev) =>
       prev.map((m) =>
-        (m.role === "assistant" || m.role === "tool") && m.isStreaming
-          ? { ...m, isStreaming: false }
-          : m,
+        m.role === "assistant" && m.stopReason === undefined
+          ? { ...m, stopReason: "aborted" as const }
+          : m.role === "toolResult" && m.isStreaming
+            ? { ...m, isStreaming: false }
+            : m,
       ),
     );
   }
@@ -640,7 +656,7 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
       {/* Messages */}
       <div className="flex-1 overflow-y-auto min-h-0 w-full">
         <div className="max-w-5xl mx-auto px-4 py-4 space-y-4 min-h-full">
-          {messages.length === 0 ? (
+          {loadedMessages.length === 0 && eventMessages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center py-16">
               <MessageCircle
                 className="w-16 h-16 mb-4 text-gray-300 dark:text-gray-600"
@@ -653,7 +669,14 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
               </p>
             </div>
           ) : (
-            messages.map((msg) => <MessageEntry key={msg.id} msg={msg} />)
+            <ToolCallContext value={toolCallMap}>
+              {loadedMessages.map((msg, index) => (
+                <AgentMessage key={index} {...msg} />
+              ))}
+              {eventMessages.map((msg) => (
+                <AgentMessage key={msg._key} {...msg} />
+              ))}
+            </ToolCallContext>
           )}
 
           <div ref={messagesEndRef} />
