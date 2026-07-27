@@ -5,6 +5,10 @@ import type { Route } from "./+types/session.$id.events";
 export async function loader({ params: { id: sessionId } }: Route.LoaderArgs) {
   const pi = getPiServer();
 
+  // Validate session exists before opening SSE stream
+  const state = await pi.getState(sessionId);
+  if (!state) throw new Response(`Session ${sessionId} not found`, { status: 404 });
+
   let cleanup: (() => void) | undefined;
   let keepAlive: ReturnType<typeof setInterval> | undefined;
   let cleanedUp = false;
@@ -33,25 +37,22 @@ export async function loader({ params: { id: sessionId } }: Route.LoaderArgs) {
       });
 
       // Send initial state first, then flush buffered events
-      void pi
-        .getState(sessionId)
-        .then((state) => {
-          const event: SseEvent = { type: "internal:state", ...state };
-          const initial = `data: ${JSON.stringify(event)}\n\n`;
+      void pi.getState(sessionId).then((state) => {
+        if (!state) return;
+        const event: SseEvent = { type: "internal:state", ...state };
+        const initial = `data: ${JSON.stringify(event)}\n\n`;
+        try {
+          controller.enqueue(encoder.encode(initial));
+        } catch {}
+        ready = true;
+        // Flush buffered events (preserving order: initial state → buffered → live)
+        for (const item of buffer) {
           try {
-            controller.enqueue(encoder.encode(initial));
+            controller.enqueue(encoder.encode(item));
           } catch {}
-        })
-        .finally(() => {
-          ready = true;
-          // Flush buffered events (preserving order: initial state → buffered → live)
-          for (const item of buffer) {
-            try {
-              controller.enqueue(encoder.encode(item));
-            } catch {}
-          }
-          buffer = [];
-        });
+        }
+        buffer = [];
+      });
 
       keepAlive = setInterval(() => {
         try {

@@ -49,7 +49,7 @@ const RECENT_DIRS_FILE = ".pi-ui-recent-dirs.json";
 class PiServer {
   private sessions: Map<string, AgentSessionRuntime> = new Map();
   private sessionIndex: Map<string, SessionIndexEntry> = new Map();
-  private pendingRuntimes: Map<string, Promise<AgentSessionRuntime>> = new Map();
+  private pendingRuntimes: Map<string, Promise<AgentSessionRuntime | null>> = new Map();
   private modelRuntimePromise: Promise<ModelRuntime>;
   private createRuntimeFactory: CreateAgentSessionRuntimeFactory;
   private sseClients: Set<(event: SseEvent) => void> = new Set();
@@ -107,15 +107,19 @@ class PiServer {
   }
 
   private async broadcastState(sessionId: string) {
-    this.broadcast({ type: "internal:state", ...(await this.getState(sessionId)) });
+    const state = await this.getState(sessionId);
+    if (!state) return;
+    this.broadcast({ type: "internal:state", ...state });
   }
 
   /**
    * Ensure a runtime exists for the given session ID.
    * Checks the in-memory map, then the index (populated by getSessionsList),
    * then falls back to scanning session files on disk.
+   *
+   * @returns null if session not found, otherwise the runtime
    */
-  async ensureRuntime(sessionId: string): Promise<AgentSessionRuntime> {
+  async ensureRuntime(sessionId: string): Promise<AgentSessionRuntime | null> {
     // 1. Check already-created runtimes
     const existing = this.sessions.get(sessionId);
     if (existing) return existing;
@@ -136,7 +140,10 @@ class PiServer {
     }
   }
 
-  private async createRuntimeForSession(sessionId: string): Promise<AgentSessionRuntime> {
+  /**
+   * @returns null if session not found, otherwise the runtime
+   */
+  private async createRuntimeForSession(sessionId: string): Promise<AgentSessionRuntime | null> {
     const entry = this.sessionIndex.get(sessionId);
     if (entry) {
       const sessionManager = SessionManager.open(entry.path, undefined, entry.cwd);
@@ -149,7 +156,7 @@ class PiServer {
     // Fallback: scan all projects
     const allSessions = await SessionManager.listAll();
     const found = allSessions.find((s) => s.id === sessionId);
-    if (!found) throw new Error(`Session not found: ${sessionId}`);
+    if (!found) return null;
 
     const cwd = found.cwd || "";
     this.sessionIndex.set(sessionId, { path: found.path, cwd });
@@ -208,6 +215,7 @@ class PiServer {
     },
   ) {
     const runtime = await this.ensureRuntime(sessionId);
+    if (!runtime) throw new Error(`Session not found: ${sessionId}`);
     await this.applyOptions(runtime.session, options);
     await runtime.session.prompt(message);
   }
@@ -221,6 +229,7 @@ class PiServer {
     },
   ) {
     const runtime = await this.ensureRuntime(sessionId);
+    if (!runtime) throw new Error(`Session not found: ${sessionId}`);
     await this.applyOptions(runtime.session, options);
     await runtime.session.steer(message);
   }
@@ -234,6 +243,7 @@ class PiServer {
     },
   ) {
     const runtime = await this.ensureRuntime(sessionId);
+    if (!runtime) throw new Error(`Session not found: ${sessionId}`);
     await this.applyOptions(runtime.session, options);
     await runtime.session.followUp(message);
   }
@@ -264,49 +274,32 @@ class PiServer {
     await runtime.session.abort();
   }
 
-  async getState(sessionId: string): Promise<PiState> {
-    try {
-      const runtime = await this.ensureRuntime(sessionId);
-      const session = runtime.session;
-      return {
-        cwd: runtime.cwd,
-        model: session.model
-          ? {
-              name: session.model.name ?? "",
-              provider: session.model.provider ?? "",
-              id: session.model.id ?? "",
-            }
-          : null,
-        thinkingLevel: (session.thinkingLevel as ThinkingLevel) ?? "medium",
-        isStreaming: session.isStreaming,
-        isCompacting: session.isCompacting,
-        sessionFile: session.sessionFile ?? null,
-        sessionId: session.sessionId,
-        sessionName: session.sessionName ?? null,
-        messageCount: session.messages?.length ?? 0,
-      };
-    } catch {
-      return {
-        cwd: "",
-        model: null,
-        thinkingLevel: "medium" as ThinkingLevel,
-        isStreaming: false,
-        isCompacting: false,
-        sessionFile: null,
-        sessionId,
-        sessionName: null,
-        messageCount: 0,
-      };
-    }
+  async getState(sessionId: string): Promise<PiState | null> {
+    const runtime = await this.ensureRuntime(sessionId);
+    if (!runtime) return null;
+    const session = runtime.session;
+    return {
+      cwd: runtime.cwd,
+      model: session.model
+        ? {
+            name: session.model.name,
+            provider: session.model.provider,
+            id: session.model.id,
+          }
+        : null,
+      thinkingLevel: session.thinkingLevel,
+      isStreaming: session.isStreaming,
+      isCompacting: session.isCompacting,
+      sessionFile: session.sessionFile ?? null,
+      sessionId: session.sessionId,
+      sessionName: session.sessionName ?? null,
+      messageCount: session.messages.length,
+    };
   }
 
   async getMessages(sessionId: string): Promise<AgentMessage[]> {
-    try {
-      const runtime = await this.ensureRuntime(sessionId);
-      return runtime.session.messages ?? [];
-    } catch {
-      return [];
-    }
+    const runtime = await this.ensureRuntime(sessionId);
+    return runtime?.session.messages ?? [];
   }
 
   async getSessionsList(dir: string) {

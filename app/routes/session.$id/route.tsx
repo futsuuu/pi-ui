@@ -1,5 +1,5 @@
 import type { StopReason } from "@earendil-works/pi-ai";
-import { Layers, MessageCircle, Moon, Plus, Send, Sun } from "lucide-react";
+import { Layers, MessageCircle, Moon, Plus, Sun } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFetcher, useLoaderData, useNavigate } from "react-router";
 import * as v from "valibot";
@@ -10,13 +10,12 @@ import { MessageSchema } from "~/lib/validations";
 
 import type { Route } from "./+types/route";
 import { AgentMessage, type Props as AgentMessageProps } from "./agent-message";
+import { PromptForm } from "./prompt-form";
 import { buildToolCallMap, ToolCallContext } from "./tool-call-context";
 
 export function meta(_: Route.MetaArgs) {
   return [{ title: "Pi UI - Chat" }];
 }
-
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 /** Safe ID generator – works in all browsers and contexts */
 function uid(): string {
@@ -30,6 +29,7 @@ function uid(): string {
 export async function loader({ params: { id: sessionId } }: Route.LoaderArgs) {
   const pi = getPiServer();
   const state = await pi.getState(sessionId);
+  if (!state) throw new Response(`Session ${sessionId} not found`, { status: 404 });
   const messages = await pi.getMessages(sessionId);
   const models = await pi.getModels();
   return { state, messages, models };
@@ -55,8 +55,11 @@ export async function action({ request, params: { id: sessionId } }: Route.Actio
   };
   const intent = data.intent;
 
-  if (!sessionId && intent !== "new-session") {
-    return { error: "sessionId required" };
+  if (intent !== "new-session") {
+    const exists = await pi.getState(sessionId);
+    if (!exists) {
+      throw new Response(`Session ${sessionId} not found`, { status: 404 });
+    }
   }
 
   try {
@@ -336,7 +339,7 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
   const { theme, toggleTheme } = useTheme();
   const { state: loadedState, messages: loadedMessages, models } = useLoaderData<typeof loader>();
 
-  const [state, setState] = useState<PiState | null>(loadedState);
+  const [state, setState] = useState<PiState>(loadedState);
   const [eventMessages, setEventMessages] = useState<AgentMessagePropsWithKey[]>([]);
   {
     // If the loader re-validates, event messages are now included in loader data.
@@ -351,22 +354,9 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
     }
   }
   const [toolCallMap, setToolCallMap] = useState(() => buildToolCallMap(loadedMessages));
-  const [input, setInput] = useState("");
-  const [showModelSelector, setShowModelSelector] = useState(false);
   const [connected, setConnected] = useState(false);
-
-  // Local model/thinking selection — applied on prompt submit
-  const [selectedModel, setSelectedModel] = useState<{ provider: string; modelId: string } | null>(
-    loadedState?.model
-      ? { provider: loadedState.model.provider, modelId: loadedState.model.id }
-      : null,
-  );
-  const [selectedThinkingLevel, setSelectedThinkingLevel] = useState<string>(
-    loadedState?.thinkingLevel ?? "medium",
-  );
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -410,14 +400,6 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
     setState(loadedState);
     setEventMessages([]);
     setToolCallMap(buildToolCallMap(loadedMessages));
-    setInput("");
-    setShowModelSelector(false);
-    setSelectedModel(
-      loadedState?.model
-        ? { provider: loadedState.model.provider, modelId: loadedState.model.id }
-        : null,
-    );
-    setSelectedThinkingLevel(loadedState?.thinkingLevel ?? "medium");
   }, [sessionId]);
 
   // Connect SSE for real-time updates
@@ -441,10 +423,6 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
 
           if (data.type === "internal:state") {
             setState(data);
-            if (data.model) {
-              setSelectedModel({ provider: data.model.provider, modelId: data.model.id });
-            }
-            setSelectedThinkingLevel(data.thinkingLevel);
             if (data.sessionId && data.sessionId !== sessionId) {
               window.history.replaceState(
                 null,
@@ -481,10 +459,11 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
     };
   }, [sessionId]);
 
-  function sendMessage() {
-    const text = input.trim();
-    if (!text || state?.isStreaming) return;
-    setInput("");
+  function sendMessage(
+    text: string,
+    model: { provider: string; modelId: string } | null,
+    thinkingLevel: string,
+  ) {
     setEventMessages((prev) => [...prev, { _key: uid(), role: "user", content: text }]);
 
     const body: {
@@ -496,11 +475,11 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
       intent: "prompt",
       message: text,
     };
-    if (selectedModel) {
-      body.model = { provider: selectedModel.provider, modelId: selectedModel.modelId };
+    if (model) {
+      body.model = model;
     }
-    if (selectedThinkingLevel) {
-      body.thinkingLevel = selectedThinkingLevel;
+    if (thinkingLevel) {
+      body.thinkingLevel = thinkingLevel;
     }
 
     void fetcher.submit(body, {
@@ -525,34 +504,11 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
     );
   }
 
-  function selectModel(provider: string, modelId: string) {
-    setSelectedModel({ provider, modelId });
-    setShowModelSelector(false);
-  }
-
-  function cycleThinking() {
-    const currentIdx = THINKING_LEVELS.indexOf(
-      (selectedThinkingLevel ||
-        state?.thinkingLevel ||
-        "medium") as (typeof THINKING_LEVELS)[number],
-    );
-    const nextIdx = (currentIdx + 1) % THINKING_LEVELS.length;
-    setSelectedThinkingLevel(THINKING_LEVELS[nextIdx]);
-  }
-
   function newSessionFromChat() {
-    if (!state?.cwd) return;
     void fetcher.submit(
       { intent: "new-session", cwd: state.cwd },
       { method: "post", encType: "application/json" },
     );
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
   }
 
   const fetcherData = fetcher.data as
@@ -573,10 +529,10 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
     }
   }, [fetcher.state, fetcherData?.sessionId, navigate, sessionId]);
 
-  const hasModel = state?.model != null;
-  const hasCwd = state?.cwd != null && state.cwd !== "";
+  const hasModel = state.model != null;
+
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col relative">
       {/* Top bar — fixed at top */}
       <div className="flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center gap-3">
@@ -599,27 +555,6 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
         </div>
         {/* Secondary toolbar */}
         <div className="max-w-5xl mx-auto px-4 h-10 flex items-center gap-2 border-t border-gray-100 dark:border-gray-800">
-          {hasModel && (
-            <>
-              <button
-                onClick={() => setShowModelSelector(!showModelSelector)}
-                className="text-xs px-2.5 py-1 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-              >
-                {selectedModel
-                  ? (models.find(
-                      (m) =>
-                        m.provider === selectedModel.provider && m.id === selectedModel.modelId,
-                    )?.name ?? selectedModel.modelId)
-                  : (state?.model?.name ?? "Select Model")}
-              </button>
-              <button
-                onClick={cycleThinking}
-                className="text-xs px-2.5 py-1 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors capitalize"
-              >
-                {selectedThinkingLevel}
-              </button>
-            </>
-          )}
           <div className="ml-auto flex items-center gap-2">
             {state?.isStreaming && (
               <button
@@ -640,35 +575,6 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
         </div>
       </div>
 
-      {/* Model selector dropdown */}
-      {showModelSelector && (
-        <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-4 py-3">
-          <h3 className="text-sm font-medium mb-2">Select Model</h3>
-          {models.length === 0 ? (
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              No models available. Configure API keys via environment variables or Pi's auth.json.
-            </p>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
-              {models.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => selectModel(m.provider, m.id)}
-                  className={`text-left px-3 py-2 rounded-lg text-sm transition-colors border ${
-                    selectedModel?.provider === m.provider && selectedModel?.modelId === m.id
-                      ? "bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700"
-                      : "bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border-gray-200 dark:border-gray-700"
-                  }`}
-                >
-                  <p className="font-medium truncate">{m.name}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{m.provider}</p>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Error banner */}
       {fetcherData?.error && (
         <div className="bg-red-50 dark:bg-red-900/30 border-b border-red-200 dark:border-red-800 px-6 py-2">
@@ -680,11 +586,11 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto min-h-0 w-full"
+        className="flex-1 overflow-y-auto min-h-0 w-full pb-36"
       >
         <div className="max-w-5xl mx-auto px-4 py-4 space-y-4 min-h-full">
           {loadedMessages.length === 0 && eventMessages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center py-16">
+            <div className="flex flex-col items-center justify-center text-center py-16">
               <MessageCircle
                 className="w-16 h-16 mb-4 text-gray-300 dark:text-gray-600"
                 strokeWidth={1.5}
@@ -710,32 +616,16 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
         </div>
       </div>
 
-      {/* Input — fixed at bottom */}
-      <div className="flex-shrink-0 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
-        <div className="flex items-end gap-3 max-w-5xl mx-auto">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              state?.isStreaming
-                ? "Pi is thinking..."
-                : "Type a message... (Shift+Enter for newline)"
-            }
-            disabled={state?.isStreaming || !hasCwd}
-            rows={1}
-            className="flex-1 resize-none rounded-xl border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
-          />
-          <button
-            onClick={sendMessage}
-            disabled={!input.trim() || state?.isStreaming || !hasCwd}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white rounded-xl p-3 transition-colors disabled:cursor-not-allowed"
-          >
-            <Send className="w-5 h-5" strokeWidth={2} />
-          </button>
-        </div>
-      </div>
+      <PromptForm
+        key={sessionId}
+        isStreaming={state?.isStreaming ?? false}
+        models={models}
+        defaultModel={
+          state.model ? { provider: state.model.provider, modelId: state.model.id } : null
+        }
+        defaultThinkingLevel={state.thinkingLevel ?? "medium"}
+        onSend={sendMessage}
+      />
     </div>
   );
 }
