@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
 /* Class-based dark mode: <html class="dark"> controls all dark: variants */
 @custom-variant dark (&:where(.dark, .dark *));
 
