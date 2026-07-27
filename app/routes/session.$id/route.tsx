@@ -365,9 +365,13 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
     loadedState?.thinkingLevel ?? "medium",
   );
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Whether the user is scrolled near the bottom (within 50px threshold)
+  const shouldAutoScroll = useRef(true);
 
   const fetcher = useFetcher();
   const navigate = useNavigate();
@@ -376,9 +380,28 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
+  // Track scroll position — only auto-scroll if user is at the bottom
+  const handleScroll = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const threshold = 50;
+    shouldAutoScroll.current =
+      container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+  }, []);
+
+  // Auto-scroll on new messages only when user hasn't scrolled up
+  useEffect(() => {
+    if (shouldAutoScroll.current) {
+      scrollToBottom();
+    }
+  }, [eventMessages, scrollToBottom]);
+
+  // Also scroll on initial load of session (when loadedMessages are first rendered)
   useEffect(() => {
     scrollToBottom();
-  }, [eventMessages, scrollToBottom]);
+    // Reset to auto-follow for this session
+    shouldAutoScroll.current = true;
+  }, [sessionId]);
 
   // Reset local state when navigating to a different session.
   // Only depend on sessionId so that loader re-validation after actions
@@ -654,7 +677,11 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto min-h-0 w-full">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto min-h-0 w-full"
+      >
         <div className="max-w-5xl mx-auto px-4 py-4 space-y-4 min-h-full">
           {loadedMessages.length === 0 && eventMessages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center py-16">
