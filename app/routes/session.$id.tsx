@@ -6,7 +6,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import { MessageCircle, Send, Plus, Layers, Sun, Moon } from "lucide-react";
 import { useEffect, useState, useRef, useCallback } from "react";
-import { redirect, useFetcher, useLoaderData, useNavigate } from "react-router";
+import { useFetcher, useLoaderData, useNavigate } from "react-router";
 import * as v from "valibot";
 
 import {
@@ -19,7 +19,7 @@ import { getPiServer, type PiState, type SseEvent } from "~/lib/pi-server";
 import { useTheme } from "~/lib/theme-context";
 import { MessageSchema } from "~/lib/validations";
 
-import type { Route } from "./+types/chat";
+import type { Route } from "./+types/session.$id";
 
 export function meta(_: Route.MetaArgs) {
   return [{ title: "Pi UI - Chat" }];
@@ -36,23 +36,16 @@ function uid(): string {
 }
 
 // --- Server-side loader ---
-export async function loader({ params }: Route.LoaderArgs) {
+export async function loader({ params: { id: sessionId } }: Route.LoaderArgs) {
   const pi = getPiServer();
-
-  const sessionId = params.sessionId;
-  if (!sessionId) {
-    return redirect("/");
-  }
-
   const state = await pi.getState(sessionId);
   const messages = await pi.getMessages(sessionId);
   const models = await pi.getModels();
-
   return { state, messages, models };
 }
 
 // --- Server-side action ---
-export async function action({ request, params: { sessionId } }: Route.ActionArgs) {
+export async function action({ request, params: { id: sessionId } }: Route.ActionArgs) {
   const pi = getPiServer();
 
   let body: unknown;
@@ -348,7 +341,7 @@ function handlePiEvent(
 }
 
 // --- Component ---
-export default function Chat({ params: { sessionId } }: Route.ServerComponentProps) {
+export default function Chat({ params: { id: sessionId } }: Route.ServerComponentProps) {
   const { theme, toggleTheme } = useTheme();
   const { state: loaderState, messages: loaderMessages, models } = useLoaderData<typeof loader>();
 
@@ -403,7 +396,7 @@ export default function Chat({ params: { sessionId } }: Route.ServerComponentPro
   useEffect(() => {
     function connectSSE() {
       eventSourceRef.current?.close();
-      const es = new EventSource(`/api/pi/events?sessionId=${encodeURIComponent(sessionId)}`);
+      const es = new EventSource(`/session/${encodeURIComponent(sessionId)}/events`);
       eventSourceRef.current = es;
 
       es.onopen = () => {
@@ -425,7 +418,11 @@ export default function Chat({ params: { sessionId } }: Route.ServerComponentPro
             }
             setSelectedThinkingLevel(data.thinkingLevel);
             if (data.sessionId && data.sessionId !== sessionId) {
-              window.history.replaceState(null, "", `/chat/${encodeURIComponent(data.sessionId)}`);
+              window.history.replaceState(
+                null,
+                "",
+                `/session/${encodeURIComponent(data.sessionId)}`,
+              );
             }
             return;
           }
@@ -538,7 +535,7 @@ export default function Chat({ params: { sessionId } }: Route.ServerComponentPro
     ) {
       const next = fetcherData.sessionId;
       fetcher.reset();
-      void navigate(`/chat/${encodeURIComponent(next)}`);
+      void navigate(`/session/${encodeURIComponent(next)}`);
     }
   }, [fetcher.state, fetcherData?.sessionId, navigate, sessionId]);
 

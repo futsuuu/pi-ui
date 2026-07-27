@@ -5,7 +5,7 @@ import { useLoaderData, useNavigate } from "react-router";
 import { getPiServer } from "~/lib/pi-server";
 import { useTheme } from "~/lib/theme-context";
 
-import type { Route } from "./+types/home";
+import type { Route } from "./+types/_index";
 
 export function meta(_: Route.MetaArgs) {
   return [{ title: "Pi UI - Select Directory" }];
@@ -48,7 +48,7 @@ export default function Home() {
   );
 
   function selectDir(dirPath: string) {
-    void navigate(`/sessions?dir=${encodeURIComponent(dirPath)}`);
+    void navigate(`/session?dir=${encodeURIComponent(dirPath)}`);
   }
 
   function goUp() {

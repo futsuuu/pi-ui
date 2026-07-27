@@ -1,11 +1,9 @@
 import { getPiServer, type SseEvent } from "~/lib/pi-server";
 
-import type { Route } from "./+types/api.pi.events";
+import type { Route } from "./+types/session.$id.events";
 
-export async function loader({ request }: Route.LoaderArgs) {
+export async function loader({ params: { id: sessionId } }: Route.LoaderArgs) {
   const pi = getPiServer();
-  const url = new URL(request.url);
-  const sessionId = url.searchParams.get("sessionId");
 
   let cleanup: (() => void) | undefined;
   let keepAlive: ReturnType<typeof setInterval> | undefined;
@@ -15,7 +13,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     start(controller) {
       const encoder = new TextEncoder();
       let buffer: string[] = [];
-      let ready = !sessionId; // no filter → forward events immediately
+      let ready = false;
 
       // Subscribe immediately so no events are missed; buffer until ready
       const unsubscribe = pi.subscribe((event) => {
@@ -34,28 +32,26 @@ export async function loader({ request }: Route.LoaderArgs) {
         }
       });
 
-      if (sessionId) {
-        // Send initial state first, then flush buffered events
-        void pi
-          .getState(sessionId)
-          .then((state) => {
-            const event: SseEvent = { type: "internal:state", ...state };
-            const initial = `data: ${JSON.stringify(event)}\n\n`;
+      // Send initial state first, then flush buffered events
+      void pi
+        .getState(sessionId)
+        .then((state) => {
+          const event: SseEvent = { type: "internal:state", ...state };
+          const initial = `data: ${JSON.stringify(event)}\n\n`;
+          try {
+            controller.enqueue(encoder.encode(initial));
+          } catch {}
+        })
+        .finally(() => {
+          ready = true;
+          // Flush buffered events (preserving order: initial state → buffered → live)
+          for (const item of buffer) {
             try {
-              controller.enqueue(encoder.encode(initial));
+              controller.enqueue(encoder.encode(item));
             } catch {}
-          })
-          .finally(() => {
-            ready = true;
-            // Flush buffered events (preserving order: initial state → buffered → live)
-            for (const item of buffer) {
-              try {
-                controller.enqueue(encoder.encode(item));
-              } catch {}
-            }
-            buffer = [];
-          });
-      }
+          }
+          buffer = [];
+        });
 
       keepAlive = setInterval(() => {
         try {

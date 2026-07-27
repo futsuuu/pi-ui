@@ -7,7 +7,7 @@ import { getPiServer } from "~/lib/pi-server";
 import { useTheme } from "~/lib/theme-context";
 import { SessionPathSchema } from "~/lib/validations";
 
-import type { Route } from "./+types/sessions";
+import type { Route } from "./+types/session._index";
 
 export function meta(_: Route.MetaArgs) {
   return [{ title: "Pi UI - Sessions" }];
@@ -71,7 +71,7 @@ export default function Sessions() {
   // Navigate after successful session open/new
   useEffect(() => {
     if (fetcher.state === "idle" && fetcherData?.sessionId) {
-      void navigate(`/chat/${encodeURIComponent(fetcherData.sessionId)}`);
+      void navigate(`/session/${encodeURIComponent(fetcherData.sessionId)}`);
     }
   }, [fetcher.state, fetcherData?.sessionId, navigate]);
 

@@ -15,6 +15,7 @@
     "@earendil-works/pi-coding-agent": "^0.81.1",
     "@mantine/core": "^9.4.2",
     "@mantine/hooks": "^9.4.2",
+    "@react-router/fs-routes": "^8.3.0",
     "@react-router/node": "^8.3.0",
     "@react-router/serve": "^8.3.0",
     "isbot": "^5.2.1",
