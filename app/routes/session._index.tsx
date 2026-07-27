@@ -1,6 +1,6 @@
 import { Plus, Clock, Layers, Sun, Moon } from "lucide-react";
 import { useEffect } from "react";
-import { redirect, useFetcher, useLoaderData, useNavigate } from "react-router";
+import { Link, redirect, useFetcher, useLoaderData, useNavigate } from "react-router";
 import * as v from "valibot";
 
 import { getPiServer } from "~/lib/pi-server";
@@ -75,13 +75,6 @@ export default function Sessions() {
     }
   }, [fetcher.state, fetcherData?.sessionId, navigate]);
 
-  async function openSession(sessionPath: string) {
-    void fetcher.submit(
-      { intent: "open-session", sessionPath },
-      { method: "post", encType: "application/json" },
-    );
-  }
-
   async function newSession() {
     void fetcher.submit({ intent: "new-session" }, { method: "post", encType: "application/json" });
   }
@@ -152,11 +145,10 @@ export default function Sessions() {
         ) : (
           <div className="space-y-2">
             {sessions.map((session) => (
-              <button
+              <Link
                 key={session.id}
-                onClick={() => openSession(session.path)}
-                disabled={switching}
-                className="w-full text-left bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-sm transition-all disabled:opacity-50"
+                to={`/session/${encodeURIComponent(session.id)}`}
+                className="block w-full text-left bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-sm transition-all"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0 flex-1">
@@ -176,7 +168,7 @@ export default function Sessions() {
                     </p>
                   </div>
                 </div>
-              </button>
+              </Link>
             ))}
           </div>
         )}
