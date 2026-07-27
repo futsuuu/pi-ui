@@ -9,17 +9,12 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useFetcher, useLoaderData, useNavigate } from "react-router";
 import * as v from "valibot";
 
-import {
-  MessageEntry,
-  toChatMessages,
-  type ChatMessage,
-  type ToolMessage,
-} from "~/components/chat-message";
 import { getPiServer, type PiState, type SseEvent } from "~/lib/pi-server";
 import { useTheme } from "~/lib/theme-context";
 import { MessageSchema } from "~/lib/validations";
 
-import type { Route } from "./+types/session.$id";
+import type { Route } from "./+types/route";
+import { MessageEntry, toChatMessages, type ChatMessage, type ToolMessage } from "./chat-message";
 
 export function meta(_: Route.MetaArgs) {
   return [{ title: "Pi UI - Chat" }];
