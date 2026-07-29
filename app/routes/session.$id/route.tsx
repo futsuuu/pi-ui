@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useFetcher, useLoaderData, useNavigate } from "react-router";
 import * as v from "valibot";
 
+import { ScrollArea } from "~/components/scroll-area";
 import { getPiServer, type PiState, type SseEvent } from "~/lib/pi-server";
 import { useTheme } from "~/lib/theme-context";
 import { MessageSchema } from "~/lib/validations";
@@ -583,12 +584,8 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
       )}
 
       {/* Messages */}
-      <div
-        ref={scrollContainerRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto min-h-0 w-full pb-36"
-      >
-        <div className="max-w-5xl mx-auto px-4 py-4 space-y-4 min-h-full">
+      <ScrollArea ref={scrollContainerRef} onScroll={handleScroll} viewportClassName="pb-36">
+        <div className="max-w-5xl max-lg:max-w-[100vw] w-full mx-auto px-4 py-4 space-y-4 min-h-full min-w-0">
           {loadedMessages.length === 0 && eventMessages.length === 0 ? (
             <div className="flex flex-col items-center justify-center text-center py-16">
               <MessageCircle
@@ -614,7 +611,7 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
 
           <div ref={messagesEndRef} />
         </div>
-      </div>
+      </ScrollArea>
 
       <PromptForm
         key={sessionId}
