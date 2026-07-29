@@ -8,10 +8,11 @@ import {
   ScrollRestoration,
 } from "react-router";
 
+import "./app.css";
 import type { Route } from "./+types/root";
 import { ThemeProvider, ThemeScript } from "./contexts/theme";
-
-import "./app.css";
+import { workspaceRepositoryContext } from "./router-contexts";
+import { getSingletonContainer } from "./singleton-container";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -24,22 +25,25 @@ export const links: Route.LinksFunction = () => [
   { rel: "stylesheet", href: "https://rsms.me/inter/inter.css" },
 ];
 
+export const middleware: Route.MiddlewareFunction[] = [
+  async ({ context }) => {
+    const container = await getSingletonContainer();
+    context.set(workspaceRepositoryContext, container.workspaceRepository);
+  },
+];
+
 export function Layout({ children }: { children: React.ReactNode }) {
   // Global visualViewport handler – updates --visual-viewport-height on :root
   // so all pages can use var(--visual-viewport-height, 100dvh) for correct
   // layout on mobile browsers where the virtual keyboard changes the viewport.
   useEffect(() => {
     if (typeof window === "undefined" || !window.visualViewport) return;
-
     const root = document.documentElement;
-
     const updateHeight = () => {
       root.style.setProperty("--visual-viewport-height", `${window.visualViewport!.height}px`);
     };
-
     window.visualViewport.addEventListener("resize", updateHeight);
     updateHeight();
-
     return () => {
       window.visualViewport?.removeEventListener("resize", updateHeight);
     };
@@ -57,7 +61,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
         <ThemeScript />
       </head>
-      <body className="bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 h-[var(--visual-viewport-height,100dvh)] flex flex-col">
+      <body className="bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 h-(--visual-viewport-height,100dvh) flex flex-col">
         <ThemeProvider>
           <div className="flex-1 min-h-0 flex flex-col">{children}</div>
         </ThemeProvider>

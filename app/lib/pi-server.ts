@@ -1,8 +1,3 @@
-import { readFileSync } from "node:fs";
-import { writeFile, mkdir, readdir } from "node:fs/promises";
-import { homedir } from "node:os";
-import path from "node:path";
-
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Model, Api } from "@earendil-works/pi-ai";
 import {
@@ -34,17 +29,10 @@ export interface PiState {
   messageCount: number;
 }
 
-interface RecentDir {
-  path: string;
-  lastOpened: number;
-}
-
 interface SessionIndexEntry {
   path: string;
   cwd: string;
 }
-
-const RECENT_DIRS_FILE = ".pi-ui-recent-dirs.json";
 
 class PiServer {
   private sessions: Map<string, AgentSessionRuntime> = new Map();
@@ -53,12 +41,8 @@ class PiServer {
   private modelRuntimePromise: Promise<ModelRuntime>;
   private createRuntimeFactory: CreateAgentSessionRuntimeFactory;
   private sseClients: Set<(event: SseEvent) => void> = new Set();
-  private recentDirs: RecentDir[] = [];
-  private recentDirsPath: string;
 
   constructor() {
-    this.recentDirsPath = path.join(homedir(), RECENT_DIRS_FILE);
-    this.loadRecentDirs();
     this.modelRuntimePromise = ModelRuntime.create();
     this.createRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
       const services = await createAgentSessionServices({ cwd });
@@ -319,60 +303,6 @@ class PiServer {
   async getModels(): Promise<readonly Model<Api>[]> {
     const mr = await this.ensureModelRuntime();
     return mr.getAvailable();
-  }
-
-  private loadRecentDirs() {
-    try {
-      const data = readFileSync(this.recentDirsPath, "utf-8");
-      this.recentDirs = JSON.parse(data);
-    } catch {
-      this.recentDirs = [];
-    }
-  }
-
-  private async saveRecentDirs() {
-    try {
-      await mkdir(path.dirname(this.recentDirsPath), { recursive: true });
-      await writeFile(this.recentDirsPath, JSON.stringify(this.recentDirs, null, 2));
-    } catch {}
-  }
-
-  getRecentDirs(): RecentDir[] {
-    return this.recentDirs.slice(0, 10);
-  }
-
-  async addRecentDir(dirPath: string) {
-    this.recentDirs = this.recentDirs.filter((d) => d.path !== dirPath);
-    this.recentDirs.unshift({ path: dirPath, lastOpened: Date.now() });
-    if (this.recentDirs.length > 20) this.recentDirs = this.recentDirs.slice(0, 20);
-    await this.saveRecentDirs();
-  }
-
-  async listDirectory(
-    dirPath: string,
-  ): Promise<{ name: string; path: string; isDirectory: boolean }[]> {
-    try {
-      const entries = await readdir(dirPath, { withFileTypes: true });
-      const result = entries
-        .filter((e) => e.name.charAt(0) !== ".")
-        .map((e) => ({
-          name: e.name,
-          path: path.join(dirPath, e.name),
-          isDirectory: e.isDirectory(),
-        }))
-        .sort((a, b) => {
-          if (a.isDirectory && !b.isDirectory) return -1;
-          if (!a.isDirectory && b.isDirectory) return 1;
-          return a.name.localeCompare(b.name);
-        });
-      return result;
-    } catch {
-      return [];
-    }
-  }
-
-  getHomeDir(): string {
-    return homedir();
   }
 
   subscribe(callback: (event: SseEvent) => void): () => void {

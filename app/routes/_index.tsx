@@ -1,8 +1,12 @@
+import { readdir } from "node:fs/promises";
+import { homedir } from "node:os";
+import path from "node:path";
+
 import { Folder, ArrowLeft, File, Layers, Sun, Moon, ArrowRight } from "lucide-react";
 import { Link, useLoaderData } from "react-router";
 
-import { getPiServer } from "~/lib/pi-server";
 import { useTheme } from "~/contexts/theme";
+import { workspaceRepositoryContext } from "~/router-contexts";
 
 import type { Route } from "./+types/_index";
 
@@ -10,16 +14,33 @@ export function meta(_: Route.MetaArgs) {
   return [{ title: "Pi UI - Select Directory" }];
 }
 
-export async function loader({ request }: Route.LoaderArgs) {
-  const pi = getPiServer();
+export async function loader({ request, context }: Route.LoaderArgs) {
+  const workspaceRepository = context.get(workspaceRepositoryContext);
 
   const url = new URL(request.url);
   const dirFromUrl = url.searchParams.get("dir");
 
-  const homeDir = pi.getHomeDir();
-  const recentDirs = pi.getRecentDirs();
+  const homeDir = homedir();
+  const recentDirs = workspaceRepository.list();
   const currentDir = dirFromUrl || homeDir;
-  const entries = await pi.listDirectory(currentDir);
+
+  let entries: { name: string; path: string; isDirectory: boolean }[] = [];
+  try {
+    const dirents = await readdir(currentDir, { withFileTypes: true });
+    entries = dirents
+      .map((e) => ({
+        name: e.name,
+        path: path.join(currentDir, e.name),
+        isDirectory: e.isDirectory(),
+      }))
+      .sort((a, b) => {
+        if (a.isDirectory && !b.isDirectory) return -1;
+        if (!a.isDirectory && b.isDirectory) return 1;
+        return a.name.localeCompare(b.name);
+      });
+  } catch {
+    entries = [];
+  }
 
   // Build breadcrumbs from currentDir
   const parts = currentDir.split("/").filter(Boolean);

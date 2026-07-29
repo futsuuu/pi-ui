@@ -50,9 +50,7 @@ function MessageInput({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={
-            isStreaming ? "Pi is thinking…" : "Type a message… (Ctrl+Enter to send)"
-          }
+          placeholder={isStreaming ? "Pi is thinking…" : "Type a message… (Ctrl+Enter to send)"}
           disabled={isStreaming}
           rows={1}
           className="w-full resize-none bg-transparent text-sm focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden max-h-60"

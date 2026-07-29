@@ -6,6 +6,7 @@ import * as v from "valibot";
 import { useTheme } from "~/contexts/theme";
 import { getPiServer } from "~/lib/pi-server";
 import { SessionPathSchema } from "~/lib/validations";
+import { workspaceRepositoryContext } from "~/router-contexts";
 
 import type { Route } from "./+types/session._index";
 
@@ -13,7 +14,7 @@ export function meta(_: Route.MetaArgs) {
   return [{ title: "Pi UI - Sessions" }];
 }
 
-export async function loader({ request }: Route.LoaderArgs) {
+export async function loader({ request, context }: Route.LoaderArgs) {
   const pi = getPiServer();
 
   const url = new URL(request.url);
@@ -22,8 +23,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     throw redirect("/");
   }
 
-  // Track recent directory
-  await pi.addRecentDir(dir);
+  const workspaceRepository = context.get(workspaceRepositoryContext);
+  await workspaceRepository.add(dir);
 
   const sessions = await pi.getSessionsList(dir);
   const sorted = sessions.sort((a, b) => b.timestamp - a.timestamp);
