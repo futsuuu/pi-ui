@@ -36,7 +36,7 @@ function MessageInput({
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       handleSubmit();
     }
@@ -51,7 +51,7 @@ function MessageInput({
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={
-            isStreaming ? "Pi is thinking…" : "Type a message… (Shift+Enter for newline)"
+            isStreaming ? "Pi is thinking…" : "Type a message… (Ctrl+Enter to send)"
           }
           disabled={isStreaming}
           rows={1}
