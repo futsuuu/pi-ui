@@ -9,7 +9,7 @@ import {
 } from "react-router";
 
 import type { Route } from "./+types/root";
-import { ThemeProvider } from "./lib/theme-context";
+import { ThemeProvider, ThemeScript } from "./contexts/theme";
 
 import "./app.css";
 
@@ -46,7 +46,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
         <meta
@@ -55,13 +55,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         />
         <Meta />
         <Links />
-        {/* Restore theme from localStorage immediately, before any React code runs.
-            This prevents a flash of wrong theme on first paint. */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('theme');document.documentElement.className=t==='light'?'':'dark'}catch(e){}})()`,
-          }}
-        />
+        <ThemeScript />
       </head>
       <body className="bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 h-[var(--visual-viewport-height,100dvh)] flex flex-col">
         <ThemeProvider>

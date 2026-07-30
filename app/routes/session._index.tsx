@@ -3,8 +3,8 @@ import { useEffect } from "react";
 import { Link, redirect, useFetcher, useLoaderData, useNavigate } from "react-router";
 import * as v from "valibot";
 
+import { useTheme } from "~/contexts/theme";
 import { getPiServer } from "~/lib/pi-server";
-import { useTheme } from "~/lib/theme-context";
 import { SessionPathSchema } from "~/lib/validations";
 
 import type { Route } from "./+types/session._index";

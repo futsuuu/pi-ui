@@ -2,7 +2,7 @@ import { Folder, ArrowLeft, File, Layers, Sun, Moon, ArrowRight } from "lucide-r
 import { Link, useLoaderData } from "react-router";
 
 import { getPiServer } from "~/lib/pi-server";
-import { useTheme } from "~/lib/theme-context";
+import { useTheme } from "~/contexts/theme";
 
 import type { Route } from "./+types/_index";
 

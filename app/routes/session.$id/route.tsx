@@ -5,8 +5,8 @@ import { useFetcher, useLoaderData, useNavigate } from "react-router";
 import * as v from "valibot";
 
 import { ScrollArea } from "~/components/scroll-area";
+import { useTheme } from "~/contexts/theme";
 import { getPiServer, type PiState, type SseEvent } from "~/lib/pi-server";
-import { useTheme } from "~/lib/theme-context";
 import { MessageSchema } from "~/lib/validations";
 
 import type { Route } from "./+types/route";

@@ -14,6 +14,10 @@ const ThemeContext = createContext<ThemeContextType>({
   setTheme: () => {},
 });
 
+export function useTheme() {
+  return useContext(ThemeContext);
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("dark");
 
@@ -42,13 +46,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setTheme(theme === "dark" ? "light" : "dark");
   };
 
-  return (
-    <ThemeContext.Provider value={{ theme, toggleTheme, setTheme }}>
-      {children}
-    </ThemeContext.Provider>
-  );
+  return <ThemeContext value={{ theme, toggleTheme, setTheme }}>{children}</ThemeContext>;
 }
 
-export function useTheme() {
-  return useContext(ThemeContext);
+export function ThemeScript() {
+  return (
+    <script
+      dangerouslySetInnerHTML={{
+        __html: `(function(){try{var t=localStorage.getItem('theme');document.documentElement.className=t==='light'?'':'dark'}catch(e){}})()`,
+      }}
+    />
+  );
 }
