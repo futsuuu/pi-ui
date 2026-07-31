@@ -1,12 +1,8 @@
 import { Plus, Clock, Layers, Sun, Moon } from "lucide-react";
-import { useEffect } from "react";
-import { Link, redirect, useFetcher, useLoaderData, useNavigate } from "react-router";
-import * as v from "valibot";
+import { Link, redirect, useLoaderData } from "react-router";
 
 import { useTheme } from "~/contexts/theme";
-import { getPiServer } from "~/lib/pi-server";
-import { SessionPathSchema } from "~/lib/validations";
-import { workspaceRepositoryContext } from "~/router-contexts";
+import { agentSessionContainerContext, workspaceRepositoryContext } from "~/router-contexts";
 
 import type { Route } from "./+types/session._index";
 
@@ -15,70 +11,22 @@ export function meta(_: Route.MetaArgs) {
 }
 
 export async function loader({ request, context }: Route.LoaderArgs) {
-  const pi = getPiServer();
-
   const url = new URL(request.url);
   const dir = url.searchParams.get("dir");
   if (!dir) {
     throw redirect("/");
   }
-
   const workspaceRepository = context.get(workspaceRepositoryContext);
   await workspaceRepository.add(dir);
-
-  const sessions = await pi.getSessionsList(dir);
+  const sessionContainer = context.get(agentSessionContainerContext);
+  const sessions = await sessionContainer.listInfo(dir);
   const sorted = sessions.sort((a, b) => b.timestamp - a.timestamp);
-
   return { sessions: sorted, cwd: dir };
 }
 
-export async function action({ request }: Route.ActionArgs) {
-  const pi = getPiServer();
-  const url = new URL(request.url);
-  const dir = url.searchParams.get("dir");
-
-  const body: Record<string, unknown> = await request.json();
-  const intent = body.intent as string | undefined;
-
-  if (intent === "new-session") {
-    if (!dir) return { error: "No directory specified" };
-    const sessionId = await pi.createNewSession(dir);
-    return { success: true, sessionId, action: "new-session" };
-  }
-
-  if (intent === "open-session") {
-    const sessionPathRaw = body.sessionPath;
-    const parsed = v.safeParse(SessionPathSchema, { sessionPath: sessionPathRaw });
-    if (!parsed.success) {
-      return { error: "Invalid sessionPath", action: "open-session" };
-    }
-    const sessionId = await pi.openSession(parsed.output.sessionPath);
-    return { success: true, sessionId, action: "open-session" };
-  }
-
-  return { error: "Unknown intent" };
-}
-
 export default function Sessions() {
-  const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
-  const { sessions } = useLoaderData<typeof loader>();
-
-  const fetcher = useFetcher();
-  const fetcherData = fetcher.data as
-    | { success?: boolean; sessionId?: string; action?: string; error?: string }
-    | undefined;
-
-  // Navigate after successful session open/new
-  useEffect(() => {
-    if (fetcher.state === "idle" && fetcherData?.sessionId) {
-      void navigate(`/session/${encodeURIComponent(fetcherData.sessionId)}`);
-    }
-  }, [fetcher.state, fetcherData?.sessionId, navigate]);
-
-  async function newSession() {
-    void fetcher.submit({ intent: "new-session" }, { method: "post", encType: "application/json" });
-  }
+  const { sessions, cwd } = useLoaderData<typeof loader>();
 
   function formatDate(ts: number): string {
     const d = new Date(ts);
@@ -90,7 +38,7 @@ export default function Sessions() {
     return d.toLocaleDateString();
   }
 
-  const switching = fetcher.state !== "idle";
+  const newSessionHref = `/session/new?dir=${encodeURIComponent(cwd)}`;
 
   return (
     <div className="h-full flex flex-col">
@@ -115,14 +63,13 @@ export default function Sessions() {
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Resume an existing session or start a new one.
           </p>
-          <button
-            onClick={newSession}
-            disabled={switching}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+          <Link
+            to={newSessionHref}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
           >
             <Plus className="w-4 h-4" />
             New Session
-          </button>
+          </Link>
         </div>
 
         {sessions.length === 0 ? (
@@ -135,13 +82,12 @@ export default function Sessions() {
             <p className="text-sm text-gray-400 dark:text-gray-500 mb-6">
               Start a new chat session to begin working with Pi
             </p>
-            <button
-              onClick={newSession}
-              disabled={switching}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
+            <Link
+              to={newSessionHref}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
             >
               Start Chatting
-            </button>
+            </Link>
           </div>
         ) : (
           <div className="space-y-2">

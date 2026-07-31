@@ -1,18 +1,21 @@
-import type { StopReason } from "@earendil-works/pi-ai";
+import type { ModelThinkingLevel, StopReason } from "@earendil-works/pi-ai";
 import { Layers, MessageCircle, Moon, Plus, Sun } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useFetcher, useLoaderData, useNavigate } from "react-router";
-import * as v from "valibot";
+import { data, Link, useFetcher } from "react-router";
 
 import { ScrollArea } from "~/components/scroll-area";
 import { useTheme } from "~/contexts/theme";
-import { getPiServer, type PiState, type SseEvent } from "~/lib/pi-server";
-import { MessageSchema } from "~/lib/validations";
+import { agentSessionContainerContext } from "~/router-contexts";
 
+import type { SseEvent } from "../session.$id.events/loader";
 import type { Route } from "./+types/route";
+import type { ActionInput } from "./action";
 import { AgentMessage, type Props as AgentMessageProps } from "./agent-message";
 import { PromptForm } from "./prompt-form";
+import { agentSessionContext } from "./router-contexts";
 import { buildToolCallMap, ToolCallContext } from "./tool-call-context";
+
+export { action } from "./action";
 
 export function meta(_: Route.MetaArgs) {
   return [{ title: "Pi UI - Chat" }];
@@ -26,77 +29,37 @@ function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-// --- Server-side loader ---
-export async function loader({ params: { id: sessionId } }: Route.LoaderArgs) {
-  const pi = getPiServer();
-  const state = await pi.getState(sessionId);
-  if (!state) throw new Response(`Session ${sessionId} not found`, { status: 404 });
-  const messages = await pi.getMessages(sessionId);
-  const models = await pi.getModels();
-  return { state, messages, models };
-}
+export const middleware: Route.MiddlewareFunction[] = [
+  async ({ params, context }) => {
+    const container = context.get(agentSessionContainerContext);
+    const session = await container.get(params.id);
+    if (!session) throw data(`Session ${JSON.stringify(params.id)} not found`, { status: 404 });
+    context.set(agentSessionContext, session);
+  },
+];
 
-// --- Server-side action ---
-export async function action({ request, params: { id: sessionId } }: Route.ActionArgs) {
-  const pi = getPiServer();
-
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return { error: "Invalid JSON body" };
-  }
-
-  const data = body as {
-    intent?: string;
-    message?: string;
-    model?: { provider: string; modelId: string };
-    thinkingLevel?: string;
-    cwd?: string;
+export async function loader({ context }: Route.LoaderArgs) {
+  const session = context.get(agentSessionContext);
+  // Pass only the fields the Chat component uses, read directly from the
+  // session, instead of a full SessionState snapshot.
+  const messages = session.messages;
+  const models = await session.modelRuntime.getAvailable();
+  return {
+    cwd: session.sessionManager.getCwd(),
+    state: {
+      model: session.model
+        ? {
+            name: session.model.name,
+            provider: session.model.provider,
+            id: session.model.id,
+          }
+        : null,
+      thinkingLevel: session.thinkingLevel,
+      isStreaming: session.isStreaming,
+    },
+    messages,
+    models,
   };
-  const intent = data.intent;
-
-  if (intent !== "new-session") {
-    const exists = await pi.getState(sessionId);
-    if (!exists) {
-      throw new Response(`Session ${sessionId} not found`, { status: 404 });
-    }
-  }
-
-  try {
-    if (intent === "abort") {
-      await pi.abort(sessionId);
-      return { success: true };
-    }
-
-    if (intent === "prompt" || intent === "steer" || intent === "follow-up") {
-      const parsed = v.safeParse(MessageSchema, body);
-      if (!parsed.success) {
-        return { error: "Invalid message", issues: parsed.issues };
-      }
-
-      const { message, model, thinkingLevel } = parsed.output;
-
-      if (intent === "prompt") await pi.prompt(sessionId, message, { model, thinkingLevel });
-      else if (intent === "steer") await pi.steer(sessionId, message, { model, thinkingLevel });
-      else if (intent === "follow-up")
-        await pi.followUp(sessionId, message, { model, thinkingLevel });
-
-      return { success: true };
-    }
-
-    if (intent === "new-session") {
-      const cwd = data.cwd;
-      if (!cwd) return { error: "cwd required for new session" };
-      const newSessionId = await pi.createNewSession(cwd);
-      return { success: true, sessionId: newSessionId };
-    }
-
-    return { error: "Unknown intent" };
-  } catch (err) {
-    console.error("Action error:", err);
-    return { error: String(err) };
-  }
 }
 
 /** Find the index of a tool result message by its toolCallId */
@@ -335,12 +298,13 @@ function handlePiEvent(event: Exclude<SseEvent, { type: "internal:state" }>): {
   }
 }
 
-// --- Component ---
-export default function Chat({ params: { id: sessionId } }: Route.ServerComponentProps) {
+export default function Chat({
+  params: { id: sessionId },
+  loaderData: { cwd, state: loadedState, messages: loadedMessages, models },
+}: Route.ServerComponentProps) {
   const { theme, toggleTheme } = useTheme();
-  const { state: loadedState, messages: loadedMessages, models } = useLoaderData<typeof loader>();
 
-  const [state, setState] = useState<PiState>(loadedState);
+  const [state, setState] = useState(loadedState);
   const [eventMessages, setEventMessages] = useState<AgentMessagePropsWithKey[]>([]);
   {
     // If the loader re-validates, event messages are now included in loader data.
@@ -364,8 +328,7 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
   // Whether the user is scrolled near the bottom (within 50px threshold)
   const shouldAutoScroll = useRef(true);
 
-  const fetcher = useFetcher();
-  const navigate = useNavigate();
+  const fetcher = useFetcher<ActionInput>();
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -418,23 +381,14 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
       es.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data) as SseEvent;
-
-          // Filter events for this session
-          if (data.sessionId && data.sessionId !== sessionId) return;
-
+          if (data.sessionId !== sessionId) return;
           if (data.type === "internal:state") {
-            setState(data);
-            if (data.sessionId && data.sessionId !== sessionId) {
-              window.history.replaceState(
-                null,
-                "",
-                `/session/${encodeURIComponent(data.sessionId)}`,
-              );
-            }
-            return;
-          }
-
-          {
+            setState({
+              model: data.model,
+              thinkingLevel: data.thinkingLevel,
+              isStreaming: data.isStreaming,
+            });
+          } else {
             const result = handlePiEvent(data);
             setEventMessages(result.messages);
             if (result.toolCallMap) setToolCallMap(result.toolCallMap);
@@ -462,38 +416,29 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
 
   function sendMessage(
     text: string,
-    model: { provider: string; modelId: string } | null,
-    thinkingLevel: string,
+    model: { provider: string; modelId: string },
+    thinkingLevel: ModelThinkingLevel,
   ) {
     setEventMessages((prev) => [...prev, { _key: uid(), role: "user", content: text }]);
-
-    const body: {
-      intent: string;
-      message: string;
-      model?: { provider: string; modelId: string };
-      thinkingLevel?: string;
-    } = {
-      intent: "prompt",
-      message: text,
-    };
-    if (model) {
-      body.model = model;
-    }
-    if (thinkingLevel) {
-      body.thinkingLevel = thinkingLevel;
-    }
-
-    void fetcher.submit(body, {
-      method: "post",
-      encType: "application/json",
-    });
+    void fetcher.submit(
+      {
+        type: "prompt",
+        text,
+        model: { provider: model.provider, id: model.modelId },
+        thinkingLevel,
+      } satisfies ActionInput,
+      {
+        method: "post",
+        encType: "application/json",
+      },
+    );
   }
 
   function abortMessage() {
-    void fetcher.submit(
-      { sessionId: sessionId, intent: "abort" },
-      { method: "post", encType: "application/json" },
-    );
+    void fetcher.submit({ type: "abort" } satisfies ActionInput, {
+      method: "post",
+      encType: "application/json",
+    });
     setEventMessages((prev) =>
       prev.map((m) =>
         m.role === "assistant" && m.stopReason === undefined
@@ -504,31 +449,6 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
       ),
     );
   }
-
-  function newSessionFromChat() {
-    void fetcher.submit(
-      { intent: "new-session", cwd: state.cwd },
-      { method: "post", encType: "application/json" },
-    );
-  }
-
-  const fetcherData = fetcher.data as
-    | { success?: boolean; sessionId?: string; error?: string }
-    | undefined;
-
-  // Navigate after new session created (fetcher action returns data, not redirect).
-  // Reset fetcher after navigation so stale data doesn't trigger re-navigation on back.
-  useEffect(() => {
-    if (
-      fetcher.state === "idle" &&
-      fetcherData?.sessionId &&
-      fetcherData?.sessionId !== sessionId
-    ) {
-      const next = fetcherData.sessionId;
-      fetcher.reset();
-      void navigate(`/session/${encodeURIComponent(next)}`);
-    }
-  }, [fetcher.state, fetcherData?.sessionId, navigate, sessionId]);
 
   const hasModel = state.model != null;
 
@@ -557,7 +477,7 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
         {/* Secondary toolbar */}
         <div className="max-w-5xl mx-auto px-4 h-10 flex items-center gap-2 border-t border-gray-100 dark:border-gray-800">
           <div className="ml-auto flex items-center gap-2">
-            {state?.isStreaming && (
+            {state.isStreaming && (
               <button
                 onClick={abortMessage}
                 className="text-xs px-2.5 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
@@ -565,23 +485,16 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
                 Abort
               </button>
             )}
-            <button
-              onClick={newSessionFromChat}
+            <Link
+              to={`/session/new?dir=${encodeURIComponent(cwd)}`}
               className="text-xs px-2.5 py-1 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors flex items-center gap-1"
             >
               <Plus className="w-3 h-3" />
               New
-            </button>
+            </Link>
           </div>
         </div>
       </div>
-
-      {/* Error banner */}
-      {fetcherData?.error && (
-        <div className="bg-red-50 dark:bg-red-900/30 border-b border-red-200 dark:border-red-800 px-6 py-2">
-          <p className="text-sm text-red-700 dark:text-red-300">{fetcherData.error}</p>
-        </div>
-      )}
 
       {/* Messages */}
       <ScrollArea ref={scrollContainerRef} onScroll={handleScroll} viewportClassName="pb-36">
@@ -615,7 +528,7 @@ export default function Chat({ params: { id: sessionId } }: Route.ServerComponen
 
       <PromptForm
         key={sessionId}
-        isStreaming={state?.isStreaming ?? false}
+        isStreaming={state.isStreaming}
         models={models}
         defaultModel={
           state.model ? { provider: state.model.provider, modelId: state.model.id } : null

@@ -1,9 +1,17 @@
-import type { Model, Api } from "@earendil-works/pi-ai";
+import type { Api, Model, ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon, SendIcon } from "lucide-react";
 import { Select } from "radix-ui";
 import { useEffect, useRef, useState } from "react";
 
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+const THINKING_LEVELS = [
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const satisfies readonly ModelThinkingLevel[];
 
 /**
  * Textarea + send button. Manages `input` state locally so that typing
@@ -15,7 +23,7 @@ function MessageInput({
   children,
 }: {
   isStreaming: boolean;
-  onSubmit: (text: string) => void;
+  onSubmit?: (text: string) => void;
   children?: React.ReactNode;
 }) {
   const [input, setInput] = useState("");
@@ -30,7 +38,7 @@ function MessageInput({
 
   function handleSubmit() {
     const text = input.trim();
-    if (!text || isStreaming) return;
+    if (!onSubmit || !text || isStreaming) return;
     setInput("");
     onSubmit(text);
   }
@@ -65,7 +73,7 @@ function MessageInput({
           <div className="ml-auto">
             <button
               onClick={handleSubmit}
-              disabled={!input.trim() || isStreaming}
+              disabled={!onSubmit || !input.trim() || isStreaming}
               className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white rounded-lg p-1.5 transition-colors disabled:cursor-not-allowed"
             >
               <SendIcon className="w-4 h-4" strokeWidth={2} />
@@ -78,7 +86,7 @@ function MessageInput({
 }
 
 /** Shared Radix UI Select wrapper used by both the model and thinking-level selectors. */
-function SelectPicker({
+function SelectPicker<T extends string>({
   value,
   onValueChange,
   trigger,
@@ -86,8 +94,8 @@ function SelectPicker({
   contentClassName = "",
   children,
 }: {
-  value: string;
-  onValueChange: (value: string) => void;
+  value?: T;
+  onValueChange: (value: T) => void;
   trigger: React.ReactNode;
   triggerClassName?: string;
   contentClassName?: string;
@@ -133,16 +141,14 @@ export function PromptForm({
   isStreaming: boolean;
   models: readonly Model<Api>[];
   defaultModel: { provider: string; modelId: string } | null;
-  defaultThinkingLevel: string;
+  defaultThinkingLevel: ModelThinkingLevel;
   onSend: (
     text: string,
-    model: { provider: string; modelId: string } | null,
-    thinkingLevel: string,
+    model: { provider: string; modelId: string },
+    thinkingLevel: ModelThinkingLevel,
   ) => void;
 }) {
-  const [selectedModel, setSelectedModel] = useState<{ provider: string; modelId: string } | null>(
-    defaultModel,
-  );
+  const [selectedModel, setSelectedModel] = useState(defaultModel);
   const [selectedThinkingLevel, setSelectedThinkingLevel] = useState(defaultThinkingLevel);
 
   // Sync with parent defaults when they change (e.g., session switch)
@@ -155,6 +161,7 @@ export function PromptForm({
   }, [defaultThinkingLevel]);
 
   function handleSubmit(text: string) {
+    if (!selectedModel) return;
     onSend(text, selectedModel, selectedThinkingLevel);
   }
 
@@ -177,7 +184,7 @@ export function PromptForm({
     : "";
 
   return (
-    <MessageInput isStreaming={isStreaming} onSubmit={handleSubmit}>
+    <MessageInput isStreaming={isStreaming} onSubmit={selectedModel ? handleSubmit : undefined}>
       {/* Model selector */}
       <SelectPicker
         value={selectedModelValue}
