@@ -2,7 +2,7 @@ import { redirect } from "react-router";
 
 import { agentSessionContainerContext } from "~/router-contexts";
 
-import type { Route } from "./+types/session.new";
+import type { Route } from "./+types/route";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const url = new URL(request.url);

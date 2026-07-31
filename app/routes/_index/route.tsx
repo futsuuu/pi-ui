@@ -8,7 +8,7 @@ import { Link, useLoaderData } from "react-router";
 import { useTheme } from "~/contexts/theme";
 import { workspaceRepositoryContext } from "~/router-contexts";
 
-import type { Route } from "./+types/_index";
+import type { Route } from "./+types/route";
 
 export function meta(_: Route.MetaArgs) {
   return [{ title: "Pi UI - Select Directory" }];

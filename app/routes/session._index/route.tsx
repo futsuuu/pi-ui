@@ -4,7 +4,7 @@ import { Link, redirect, useLoaderData } from "react-router";
 import { useTheme } from "~/contexts/theme";
 import { agentSessionContainerContext, workspaceRepositoryContext } from "~/router-contexts";
 
-import type { Route } from "./+types/session._index";
+import type { Route } from "./+types/route";
 
 export function meta(_: Route.MetaArgs) {
   return [{ title: "Pi UI - Sessions" }];
