@@ -33,7 +33,7 @@
             pname = "pnpm-deps";
             src = ./.;
             fetcherVersion = 4;
-            hash = "sha256-dr/8HDzOncFmmUuH9gMXoKmfkpbLrN5TzEtT1s8nVsw=";
+            hash = "sha256-1p0alKXU1lbCFyfOZjHH5WrzhZzpwZa/2UsUR/jxH4s=";
           };
         in
         {
@@ -72,6 +72,25 @@
               buildPhase = ''
                 pnpm install --frozen-store --offline --frozen-lockfile
                 pnpm run lint
+              '';
+              installPhase = ''
+                touch $out
+              '';
+            };
+
+            test = pkgs.stdenv.mkDerivation {
+              inherit pnpmDeps;
+              pname = "check-test";
+              version = "0";
+              src = ./.;
+              nativeBuildInputs = [
+                nodejs-slim
+                pnpm
+                pkgs.pnpmConfigHook
+              ];
+              buildPhase = ''
+                pnpm install --frozen-store --offline --frozen-lockfile
+                pnpm run test
               '';
               installPhase = ''
                 touch $out
