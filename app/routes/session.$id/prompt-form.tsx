@@ -1,4 +1,10 @@
-import type { Api, Model, ModelThinkingLevel } from "@earendil-works/pi-ai";
+import {
+  clampThinkingLevel,
+  getSupportedThinkingLevels,
+  type Api,
+  type Model,
+  type ModelThinkingLevel,
+} from "@earendil-works/pi-ai";
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon, SendIcon } from "lucide-react";
 import { Select } from "radix-ui";
 import { useEffect, useRef, useState } from "react";
@@ -148,21 +154,19 @@ export function PromptForm({
     thinkingLevel: ModelThinkingLevel,
   ) => void;
 }) {
-  const [selectedModel, setSelectedModel] = useState(defaultModel);
-  const [selectedThinkingLevel, setSelectedThinkingLevel] = useState(defaultThinkingLevel);
-
-  // Sync with parent defaults when they change (e.g., session switch)
-  useEffect(() => {
-    setSelectedModel(defaultModel);
-  }, [defaultModel]);
-
-  useEffect(() => {
-    setSelectedThinkingLevel(defaultThinkingLevel);
-  }, [defaultThinkingLevel]);
+  const [selectedModelId, setSelectedModelId] = useState(defaultModel);
+  const selectedModel = selectedModelId
+    ? models.find(
+        (m) => m.provider === selectedModelId.provider && m.id === selectedModelId.modelId,
+      )
+    : undefined;
+  const [selectedThinkingLevel, setSelectedThinkingLevel] = useState(() =>
+    selectedModel ? clampThinkingLevel(selectedModel, defaultThinkingLevel) : defaultThinkingLevel,
+  );
 
   function handleSubmit(text: string) {
-    if (!selectedModel) return;
-    onSend(text, selectedModel, selectedThinkingLevel);
+    if (!selectedModelId) return;
+    onSend(text, selectedModelId, selectedThinkingLevel);
   }
 
   // Group models by provider for the select
@@ -179,27 +183,35 @@ export function PromptForm({
     [],
   );
 
-  const selectedModelValue = selectedModel
-    ? `${selectedModel.provider}\n\n${selectedModel.modelId}`
-    : "";
+  const selectedModelValue = selectedModelId ? serializeModelName(selectedModelId) : "";
+
+  // Only offer thinking levels the selected model actually supports.
+  const availableThinkingLevels = selectedModel
+    ? getSupportedThinkingLevels(selectedModel)
+    : THINKING_LEVELS;
 
   return (
-    <MessageInput isStreaming={isStreaming} onSubmit={selectedModel ? handleSubmit : undefined}>
+    <MessageInput isStreaming={isStreaming} onSubmit={selectedModelId ? handleSubmit : undefined}>
       {/* Model selector */}
       <SelectPicker
         value={selectedModelValue}
         onValueChange={(value) => {
-          const sepIdx = value.indexOf("\n\n");
-          const provider = value.slice(0, sepIdx);
-          const modelId = value.slice(sepIdx + 1);
-          setSelectedModel({ provider, modelId });
+          const { provider, modelId } = deserializeModelName(value);
+          // Switching models may drop support for the current thinking level,
+          // so clamp it to the newly selected model's supported set.
+          const nextModel = models.find((m) => m.provider === provider && m.id === modelId);
+          setSelectedModelId({ provider, modelId });
+          if (nextModel) {
+            setSelectedThinkingLevel((prev) => clampThinkingLevel(nextModel, prev));
+          }
         }}
         trigger={
           <Select.Value>
-            {selectedModel
+            {selectedModelId
               ? (models.find(
-                  (m) => m.provider === selectedModel.provider && m.id === selectedModel.modelId,
-                )?.name ?? selectedModel.modelId)
+                  (m) =>
+                    m.provider === selectedModelId.provider && m.id === selectedModelId.modelId,
+                )?.name ?? selectedModelId.modelId)
               : "Select Model"}
           </Select.Value>
         }
@@ -214,7 +226,7 @@ export function PromptForm({
                 {group.provider}
               </Select.Label>
               {group.models.map((m) => {
-                const value = `${m.provider}\n\n${m.id}`;
+                const value = serializeModelName({ provider: m.provider, modelId: m.id });
                 return (
                   <Select.Item
                     key={value}
@@ -248,7 +260,7 @@ export function PromptForm({
         triggerClassName="capitalize"
         contentClassName="min-w-28"
       >
-        {THINKING_LEVELS.map((level) => (
+        {availableThinkingLevels.map((level) => (
           <Select.Item
             key={level}
             value={level}
@@ -263,4 +275,16 @@ export function PromptForm({
       </SelectPicker>
     </MessageInput>
   );
+}
+
+function serializeModelName(model: { provider: string; modelId: string }): string {
+  return `${model.provider}\0${model.modelId}`;
+}
+
+function deserializeModelName(value: string): { provider: string; modelId: string } {
+  const sepIdx = value.indexOf("\0");
+  return {
+    provider: value.slice(0, sepIdx),
+    modelId: value.slice(sepIdx + 1),
+  };
 }
