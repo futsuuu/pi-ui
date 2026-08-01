@@ -35,6 +35,9 @@ export default function Sessions() {
     if (diff < 60000) return "Just now";
     if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
     if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    if (diff < 7 * 86400000) return `${Math.floor(diff / 86400000)}d ago`;
+    if (diff < 30 * 86400000) return `${Math.floor(diff / (7 * 86400000))}w ago`;
+    if (diff < 365 * 86400000) return `${Math.floor(diff / (30 * 86400000))}mo ago`;
     return d.toLocaleDateString();
   }
 
@@ -102,16 +105,8 @@ export default function Sessions() {
                     <p className="font-medium text-gray-900 dark:text-gray-100 truncate">
                       {session.firstMessage || "Untitled Session"}
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-mono truncate">
-                      {session.id.slice(0, 12)}...
-                    </p>
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {formatDate(session.timestamp)}
-                    </p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                      {session.messageCount} messages
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      {formatDate(session.timestamp)} · {session.messageCount} messages
                     </p>
                   </div>
                 </div>

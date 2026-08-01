@@ -23,7 +23,7 @@ export class AgentSessionContainer {
       id: s.id,
       firstMessage: s.firstMessage.slice(0, 100),
       messageCount: s.messageCount,
-      timestamp: s.created.getTime(),
+      timestamp: s.modified.getTime(),
     }));
   }
 
