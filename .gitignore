@@ -4,3 +4,7 @@
 # React Router
 /.react-router/
 /build/
+
+# Vitest browser mode artifacts
+/.vitest-attachments/
+__screenshots__/

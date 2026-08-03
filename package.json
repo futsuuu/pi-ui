@@ -17,24 +17,32 @@
     "@react-router/fs-routes": "^8.3.0",
     "@react-router/node": "^8.3.0",
     "@react-router/serve": "^8.3.0",
+    "@shikijs/rehype": "^4.4.1",
     "isbot": "^5.2.1",
     "lucide-react": "^1.25.0",
     "radix-ui": "^1.6.7",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "react-markdown": "^10.1.0",
     "react-router": "^8.3.0",
+    "remark-gfm": "^4.0.1",
     "valibot": "^1.4.2"
   },
   "devDependencies": {
     "@react-router/dev": "^8.3.0",
+    "@tailwindcss/typography": "^0.5.20",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.20.1",
     "@types/react": "^19.2.17",
+    "@vitest/browser": "4.1.10",
+    "@vitest/browser-playwright": "4.1.10",
     "oxfmt": "^0.60.0",
     "oxlint": "^1.75.0",
     "oxlint-tsgolint": "^7.0.2001",
+    "playwright": "1.61.1",
     "tailwindcss": "^4.3.3",
     "vite": "^8.1.5",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "vitest-browser-react": "^2.2.0"
   }
 }

@@ -1,6 +1,8 @@
 import type { AssistantMessage as Data, TextContent, ThinkingContent } from "@earendil-works/pi-ai";
 import { CircleSlashIcon, CircleXIcon } from "lucide-react";
 
+import { Markdown } from "~/components/markdown";
+
 import { StreamingCursor } from "./streaming-cursor";
 
 export interface Props extends Pick<Data, "role" | "content" | "errorMessage"> {
@@ -36,8 +38,9 @@ export function AssistantMessage({ content, stopReason, errorMessage }: Props) {
           </details>
         )}
         {(text || isStreaming) && (
-          <div className="whitespace-pre-wrap break-words">
-            {text || (isStreaming ? "..." : "")}
+          <div className="break-words">
+            <Markdown>{text}</Markdown>
+            {!text && isStreaming && "..."}
             {isStreaming && <StreamingCursor />}
           </div>
         )}

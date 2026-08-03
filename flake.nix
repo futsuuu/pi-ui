@@ -33,7 +33,7 @@
             pname = "pnpm-deps";
             src = ./.;
             fetcherVersion = 4;
-            hash = "sha256-1p0alKXU1lbCFyfOZjHH5WrzhZzpwZa/2UsUR/jxH4s=";
+            hash = "sha256-q1BlExoVwm7wfKq0SH8xYsW87EHvvIAP0A9gPFyr1S4=";
           };
         in
         {
@@ -87,8 +87,20 @@
                 nodejs-slim
                 pnpm
                 pkgs.pnpmConfigHook
+                pkgs.playwright-driver.browsers
               ];
               buildPhase = ''
+                export PLAYWRIGHT_BROWSERS_PATH=${pkgs.playwright-driver.browsers}
+                export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
+                export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=true
+
+                playwright_driver_version=${pkgs.playwright-driver.version}
+                playwright_library_version=$(pnpm list --json --lockfile-only | ${pkgs.jq}/bin/jq --raw-output '.[0].devDependencies.playwright.version')
+                if [ "$playwright_driver_version" != "$playwright_library_version" ]; then
+                  echo "playwright driver version ($playwright_driver_version) does not match library version ($playwright_library_version)"
+                  exit 1
+                fi
+
                 pnpm install --frozen-store --offline --frozen-lockfile
                 pnpm run test
               '';
@@ -117,9 +129,14 @@
               pnpm
               pkgs.treefmt
               pkgs.nixfmt
+              pkgs.playwright-driver.browsers
             ];
 
             shellHook = ''
+              export PLAYWRIGHT_BROWSERS_PATH=${pkgs.playwright-driver.browsers}
+              export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
+              export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=true
+
               echo "Node.js : $(node --version)"
               echo "pnpm    : $(pnpm --version)"
               echo ""
