@@ -7,7 +7,8 @@ import {
 } from "@earendil-works/pi-ai";
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon, SendIcon } from "lucide-react";
 import { Select } from "radix-ui";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Await } from "react-router";
 
 const THINKING_LEVELS = [
   "off",
@@ -18,6 +19,13 @@ const THINKING_LEVELS = [
   "xhigh",
   "max",
 ] as const satisfies readonly ModelThinkingLevel[];
+
+/** A model selection summarized by the parts the UI needs to render. */
+interface SelectedModel {
+  name: string;
+  provider: string;
+  id: string;
+}
 
 /**
  * Textarea + send button. Manages `input` state locally so that typing
@@ -134,43 +142,30 @@ function SelectPicker<T extends string>({
 }
 
 /**
- * Prompt form. Owns model / thinking-level selection, delegates input to
- * MessageInput so the Select components stay isolated from typing.
+ * Renders the model list options once the streamed `models` promise resolves,
+ * and pushes the resolved list up to the parent so the thinking-level selector
+ * can reflect the selected model's supported levels.
  */
-export function PromptForm({
-  isStreaming,
+function ModelListItems({
   models,
-  defaultModel,
-  defaultThinkingLevel,
-  onSend,
+  onSelect,
+  onResolved,
 }: {
-  isStreaming: boolean;
   models: readonly Model<Api>[];
-  defaultModel: { provider: string; modelId: string } | null;
-  defaultThinkingLevel: ModelThinkingLevel;
-  onSend: (
-    text: string,
-    model: { provider: string; modelId: string },
-    thinkingLevel: ModelThinkingLevel,
-  ) => void;
+  onSelect: (model: SelectedModel) => void;
+  onResolved: (models: readonly Model<Api>[]) => void;
 }) {
-  const [selectedModelId, setSelectedModelId] = useState(defaultModel);
-  const selectedModel = selectedModelId
-    ? models.find(
-        (m) => m.provider === selectedModelId.provider && m.id === selectedModelId.modelId,
-      )
-    : undefined;
-  const [selectedThinkingLevel, setSelectedThinkingLevel] = useState(() =>
-    selectedModel ? clampThinkingLevel(selectedModel, defaultThinkingLevel) : defaultThinkingLevel,
-  );
+  // Surface the resolved list to the parent (runs client-side after hydration
+  // and whenever the promise settles).
+  useEffect(() => {
+    onResolved(models);
+  }, [models, onResolved]);
 
-  function handleSubmit(text: string) {
-    if (!selectedModelId) return;
-    onSend(text, selectedModelId, selectedThinkingLevel);
+  if (models.length === 0) {
+    return <div className="px-3 py-2 text-sm text-gray-500">No models available</div>;
   }
 
-  // Group models by provider for the select
-  const groupedModels = models.reduce<Array<{ provider: string; models: typeof models }>>(
+  const groupedModels = models.reduce<Array<{ provider: string; models: readonly Model<Api>[] }>>(
     (acc, m) => {
       const existing = acc.find((g) => g.provider === m.provider);
       if (existing) {
@@ -183,73 +178,150 @@ export function PromptForm({
     [],
   );
 
-  const selectedModelValue = selectedModelId ? serializeModelName(selectedModelId) : "";
+  return (
+    <>
+      {groupedModels.map((group) => (
+        <Select.Group key={group.provider}>
+          <Select.Label className="px-2 py-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 tracking-wider">
+            {group.provider}
+          </Select.Label>
+          {group.models.map((m) => {
+            const value = serializeModelName({ provider: m.provider, modelId: m.id });
+            return (
+              <Select.Item
+                key={value}
+                value={value}
+                onSelect={() => onSelect({ name: m.name, provider: m.provider, id: m.id })}
+                className="relative flex items-center px-8 py-2 text-sm rounded-lg data-highlighted:bg-blue-100 dark:data-highlighted:bg-blue-900/50 data-highlighted:text-blue-700 dark:data-highlighted:text-blue-300 cursor-pointer select-none outline-none"
+              >
+                <Select.ItemText>
+                  <div className="flex flex-col">
+                    <span className="font-medium">{m.name}</span>
+                    <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">
+                      {m.id}
+                    </span>
+                  </div>
+                </Select.ItemText>
+                <Select.ItemIndicator className="absolute left-2 inline-flex items-center">
+                  <CheckIcon className="w-4 h-4" />
+                </Select.ItemIndicator>
+              </Select.Item>
+            );
+          })}
+        </Select.Group>
+      ))}
+    </>
+  );
+}
+
+/**
+ * Prompt form. Owns model / thinking-level selection, delegates input to
+ * MessageInput so the Select components stay isolated from typing.
+ *
+ * The model list arrives as a promise from the loader. The closed trigger only
+ * depends on `selectedModel` (seeded from the session's default model), so it
+ * renders the default model regardless of whether the list has loaded yet.
+ * Only the open dropdown resolves the promise via <Await> and shows a
+ * "Loading..." fallback until it settles.
+ */
+export function PromptForm({
+  isStreaming,
+  models,
+  defaultModel,
+  defaultThinkingLevel,
+  onSend,
+}: {
+  isStreaming: boolean;
+  models: Promise<readonly Model<Api>[]>;
+  defaultModel: SelectedModel | null;
+  defaultThinkingLevel: ModelThinkingLevel;
+  onSend: (
+    text: string,
+    model: { provider: string; modelId: string },
+    thinkingLevel: ModelThinkingLevel,
+  ) => void;
+}) {
+  const [selectedModel, setSelectedModel] = useState<SelectedModel | null>(defaultModel);
+  const [selectedThinkingLevel, setSelectedThinkingLevel] = useState(defaultThinkingLevel);
+  // Latest resolved model list, fed by <ModelListItems> once the wrapped
+  // promise settles. Used to look up the selected model's specs.
+  const [resolvedModels, setResolvedModels] = useState<readonly Model<Api>[] | null>(null);
+
+  const handleModelsResolved = useCallback((resolved: readonly Model<Api>[]) => {
+    setResolvedModels(resolved);
+  }, []);
+
+  const handleSelectModel = useCallback((model: SelectedModel) => {
+    setSelectedModel(model);
+  }, []);
+
+  // Keep the thinking level within the selected model's supported range once
+  // its specs are known — covers both the initial default model and any
+  // subsequent selection made through the dropdown.
+  useEffect(() => {
+    if (!resolvedModels || !selectedModel) return;
+    const spec = resolvedModels.find(
+      (m) => m.provider === selectedModel.provider && m.id === selectedModel.id,
+    );
+    if (spec) setSelectedThinkingLevel((prev) => clampThinkingLevel(spec, prev));
+  }, [resolvedModels, selectedModel]);
+
+  function handleSubmit(text: string) {
+    if (!selectedModel) return;
+    onSend(
+      text,
+      { provider: selectedModel.provider, modelId: selectedModel.id },
+      selectedThinkingLevel,
+    );
+  }
+
+  const selectedSpec =
+    resolvedModels?.find(
+      (m) => m.provider === selectedModel?.provider && m.id === selectedModel?.id,
+    ) ?? null;
 
   // Only offer thinking levels the selected model actually supports.
-  const availableThinkingLevels = selectedModel
-    ? getSupportedThinkingLevels(selectedModel)
+  const availableThinkingLevels = selectedSpec
+    ? getSupportedThinkingLevels(selectedSpec)
     : THINKING_LEVELS;
 
+  const selectedModelValue = selectedModel
+    ? serializeModelName({ provider: selectedModel.provider, modelId: selectedModel.id })
+    : "";
+
   return (
-    <MessageInput isStreaming={isStreaming} onSubmit={selectedModelId ? handleSubmit : undefined}>
-      {/* Model selector */}
+    <MessageInput isStreaming={isStreaming} onSubmit={selectedModel ? handleSubmit : undefined}>
+      {/* Model selector — the trigger is decoupled from the models promise so
+          it always shows the default model; only the open dropdown waits. */}
       <SelectPicker
         value={selectedModelValue}
         onValueChange={(value) => {
           const { provider, modelId } = deserializeModelName(value);
-          // Switching models may drop support for the current thinking level,
-          // so clamp it to the newly selected model's supported set.
-          const nextModel = models.find((m) => m.provider === provider && m.id === modelId);
-          setSelectedModelId({ provider, modelId });
-          if (nextModel) {
-            setSelectedThinkingLevel((prev) => clampThinkingLevel(nextModel, prev));
-          }
+          // Prefer the display name when the list is loaded; fall back to the
+          // id so the closed trigger stays meaningful.
+          const spec = resolvedModels?.find((m) => m.provider === provider && m.id === modelId);
+          handleSelectModel({ name: spec?.name ?? modelId, provider, id: modelId });
         }}
-        trigger={
-          <Select.Value>
-            {selectedModelId
-              ? (models.find(
-                  (m) =>
-                    m.provider === selectedModelId.provider && m.id === selectedModelId.modelId,
-                )?.name ?? selectedModelId.modelId)
-              : "Select Model"}
-          </Select.Value>
-        }
+        trigger={<Select.Value>{selectedModel ? selectedModel.name : "Select Model"}</Select.Value>}
         contentClassName="max-h-64"
       >
-        {models.length === 0 ? (
-          <div className="px-3 py-2 text-sm text-gray-500">No models available</div>
-        ) : (
-          groupedModels.map((group) => (
-            <Select.Group key={group.provider}>
-              <Select.Label className="px-2 py-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 tracking-wider">
-                {group.provider}
-              </Select.Label>
-              {group.models.map((m) => {
-                const value = serializeModelName({ provider: m.provider, modelId: m.id });
-                return (
-                  <Select.Item
-                    key={value}
-                    value={value}
-                    className="relative flex items-center px-8 py-2 text-sm rounded-lg data-highlighted:bg-blue-100 dark:data-highlighted:bg-blue-900/50 data-highlighted:text-blue-700 dark:data-highlighted:text-blue-300 cursor-pointer select-none outline-none"
-                  >
-                    <Select.ItemText>
-                      <div className="flex flex-col">
-                        <span className="font-medium">{m.name}</span>
-                        <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">
-                          {m.id}
-                        </span>
-                      </div>
-                    </Select.ItemText>
-                    <Select.ItemIndicator className="absolute left-2 inline-flex items-center">
-                      <CheckIcon className="w-4 h-4" />
-                    </Select.ItemIndicator>
-                  </Select.Item>
-                );
-              })}
-            </Select.Group>
-          ))
-        )}
+        <Suspense
+          fallback={
+            <div className="px-3 py-2 text-sm text-gray-500" aria-busy="true">
+              Loading...
+            </div>
+          }
+        >
+          <Await resolve={models} errorElement={<ModelLoadError />}>
+            {(resolved) => (
+              <ModelListItems
+                models={resolved}
+                onSelect={handleSelectModel}
+                onResolved={handleModelsResolved}
+              />
+            )}
+          </Await>
+        </Suspense>
       </SelectPicker>
 
       {/* Thinking level selector */}
@@ -275,6 +347,10 @@ export function PromptForm({
       </SelectPicker>
     </MessageInput>
   );
+}
+
+function ModelLoadError() {
+  return <div className="px-3 py-2 text-sm text-red-600">Failed to load models</div>;
 }
 
 function serializeModelName(model: { provider: string; modelId: string }): string {

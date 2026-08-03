@@ -36,7 +36,8 @@ export async function loader({ context }: Route.LoaderArgs) {
   // Pass only the fields the Chat component uses, read directly from the
   // session, instead of a full SessionState snapshot.
   const messages = session.messages;
-  const models = await session.modelRuntime.getAvailable();
+  // The model list is streamed to the client as a promise.
+  const models = session.modelRuntime.getAvailable();
   return {
     cwd: session.sessionManager.getCwd(),
     state: {
@@ -281,9 +282,7 @@ export default function Chat({
         key={sessionId}
         isStreaming={state.isStreaming}
         models={models}
-        defaultModel={
-          state.model ? { provider: state.model.provider, modelId: state.model.id } : null
-        }
+        defaultModel={state.model}
         defaultThinkingLevel={state.thinkingLevel ?? "medium"}
         onSend={sendMessage}
       />
