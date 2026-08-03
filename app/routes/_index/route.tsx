@@ -6,7 +6,7 @@ import { Folder, ArrowLeft, File, Layers, Sun, Moon, ArrowRight } from "lucide-r
 import { Link, useLoaderData } from "react-router";
 
 import { useTheme } from "~/contexts/theme";
-import { workspaceRepositoryContext } from "~/router-contexts";
+import { projectRepositoryContext } from "~/router-contexts";
 
 import type { Route } from "./+types/route";
 
@@ -15,13 +15,13 @@ export function meta(_: Route.MetaArgs) {
 }
 
 export async function loader({ request, context }: Route.LoaderArgs) {
-  const workspaceRepository = context.get(workspaceRepositoryContext);
+  const projectRepository = context.get(projectRepositoryContext);
 
   const url = new URL(request.url);
   const dirFromUrl = url.searchParams.get("dir");
 
   const homeDir = homedir();
-  const recentDirs = workspaceRepository.list();
+  const recentDirs = projectRepository.list();
   const currentDir = dirFromUrl || homeDir;
 
   let entries: { name: string; path: string; isDirectory: boolean }[] = [];

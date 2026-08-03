@@ -2,7 +2,7 @@ import { Plus, Clock, Layers, Sun, Moon } from "lucide-react";
 import { Link, redirect, useLoaderData } from "react-router";
 
 import { useTheme } from "~/contexts/theme";
-import { agentSessionContainerContext, workspaceRepositoryContext } from "~/router-contexts";
+import { agentSessionContainerContext, projectRepositoryContext } from "~/router-contexts";
 
 import type { Route } from "./+types/route";
 
@@ -16,8 +16,8 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   if (!dir) {
     throw redirect("/");
   }
-  const workspaceRepository = context.get(workspaceRepositoryContext);
-  await workspaceRepository.add(dir);
+  const projectRepository = context.get(projectRepositoryContext);
+  await projectRepository.add(dir);
   const sessionContainer = context.get(agentSessionContainerContext);
   const sessions = await sessionContainer.listInfo(dir);
   const sorted = sessions.sort((a, b) => b.timestamp - a.timestamp);

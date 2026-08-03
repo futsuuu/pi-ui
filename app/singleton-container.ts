@@ -1,15 +1,15 @@
 import { AgentSessionContainer } from "./agent-session-container";
-import { WorkspaceRepository } from "./workspace-repository";
+import { ProjectRepository } from "./project-repository";
 
 interface SingletonContainer {
   agentSessionContainer: AgentSessionContainer;
-  workspaceRepository: WorkspaceRepository;
+  projectRepository: ProjectRepository;
 }
 
 async function createContainer(): Promise<SingletonContainer> {
   return {
     agentSessionContainer: await AgentSessionContainer.create(),
-    workspaceRepository: new WorkspaceRepository(),
+    projectRepository: new ProjectRepository(),
   };
 }
 

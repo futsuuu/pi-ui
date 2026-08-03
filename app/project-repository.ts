@@ -3,13 +3,13 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
-interface Workspace {
+interface Project {
   path: string;
   lastOpened: number;
 }
 
-export class WorkspaceRepository {
-  private workspaces: Workspace[] = [];
+export class ProjectRepository {
+  private projects: Project[] = [];
   private jsonFilePath: string | null;
 
   public constructor(options: { inMemory?: boolean } = {}) {
@@ -20,18 +20,18 @@ export class WorkspaceRepository {
     const stateDir = process.env.XDG_STATE_HOME
       ? path.join(process.env.XDG_STATE_HOME, "pi-ui")
       : path.join(homedir(), ".local", "state", "pi-ui");
-    this.jsonFilePath = path.join(stateDir, "workspaces.json");
+    this.jsonFilePath = path.join(stateDir, "projects.json");
     this.load();
   }
 
   public list() {
-    return this.workspaces.slice(0, 10);
+    return this.projects.slice(0, 10);
   }
 
   public async add(dirPath: string) {
-    this.workspaces = this.workspaces.filter((d) => d.path !== dirPath);
-    this.workspaces.unshift({ path: dirPath, lastOpened: Date.now() });
-    if (this.workspaces.length > 20) this.workspaces = this.workspaces.slice(0, 20);
+    this.projects = this.projects.filter((d) => d.path !== dirPath);
+    this.projects.unshift({ path: dirPath, lastOpened: Date.now() });
+    if (this.projects.length > 20) this.projects = this.projects.slice(0, 20);
     await this.save();
   }
 
@@ -39,9 +39,9 @@ export class WorkspaceRepository {
     if (this.jsonFilePath === null) return;
     try {
       const data = readFileSync(this.jsonFilePath, "utf-8");
-      this.workspaces = JSON.parse(data);
+      this.projects = JSON.parse(data);
     } catch {
-      this.workspaces = [];
+      this.projects = [];
     }
   }
 
@@ -49,7 +49,7 @@ export class WorkspaceRepository {
     if (this.jsonFilePath === null) return;
     try {
       await mkdir(path.dirname(this.jsonFilePath), { recursive: true });
-      await writeFile(this.jsonFilePath, JSON.stringify(this.workspaces, null, 2));
+      await writeFile(this.jsonFilePath, JSON.stringify(this.projects, null, 2));
     } catch {}
   }
 }

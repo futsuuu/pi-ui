@@ -11,7 +11,7 @@ import {
 import "./app.css";
 import type { Route } from "./+types/root";
 import { ThemeProvider, ThemeScript } from "./contexts/theme";
-import { agentSessionContainerContext, workspaceRepositoryContext } from "./router-contexts";
+import { agentSessionContainerContext, projectRepositoryContext } from "./router-contexts";
 import { getSingletonContainer } from "./singleton-container";
 
 export const links: Route.LinksFunction = () => [
@@ -29,7 +29,7 @@ export const middleware: Route.MiddlewareFunction[] = [
   async ({ context }) => {
     const container = await getSingletonContainer();
     context.set(agentSessionContainerContext, container.agentSessionContainer);
-    context.set(workspaceRepositoryContext, container.workspaceRepository);
+    context.set(projectRepositoryContext, container.projectRepository);
   },
 ];
 

@@ -1,7 +1,7 @@
 import { createContext } from "react-router";
 
 import type { AgentSessionContainer } from "./agent-session-container";
-import type { WorkspaceRepository } from "./workspace-repository";
+import type { ProjectRepository } from "./project-repository";
 
 export const agentSessionContainerContext = createContext<AgentSessionContainer>();
-export const workspaceRepositoryContext = createContext<WorkspaceRepository>();
+export const projectRepositoryContext = createContext<ProjectRepository>();
