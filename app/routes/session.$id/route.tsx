@@ -9,7 +9,7 @@ import { agentSessionContainerContext } from "~/router-contexts";
 
 import type { SseEvent } from "../session.$id.events/loader";
 import type { Route } from "./+types/route";
-import type { ActionInput } from "./action";
+import type { ActionInput, action } from "./action";
 import { AgentMessage } from "./agent-message";
 import { createChatState, chatReducer } from "./chat-reducer";
 import { PromptForm } from "./prompt-form";
@@ -84,7 +84,7 @@ export default function Chat({
   // Whether the user is scrolled near the bottom (within 50px threshold)
   const shouldAutoScroll = useRef(true);
 
-  const fetcher = useFetcher<ActionInput>();
+  const fetcher = useFetcher<typeof action>();
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
