@@ -1,6 +1,6 @@
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { Layers, MessageCircle, Moon, Plus, Sun } from "lucide-react";
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { data, Link, useFetcher } from "react-router";
 
 import { ScrollArea } from "~/components/scroll-area";
@@ -77,42 +77,10 @@ export default function Chat({
     }
   }
   const [connected, setConnected] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Whether the user is scrolled near the bottom (within 50px threshold)
-  const shouldAutoScroll = useRef(true);
-
   const fetcher = useFetcher<typeof action>();
-
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, []);
-
-  // Track scroll position — only auto-scroll if user is at the bottom
-  const handleScroll = useCallback(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    const threshold = 50;
-    shouldAutoScroll.current =
-      container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
-  }, []);
-
-  // Auto-scroll on new messages only when user hasn't scrolled up
-  useEffect(() => {
-    if (shouldAutoScroll.current) {
-      scrollToBottom();
-    }
-  }, [chat.eventMessages, chat.loadedMessages, scrollToBottom]);
-
-  // Also scroll on initial load of session (when loadedMessages are first rendered)
-  useEffect(() => {
-    scrollToBottom();
-    // Reset to auto-follow for this session
-    shouldAutoScroll.current = true;
-  }, [sessionId]);
 
   // Reset local state when navigating to a different session.
   // Only depend on sessionId so that loader re-validation after actions
@@ -245,7 +213,7 @@ export default function Chat({
       </div>
 
       {/* Messages */}
-      <ScrollArea ref={scrollContainerRef} onScroll={handleScroll} viewportClassName="pb-36">
+      <ScrollArea key={`messages-${sessionId}`} autoScroll viewportClassName="pb-36">
         <div className="max-w-5xl max-lg:max-w-[100vw] w-full mx-auto px-4 py-4 space-y-4 min-h-full min-w-0">
           {chat.loadedMessages.length === 0 &&
           chat.eventMessages.length === 0 &&
@@ -274,12 +242,11 @@ export default function Chat({
               )}
             </ToolCallContext>
           )}
-          <div ref={messagesEndRef} />
         </div>
       </ScrollArea>
 
       <PromptForm
-        key={sessionId}
+        key={`prompt-${sessionId}`}
         isStreaming={state.isStreaming}
         models={models}
         defaultModel={state.model}
