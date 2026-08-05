@@ -88,6 +88,7 @@
                 pnpm
                 pkgs.pnpmConfigHook
                 pkgs.playwright-driver.browsers
+                pkgs.git
               ];
               buildPhase = ''
                 export PLAYWRIGHT_BROWSERS_PATH=${pkgs.playwright-driver.browsers}

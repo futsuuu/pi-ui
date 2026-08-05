@@ -1,0 +1,288 @@
+import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdir, rmdir } from "node:fs/promises";
+import { homedir } from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+
+export interface Worktree {
+  /** Branch name, or null when the worktree is in detached HEAD. */
+  branch: string | null;
+  /** Short commit sha, present when the worktree is in detached HEAD. */
+  head: string | null;
+  path: string;
+}
+
+const ADJECTIVES = [
+  "agile",
+  "bold",
+  "calm",
+  "clever",
+  "cozy",
+  "crisp",
+  "daring",
+  "eager",
+  "fancy",
+  "fierce",
+  "gentle",
+  "happy",
+  "humble",
+  "jolly",
+  "keen",
+  "lively",
+  "lucky",
+  "mellow",
+  "merry",
+  "mighty",
+  "nimble",
+  "noble",
+  "playful",
+  "proud",
+  "quick",
+  "quiet",
+  "radiant",
+  "rapid",
+  "sharp",
+  "silent",
+  "sleek",
+  "smart",
+  "smooth",
+  "sturdy",
+  "swift",
+  "wise",
+  "witty",
+  "zesty",
+];
+
+const NOUNS = [
+  "badger",
+  "beaver",
+  "breeze",
+  "canyon",
+  "comet",
+  "coral",
+  "dolphin",
+  "falcon",
+  "fern",
+  "fox",
+  "galaxy",
+  "gopher",
+  "harbor",
+  "heron",
+  "horizon",
+  "jaguar",
+  "lantern",
+  "lotus",
+  "meadow",
+  "meteor",
+  "mosaic",
+  "otter",
+  "panther",
+  "pebble",
+  "pine",
+  "pond",
+  "rabbit",
+  "raven",
+  "river",
+  "robin",
+  "rock",
+  "salmon",
+  "sparrow",
+  "stone",
+  "stream",
+  "tiger",
+  "turtle",
+  "valley",
+  "willow",
+  "wolf",
+];
+
+export function generateBranchName(): string {
+  const adjective = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+  const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
+  return `pi/${adjective}-${noun}`;
+}
+
+/** Short hash of a project path, used to namespace each project's worktrees. */
+export function hashProjectPath(projectPath: string): string {
+  return createHash("sha256").update(path.resolve(projectPath)).digest("hex").slice(0, 12);
+}
+
+export type RunGit = (args: string[], options?: { cwd?: string }) => Promise<string>;
+
+function defaultDataDir(): string {
+  const base = process.env.XDG_DATA_HOME
+    ? path.join(process.env.XDG_DATA_HOME, "pi-ui")
+    : path.join(homedir(), ".local", "share", "pi-ui");
+  return path.join(base, "worktrees");
+}
+
+function parseWorktreeList(output: string): Worktree[] {
+  const worktrees: Worktree[] = [];
+  for (const block of output.trim().split(/\n\n+/)) {
+    if (!block) continue;
+    let worktreePath: string | undefined;
+    let branch: string | undefined;
+    let head: string | undefined;
+    let detached = false;
+    for (const line of block.split("\n")) {
+      if (line.startsWith("worktree ")) {
+        worktreePath = line.slice("worktree ".length);
+      } else if (line.startsWith("branch refs/heads/")) {
+        branch = line.slice("branch refs/heads/".length);
+      } else if (line.startsWith("HEAD ")) {
+        head = line.slice("HEAD ".length).slice(0, 7);
+      } else if (line === "detached") {
+        detached = true;
+      }
+    }
+    if (!worktreePath || (!branch && !detached)) continue;
+    worktrees.push({
+      branch: branch ?? null,
+      head: detached ? (head ?? null) : null,
+      path: path.resolve(worktreePath),
+    });
+  }
+  return worktrees;
+}
+
+/**
+ * Manages git worktrees for projects. New worktrees are created with a
+ * random `pi/<adjective>-<noun>` branch under an app-specific data
+ * directory, but no metadata is persisted: the current worktree state is
+ * read from `git worktree list` on every call, and the list includes
+ * worktrees created outside the app directory, as well as linked worktrees
+ * in detached HEAD.
+ */
+export class WorktreeRepository {
+  private readonly dataDir: string;
+  private readonly runGit: RunGit;
+
+  public constructor(options: { dataDir?: string; runGit?: RunGit } = {}) {
+    this.dataDir = options.dataDir ?? defaultDataDir();
+    this.runGit =
+      options.runGit ??
+      (async (args, options = {}) => {
+        try {
+          const { stdout } = await execFileAsync("git", args, {
+            cwd: options.cwd,
+            encoding: "utf8",
+          });
+          return stdout;
+        } catch (error) {
+          const stderr =
+            error instanceof Error && "stderr" in error
+              ? String((error as { stderr: unknown }).stderr)
+              : "";
+          throw new Error(stderr.trim() || `git ${args.join(" ")} failed`);
+        }
+      });
+  }
+
+  /**
+   * Resolve the repository root (toplevel) of a project, falling back to the
+   * given path when it is not inside a git repository. `git worktree list`
+   * always reports the main worktree at the toplevel, so comparing against it
+   * excludes the main worktree even when the project was opened from a
+   * subdirectory.
+   */
+  private async toplevel(projectPath: string): Promise<string> {
+    try {
+      const output = await this.runGit(["rev-parse", "--show-toplevel"], {
+        cwd: projectPath,
+      });
+      const root = output.trim();
+      if (root) return path.resolve(root);
+    } catch {}
+    return path.resolve(projectPath);
+  }
+
+  /** Directory under the data dir that holds this project's worktrees. */
+  private async projectDir(projectPath: string): Promise<string> {
+    return path.join(this.dataDir, hashProjectPath(await this.toplevel(projectPath)));
+  }
+
+  /**
+   * Current branch of the main worktree (project root), or null when the
+   * project is not a git repository or is in detached HEAD.
+   */
+  public async mainBranch(projectPath: string): Promise<string | null> {
+    try {
+      const output = await this.runGit(["branch", "--show-current"], { cwd: projectPath });
+      return output.trim() || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** List the linked worktrees of a project, excluding the main worktree. */
+  public async list(projectPath: string): Promise<Worktree[]> {
+    await this.runGit(["worktree", "prune"], { cwd: projectPath }).catch(() => {});
+    const [output, mainPath] = await Promise.all([
+      this.runGit(["worktree", "list", "--porcelain"], { cwd: projectPath }),
+      this.toplevel(projectPath),
+    ]);
+    return parseWorktreeList(output).filter((worktree) => worktree.path !== mainPath);
+  }
+
+  /**
+   * Create a new worktree with a random `pi/<adjective>-<noun>` branch in the
+   * app data directory. Returns the created worktree.
+   */
+  public async add(projectPath: string): Promise<Worktree> {
+    await mkdir(this.dataDir, { recursive: true });
+    for (let i = 0; i < 10; i++) {
+      const branch = generateBranchName();
+      if (await this.branchExists(projectPath, branch)) continue;
+      const worktreePath = path.join(
+        await this.projectDir(projectPath),
+        branch.replace(/^pi\//, ""),
+      );
+      try {
+        await this.runGit(["worktree", "add", "-b", branch, worktreePath, "HEAD"], {
+          cwd: projectPath,
+        });
+        return { branch, head: null, path: worktreePath };
+      } catch (error) {
+        // A concurrent request may have grabbed the same branch name.
+        if (error instanceof Error && error.message.includes("already exists")) continue;
+        throw error;
+      }
+    }
+    throw new Error("Could not generate a unique worktree branch name");
+  }
+
+  /**
+   * Remove a worktree: deletes the working tree and its branch. If the working
+   * tree directory no longer exists, falls back to pruning stale bookkeeping.
+   * Deletion is intentionally not exposed outside this repository.
+   */
+  public async remove(projectPath: string, worktree: Worktree): Promise<void> {
+    try {
+      await this.runGit(["worktree", "remove", "--force", worktree.path], {
+        cwd: projectPath,
+      });
+    } catch {
+      await this.runGit(["worktree", "prune"], { cwd: projectPath }).catch(() => {});
+    }
+    if (worktree.branch) {
+      await this.runGit(["branch", "--delete", "--force", worktree.branch], {
+        cwd: projectPath,
+      }).catch(() => {});
+    }
+    await rmdir(await this.projectDir(projectPath)).catch(() => {});
+  }
+
+  private async branchExists(projectPath: string, branch: string): Promise<boolean> {
+    try {
+      await this.runGit(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], {
+        cwd: projectPath,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}

@@ -1,13 +1,55 @@
-import { Plus, Clock, Layers, Sun, Moon } from "lucide-react";
-import { Link, redirect, useLoaderData } from "react-router";
+import path from "node:path";
+
+import { Clock, GitBranch, Layers, MessageCirclePlus, Moon, Plus, Sun } from "lucide-react";
+import { data, Link, redirect, useFetcher, useLoaderData } from "react-router";
+import * as v from "valibot";
 
 import { useTheme } from "~/contexts/theme";
-import { agentSessionContainerContext, projectRepositoryContext } from "~/router-contexts";
+import {
+  agentSessionContainerContext,
+  projectRepositoryContext,
+  worktreeRepositoryContext,
+} from "~/router-contexts";
+import type { Worktree } from "~/worktree-repository";
 
 import type { Route } from "./+types/route";
 
 export function meta(_: Route.MetaArgs) {
   return [{ title: "Pi UI - Sessions" }];
+}
+
+const ActionSchema = v.variant("type", [
+  v.object({
+    type: v.literal("addWorktree"),
+    dir: v.pipe(v.string(), v.minLength(1)),
+  }),
+]);
+
+export type ActionInput = v.InferInput<typeof ActionSchema>;
+
+export async function action({ request, context }: Route.ActionArgs) {
+  const worktreeRepository = context.get(worktreeRepositoryContext);
+  let parsed: unknown;
+  try {
+    parsed = await request.json();
+  } catch {
+    return data({ error: "Invalid request" }, { status: 400 });
+  }
+  const result = v.safeParse(ActionSchema, parsed);
+  if (!result.success) {
+    return data({ error: "Invalid request" }, { status: 400 });
+  }
+  if (result.output.type === "addWorktree") {
+    try {
+      await worktreeRepository.add(result.output.dir);
+      return { ok: true as const };
+    } catch (error) {
+      return data(
+        { error: error instanceof Error ? error.message : "Failed to create worktree" },
+        { status: 400 },
+      );
+    }
+  }
 }
 
 export async function loader({ request, context }: Route.LoaderArgs) {
@@ -19,14 +61,58 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const projectRepository = context.get(projectRepositoryContext);
   await projectRepository.add(dir);
   const sessionContainer = context.get(agentSessionContainerContext);
-  const sessions = await sessionContainer.listInfo(dir);
-  const sorted = sessions.sort((a, b) => b.timestamp - a.timestamp);
-  return { sessions: sorted, cwd: dir };
+  const worktreeRepository = context.get(worktreeRepositoryContext);
+
+  let worktrees: Worktree[] = [];
+  try {
+    worktrees = await worktreeRepository.list(dir);
+  } catch {
+    worktrees = [];
+  }
+
+  const rootSessions = await sessionContainer.listInfo(dir);
+  const worktreeEntries = await Promise.all(
+    worktrees.map(async (worktree) => ({
+      worktree,
+      sessions: await sessionContainer.listInfo(worktree.path),
+    })),
+  );
+
+  const mainBranch = await worktreeRepository.mainBranch(dir).catch(() => null);
+
+  const sessions = [
+    ...rootSessions.map((session) => ({ ...session, worktree: null })),
+    ...worktreeEntries.flatMap(({ worktree, sessions }) =>
+      sessions.map((session) => ({ ...session, worktree })),
+    ),
+  ].sort((a, b) => b.timestamp - a.timestamp);
+
+  return {
+    sessions,
+    worktrees: [
+      {
+        branch: mainBranch ?? path.basename(dir),
+        head: null,
+        path: dir,
+        isMain: true,
+        sessionCount: rootSessions.length,
+      },
+      ...worktrees.map((worktree) => ({
+        ...worktree,
+        isMain: false,
+        sessionCount:
+          worktreeEntries.find((entry) => entry.worktree.path === worktree.path)?.sessions.length ??
+          0,
+      })),
+    ],
+    cwd: dir,
+  };
 }
 
 export default function Sessions() {
   const { theme, toggleTheme } = useTheme();
-  const { sessions, cwd } = useLoaderData<typeof loader>();
+  const { sessions, worktrees, cwd } = useLoaderData<typeof loader>();
+  const fetcher = useFetcher<typeof action>();
 
   function formatDate(ts: number): string {
     const d = new Date(ts);
@@ -42,6 +128,13 @@ export default function Sessions() {
   }
 
   const newSessionHref = `/session/new?dir=${encodeURIComponent(cwd)}`;
+
+  function addWorktree() {
+    void fetcher.submit({ type: "addWorktree", dir: cwd } satisfies ActionInput, {
+      method: "post",
+      encType: "application/json",
+    });
+  }
 
   return (
     <div className="h-full flex flex-col">
@@ -62,19 +155,72 @@ export default function Sessions() {
       </div>
 
       <div className="flex-1 max-w-3xl mx-auto w-full p-6">
-        <div className="flex items-center justify-between mb-6">
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Resume an existing session or start a new one.
-          </p>
-          <Link
-            to={newSessionHref}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            New Session
-          </Link>
+        {/* Worktrees */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+              <GitBranch className="w-4 h-4 text-green-600 dark:text-green-500" />
+              Worktrees
+            </h2>
+            <button
+              onClick={addWorktree}
+              disabled={fetcher.state !== "idle"}
+              className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add Worktree
+            </button>
+          </div>
+          {fetcher.data && "error" in fetcher.data && (
+            <p className="text-sm text-red-600 dark:text-red-400 mb-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
+              {fetcher.data.error}
+            </p>
+          )}
+          <div className="space-y-2">
+            {worktrees.map((worktree) => (
+              <div
+                key={worktree.path}
+                className="flex items-center justify-between gap-4 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3"
+              >
+                <div className="min-w-0">
+                  <p className="font-mono text-sm text-gray-900 dark:text-gray-100 truncate flex items-center gap-2">
+                    {worktree.branch ?? worktree.head ?? "detached"}
+                    {worktree.isMain && (
+                      <span className="px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 text-[10px] font-sans font-medium uppercase tracking-wide flex-shrink-0">
+                        main
+                      </span>
+                    )}
+                    {worktree.branch === null && (
+                      <span className="px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-[10px] font-sans font-medium uppercase tracking-wide flex-shrink-0">
+                        detached
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {worktree.sessionCount} {worktree.sessionCount === 1 ? "session" : "sessions"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <Link
+                    to={`/session/new?dir=${encodeURIComponent(worktree.path)}`}
+                    title="New Session"
+                    className="p-2 -m-1 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    <MessageCirclePlus className="w-5 h-5" />
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+          {worktrees.length === 1 && (
+            <p className="text-xs text-gray-400 dark:text-gray-500 px-1 mt-2">
+              No extra worktrees yet. Add one to work on a separate branch without touching the main
+              working tree.
+            </p>
+          )}
         </div>
 
+        {/* Sessions */}
         {sessions.length === 0 ? (
           <div className="text-center py-16">
             <Clock
@@ -105,8 +251,14 @@ export default function Sessions() {
                     <p className="font-medium text-gray-900 dark:text-gray-100 truncate">
                       {session.firstMessage || "Untitled Session"}
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1.5 flex-wrap">
                       {formatDate(session.timestamp)} · {session.messageCount} messages
+                      {session.worktree && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 font-mono">
+                          <GitBranch className="w-3 h-3" />
+                          {session.worktree.branch ?? session.worktree.head ?? "detached"}
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>

@@ -1,0 +1,228 @@
+import { execFile, execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
+
+import { describe, expect, it } from "vitest";
+
+import { generateBranchName, hashProjectPath, WorktreeRepository } from "./worktree-repository";
+
+const execFileAsync = promisify(execFile);
+
+async function runGit(args: string[], options: { cwd?: string } = {}): Promise<string> {
+  const { stdout } = await execFileAsync("git", args, { cwd: options.cwd, encoding: "utf8" });
+  return stdout;
+}
+
+function git(cwd: string, args: string[]): void {
+  execFileSync("git", args, { cwd, stdio: "ignore" });
+}
+
+function createRepo(): { root: string; project: string; dataDir: string } {
+  const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-worktree-"));
+  const project = path.join(root, "project");
+  const dataDir = path.join(root, "worktrees");
+  mkdirSync(project, { recursive: true });
+  git(project, ["init", "--quiet", "--initial-branch", "main"]);
+  git(project, ["config", "user.email", "test@example.com"]);
+  git(project, ["config", "user.name", "Test"]);
+  writeFileSync(path.join(project, "file.txt"), "hello\n");
+  git(project, ["add", "."]);
+  git(project, ["commit", "--quiet", "--message", "init"]);
+  return { root, project, dataDir };
+}
+
+describe("generateBranchName", () => {
+  it("generates pi/<adjective>-<noun> branch names", () => {
+    for (let i = 0; i < 50; i++) {
+      expect(generateBranchName()).toMatch(/^pi\/[a-z]+-[a-z]+$/);
+    }
+  });
+});
+
+describe("hashProjectPath", () => {
+  it("produces a stable 12-char hex hash for the resolved path", () => {
+    const project = "/tmp/example/project";
+    const hash = hashProjectPath(project);
+    expect(hash).toMatch(/^[0-9a-f]{12}$/);
+    expect(hashProjectPath(project)).toBe(hash);
+  });
+});
+
+describe("WorktreeRepository", () => {
+  it("adds a worktree with a random pi/ branch under the project's hash dir", async () => {
+    const { root, project, dataDir } = createRepo();
+    try {
+      const repo = new WorktreeRepository({ dataDir });
+      const worktree = await repo.add(project);
+      expect(worktree.branch).toMatch(/^pi\/[a-z]+-[a-z]+$/);
+      expect(worktree.path).toBe(
+        path.join(dataDir, hashProjectPath(project), worktree.branch!.replace(/^pi\//, "")),
+      );
+      const listed = await repo.list(project);
+      expect(listed).toEqual([worktree]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("lists all linked worktrees except the main worktree", async () => {
+    const { root, project, dataDir } = createRepo();
+    try {
+      const repo = new WorktreeRepository({ dataDir });
+      const appWorktree = await repo.add(project);
+      // A worktree created outside the app data dir is listed as well.
+      const otherDir = path.join(root, "other-wt");
+      git(project, ["worktree", "add", "-b", "feature/other", otherDir, "HEAD"]);
+      const sortByBranch = (a: { branch: string | null }, b: { branch: string | null }) =>
+        (a.branch ?? "").localeCompare(b.branch ?? "");
+      expect(await repo.list(project)).toEqual(
+        [appWorktree, { branch: "feature/other", head: null, path: otherDir }].sort(sortByBranch),
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not include worktrees of other projects", async () => {
+    const { root, project, dataDir } = createRepo();
+    const second = createRepo();
+    try {
+      const repo = new WorktreeRepository({ dataDir });
+      const appWorktree = await repo.add(project);
+      await repo.add(second.project);
+      const listed = await repo.list(project);
+      expect(listed).toEqual([appWorktree]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(second.root, { recursive: true, force: true });
+    }
+  });
+
+  it("excludes the main worktree when listing from a subdirectory", async () => {
+    const { root, project, dataDir } = createRepo();
+    try {
+      const repo = new WorktreeRepository({ dataDir });
+      const appWorktree = await repo.add(project);
+      const subdir = path.join(project, "subdir");
+      mkdirSync(subdir, { recursive: true });
+      expect(await repo.list(subdir)).toEqual([appWorktree]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("lists linked worktrees in detached HEAD with the short head sha", async () => {
+    const { root, project, dataDir } = createRepo();
+    try {
+      const repo = new WorktreeRepository({ dataDir });
+      const detachedDir = path.join(root, "detached-wt");
+      git(project, ["worktree", "add", "--detach", detachedDir, "HEAD"]);
+      const listed = await repo.list(project);
+      expect(listed).toHaveLength(1);
+      expect(listed[0].branch).toBeNull();
+      expect(listed[0].head).toMatch(/^[0-9a-f]{7}$/);
+      expect(listed[0].path).toBe(detachedDir);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("retries with a new branch name when the branch already exists", async () => {
+    const { root, project, dataDir } = createRepo();
+    try {
+      let addCalls = 0;
+      const repo = new WorktreeRepository({
+        dataDir,
+        runGit: async (args, options) => {
+          if (args[0] === "worktree" && args[1] === "add") {
+            addCalls++;
+            if (addCalls === 1) {
+              throw new Error("fatal: a branch named 'pi/x' already exists");
+            }
+          }
+          return runGit(args, options);
+        },
+      });
+      const worktree = await repo.add(project);
+      expect(addCalls).toBe(2);
+      expect(await repo.list(project)).toEqual([worktree]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("removes the worktree directory and branch", async () => {
+    const { root, project, dataDir } = createRepo();
+    try {
+      const repo = new WorktreeRepository({ dataDir });
+      await repo.add(project);
+      const [worktree] = await repo.list(project);
+      await repo.remove(project, worktree);
+      expect(await repo.list(project)).toEqual([]);
+      expect(() =>
+        git(project, ["rev-parse", "--verify", `refs/heads/${worktree.branch}`]),
+      ).toThrow();
+      // The project's hash dir is cleaned up once it no longer holds worktrees.
+      expect(existsSync(path.join(dataDir, hashProjectPath(project)))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("prunes stale entries when the worktree directory was deleted manually", async () => {
+    const { root, project, dataDir } = createRepo();
+    try {
+      const repo = new WorktreeRepository({ dataDir });
+      await repo.add(project);
+      const [worktree] = await repo.list(project);
+      rmSync(worktree.path, { recursive: true, force: true });
+      await expect(repo.remove(project, worktree)).resolves.toBeUndefined();
+      expect(await repo.list(project)).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports the current branch of the main worktree", async () => {
+    const { root, project, dataDir } = createRepo();
+    try {
+      const repo = new WorktreeRepository({ dataDir });
+      expect(await repo.mainBranch(project)).toBe("main");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("returns null when the main worktree is in detached HEAD", async () => {
+    const { root, project, dataDir } = createRepo();
+    try {
+      git(project, ["checkout", "--detach", "HEAD"]);
+      const repo = new WorktreeRepository({ dataDir });
+      expect(await repo.mainBranch(project)).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("returns null when the project is not a git repository", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-worktree-"));
+    try {
+      const repo = new WorktreeRepository({ dataDir: path.join(root, "worktrees") });
+      expect(await repo.mainBranch(root)).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("throws when the project is not a git repository", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-worktree-"));
+    try {
+      const repo = new WorktreeRepository({ dataDir: path.join(root, "worktrees") });
+      await expect(repo.add(root)).rejects.toThrow();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
