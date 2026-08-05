@@ -314,6 +314,57 @@ describe("chatReducer", () => {
     expect(toolCallMap.get("call-1")).toEqual({ toolName: "bash", args: { command: "ls" } });
   });
 
+  it("propagates the edit tool's diff details into the tool result entry", () => {
+    const editToolCall: AssistantMessage["content"][number] = {
+      type: "toolCall",
+      id: "call-edit",
+      name: "edit",
+      arguments: {
+        path: "app/foo.ts",
+        edits: [{ oldText: "const a = 1;", newText: "const a = 2;" }],
+      },
+    };
+    const assistant = assistantMessage([editToolCall], "toolUse");
+    const details = {
+      diff: " 1 const a = 1;\n-2 const b = 2;\n+2 const b = 3;",
+      patch: "--- a/app/foo.ts\n+++ b/app/foo.ts",
+      firstChangedLine: 2,
+    };
+
+    const events: AgentSessionEvent[] = [
+      agentStart(),
+      turnStart(),
+      messageStart(userMessage("hello")),
+      messageEnd(userMessage("hello")),
+      messageStart(assistantMessage([], "stop")),
+      messageEnd(assistant),
+      toolExecutionStart("call-edit", "edit", editToolCall.arguments),
+      toolExecutionEnd(
+        "call-edit",
+        { content: textBlock("Successfully replaced 1 block(s) in app/foo.ts."), details },
+        false,
+      ),
+      turnEnd(assistant, [toolResultMessage("call-edit", "edit", textBlock("ok"))]),
+      agentEnd([
+        userMessage("hello"),
+        assistant,
+        toolResultMessage("call-edit", "edit", textBlock("ok")),
+      ]),
+      agentSettled(),
+    ];
+
+    const { eventMessages } = run(events);
+
+    // ToolResultMessage renders <DiffView> from these details.
+    expect(eventMessages[2]).toMatchObject({
+      role: "toolResult",
+      toolName: "edit",
+      details,
+      isStreaming: false,
+      isError: false,
+    });
+  });
+
   it("marks a failed tool execution as an error result", () => {
     const toolCall: AssistantMessage["content"][number] = {
       type: "toolCall",

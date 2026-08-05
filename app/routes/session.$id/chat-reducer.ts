@@ -166,6 +166,9 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return updateToolResult(state, action.toolCallId, (entry) => ({
         ...entry,
         content: action.result?.content ?? [],
+        // The edit tool returns its display diff here (details.diff); the
+        // chat entry carries it so ToolResultMessage can render a diff view.
+        details: action.result?.details,
         isStreaming: false,
         isError: action.isError,
       }));

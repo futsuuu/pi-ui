@@ -1,16 +1,27 @@
 import type { ToolResultMessage as Data, TextContent } from "@earendil-works/pi-ai";
+import type { EditToolDetails } from "@earendil-works/pi-coding-agent";
 import { CheckIcon, WrenchIcon, XIcon } from "lucide-react";
 
 import { ScrollArea } from "~/components/scroll-area";
 
+import { DiffView } from "./diff-view";
 import { StreamingCursor } from "./streaming-cursor";
 import { useToolCall } from "./tool-call-context";
 
 export type Props = Pick<Data, "role" | "content" | "toolName" | "toolCallId" | "isError"> & {
+  /** Tool-specific result metadata (the edit tool's display diff etc.). */
+  details?: EditToolDetails;
   isStreaming?: boolean;
 };
 
-export function ToolResultMessage({ content, toolName, toolCallId, isError, isStreaming }: Props) {
+export function ToolResultMessage({
+  content,
+  toolName,
+  toolCallId,
+  isError,
+  isStreaming,
+  details,
+}: Props) {
   const toolCall = useToolCall(toolCallId ?? "");
 
   const text = content
@@ -44,11 +55,15 @@ export function ToolResultMessage({ content, toolName, toolCallId, isError, isSt
     }
   }
 
+  // The edit tool renders its display diff instead of the plain-text summary;
+  // everything else keeps the args JSON + result text.
+  const diff = toolName === "edit" ? details?.diff : undefined;
+
   return (
     <div className="flex justify-start">
       <div className="rounded-xl py-3 w-full text-gray-700 dark:text-gray-300 text-sm border border-gray-200 dark:border-gray-700 px-4">
         {toolName && (
-          <details className="group" open={isStreaming || undefined}>
+          <details className="group" open={diff ? true : isStreaming || undefined}>
             <summary className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden [&::marker]:hidden">
               <WrenchIcon className="w-3 h-3 shrink-0 text-gray-400" />
               <span className="font-medium shrink-0 text-gray-400">{toolName}</span>
@@ -68,18 +83,24 @@ export function ToolResultMessage({ content, toolName, toolCallId, isError, isSt
                 ))}
             </summary>
             <div className="mt-2 space-y-2">
-              {toolArgs != null && (
-                <ScrollArea
-                  className="p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs text-gray-500 dark:text-gray-200"
-                  viewportClassName="font-mono whitespace-pre"
-                >
-                  {JSON.stringify(toolArgs, null, 2)}
-                </ScrollArea>
+              {diff ? (
+                <DiffView path={summary} diff={diff} />
+              ) : (
+                <>
+                  {toolArgs != null && (
+                    <ScrollArea
+                      className="p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs text-gray-500 dark:text-gray-200"
+                      viewportClassName="font-mono whitespace-pre"
+                    >
+                      {JSON.stringify(toolArgs, null, 2)}
+                    </ScrollArea>
+                  )}
+                  <ScrollArea viewportClassName="font-mono whitespace-pre">
+                    {text || (isStreaming ? "..." : "")}
+                    {isStreaming && <StreamingCursor />}
+                  </ScrollArea>
+                </>
               )}
-              <ScrollArea viewportClassName="font-mono whitespace-pre">
-                {text || (isStreaming ? "..." : "")}
-                {isStreaming && <StreamingCursor />}
-              </ScrollArea>
             </div>
           </details>
         )}

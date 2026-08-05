@@ -46,6 +46,37 @@ pre.shiki span {
   text-decoration: var(--shiki-dark-text-decoration);
 }
 
+/* DiffView (edit tool preview) token spans: each token carries the
+   --shiki-light/--shiki-dark CSS variables inline (from codeToTokens with
+   defaultColor: false), so these rules pick the active theme just like
+   pre.shiki above. No background-color here: the theme bg is set on the
+   .diff-view container, and add/remove row tints must show through. */
+.diff-token {
+  color: var(--shiki-light);
+  font-style: var(--shiki-light-font-style);
+  font-weight: var(--shiki-light-font-weight);
+  text-decoration: var(--shiki-light-text-decoration);
+}
+
+.dark .diff-token {
+  color: var(--shiki-dark);
+  font-style: var(--shiki-dark-font-style);
+  font-weight: var(--shiki-dark-font-weight);
+  text-decoration: var(--shiki-dark-text-decoration);
+}
+
+/* DiffView container background: matches the active Shiki theme (github-light
+   / github-dark). The --shiki-*-bg variables are set inline by DiffView once
+   the theme colors resolve; the fallbacks match the bundled theme bgs so the
+   first paint is stable. */
+.diff-view {
+  background-color: var(--shiki-light-bg, #fff);
+}
+
+.dark .diff-view {
+  background-color: var(--shiki-dark-bg, #24292e);
+}
+
 /* Remove the backtick glyphs that @tailwindcss/typography draws around inline
    code via ::before/::after (unlayered CSS wins over the plugin's styles). */
 .prose :where(code):not(:where([class~="not-prose"], [class~="not-prose"] *))::before,
