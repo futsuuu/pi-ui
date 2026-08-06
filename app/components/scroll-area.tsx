@@ -100,7 +100,8 @@ export function ScrollArea({
         return;
       }
       const prevTop = prevScrollTopRef.current;
-      prevScrollTopRef.current = vp.scrollTop;
+      const currentTop = vp.scrollTop;
+      prevScrollTopRef.current = currentTop;
 
       // Scrolls not preceded by a user input gesture (content growth, viewport
       // resizes, our own re-pinning) must never toggle following — otherwise a
@@ -108,12 +109,20 @@ export function ScrollArea({
       if (!pendingUserScrollRef.current) {
         return;
       }
+      // On threaded-scrolling platforms (e.g. Windows) a scroll event can be
+      // dispatched before the new scroll position is committed, so it reads
+      // the same position as the previous one. Keep the pending marker for the
+      // event that reflects the actual movement instead of misattributing the
+      // gesture (e.g. treating a stale "at the bottom" read as a re-enable).
+      if (currentTop === prevTop) {
+        return;
+      }
       pendingUserScrollRef.current = false;
 
       if (atBottom(vp)) {
         // The user scrolled back to the bottom: resume following.
         followingRef.current = true;
-      } else if (vp.scrollTop < prevTop) {
+      } else if (currentTop < prevTop) {
         // The user scrolled away from the bottom: stop following.
         followingRef.current = false;
       }
@@ -133,6 +142,11 @@ export function ScrollArea({
     // (async markdown, fonts, images) re-pins via the ResizeObserver below,
     // so the initial load always ends at the bottom.
     scrollToBottom();
+    // Record the pinned position right away: the browser's own scroll event
+    // for the pin may be delayed or coalesced, and direction detection below
+    // needs an accurate previous position to tell "scrolled up" from a stale
+    // first event.
+    prevScrollTopRef.current = vp.scrollTop;
 
     const resizeObserver = new ResizeObserver(() => {
       // Re-pin whenever content or the viewport itself resizes, but only while
