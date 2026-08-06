@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { mkdir, rmdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -105,9 +106,31 @@ export function generateBranchName(): string {
   return `pi/${adjective}-${noun}`;
 }
 
+/**
+ * Resolve a path to its OS-canonical form: on Windows this expands 8.3 short
+ * names (`RUNNER~1` -> `runneradmin`) and canonicalizes case, so paths that
+ * refer to the same directory always hash and compare equal. Falls back to a
+ * plain resolve when the path does not exist (e.g. a stale worktree entry).
+ */
+function resolvePath(p: string): string {
+  try {
+    return realpathSync.native(p);
+  } catch (error) {
+    // Only "path does not exist" errors can safely fall back to a plain
+    // resolve; anything else (permission errors, etc.) should surface rather
+    // than silently produce a non-canonical path.
+    const code =
+      error instanceof Error && "code" in error ? String((error as { code: unknown }).code) : "";
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      return path.resolve(p);
+    }
+    throw error;
+  }
+}
+
 /** Short hash of a project path, used to namespace each project's worktrees. */
 export function hashProjectPath(projectPath: string): string {
-  return createHash("sha256").update(path.resolve(projectPath)).digest("hex").slice(0, 12);
+  return createHash("sha256").update(resolvePath(projectPath)).digest("hex").slice(0, 12);
 }
 
 export type RunGit = (args: string[], options?: { cwd?: string }) => Promise<string>;
@@ -142,7 +165,7 @@ function parseWorktreeList(output: string): Worktree[] {
     worktrees.push({
       branch: branch ?? null,
       head: detached ? (head ?? null) : null,
-      path: path.resolve(worktreePath),
+      path: resolvePath(worktreePath),
     });
   }
   return worktrees;
@@ -189,14 +212,14 @@ export class WorktreeRepository {
    * subdirectory.
    */
   private async toplevel(projectPath: string): Promise<string> {
+    let root: string | undefined;
     try {
       const output = await this.runGit(["rev-parse", "--show-toplevel"], {
         cwd: projectPath,
       });
-      const root = output.trim();
-      if (root) return path.resolve(root);
+      root = output.trim();
     } catch {}
-    return path.resolve(projectPath);
+    return resolvePath(root || projectPath);
   }
 
   /** Directory under the data dir that holds this project's worktrees. */
@@ -244,7 +267,7 @@ export class WorktreeRepository {
         await this.runGit(["worktree", "add", "-b", branch, worktreePath, "HEAD"], {
           cwd: projectPath,
         });
-        return { branch, head: null, path: worktreePath };
+        return { branch, head: null, path: resolvePath(worktreePath) };
       } catch (error) {
         // A concurrent request may have grabbed the same branch name.
         if (error instanceof Error && error.message.includes("already exists")) continue;

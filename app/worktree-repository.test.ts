@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -20,7 +20,11 @@ function git(cwd: string, args: string[]): void {
 }
 
 function createRepo(): { root: string; project: string; dataDir: string } {
-  const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-worktree-"));
+  // Resolve the canonical (long-name) form of the temp dir: on Windows the
+  // runner's TMP uses 8.3 short names (RUNNER~1), while git reports the
+  // long form. The repository canonicalizes all paths, so the expected
+  // values must use the same canonical form.
+  const root = realpathSync.native(mkdtempSync(path.join(os.tmpdir(), "pi-ui-worktree-")));
   const project = path.join(root, "project");
   const dataDir = path.join(root, "worktrees");
   mkdirSync(project, { recursive: true });
