@@ -1,3 +1,8 @@
+import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { unlink } from "node:fs/promises";
+import { promisify } from "node:util";
+
 import {
   createAgentSessionFromServices,
   createAgentSessionRuntime,
@@ -8,7 +13,56 @@ import {
   type AgentSessionEvent,
   type AgentSessionRuntime,
   type CreateAgentSessionRuntimeFactory,
+  type SessionInfo,
 } from "@earendil-works/pi-coding-agent";
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * Delete a session file, trying the `trash` CLI first (moves it to the OS
+ * trash), then falling back to permanent deletion. Mirrors Pi's TUI behavior:
+ * `trash` is only treated as successful when the file is actually gone, so a
+ * missing-path misconfiguration cannot leave the session behind.
+ */
+async function deleteSessionFile(sessionPath: string): Promise<void> {
+  const args = sessionPath.startsWith("-") ? ["--", sessionPath] : [sessionPath];
+  let trashHint: string | null = null;
+  try {
+    await execFileAsync("trash", args);
+    if (!existsSync(sessionPath)) return;
+    trashHint = "trash reported success but the session file is still present";
+  } catch (error) {
+    // `trash` is not installed or failed; keep its error for diagnostics.
+    const message = error instanceof Error ? error.message : "";
+    const stderr =
+      error instanceof Error && "stderr" in error
+        ? (String((error as { stderr: unknown }).stderr)
+            .trim()
+            .split("\n")[0] ?? "")
+        : "";
+    const detail = stderr || message;
+    if (detail) {
+      trashHint = `trash: ${detail.slice(0, 200)}`;
+    }
+  }
+  try {
+    await unlink(sessionPath);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(trashHint ? `${message} (${trashHint})` : message);
+  }
+}
+
+async function findSessionInfo(
+  sessionId: string,
+  hints: { cwd: string; sessionDir?: string },
+): Promise<SessionInfo | null> {
+  // Passing the cwd lets `list` match the session header's cwd when a custom
+  // sessionDir is used; without it `resolvePath("")` would fall back to the
+  // server process cwd and wrongly filter out sessions.
+  const infoList = await SessionManager.list(hints.cwd, hints.sessionDir);
+  return infoList.find((info) => info.id === sessionId) ?? null;
+}
 
 export class AgentSessionContainer {
   // We should not expose `AgentSessionRuntime` because it can modify the inner `session` field.
@@ -59,6 +113,15 @@ export class AgentSessionContainer {
         diagnostics: services.diagnostics,
       };
     });
+  }
+
+  /**
+   * Build a container with a custom runtime factory. Production uses
+   * {@link create}; this is exposed for tests that want to avoid the real
+   * model runtime and resource discovery.
+   */
+  public static withFactory(factory: CreateAgentSessionRuntimeFactory): AgentSessionContainer {
+    return new AgentSessionContainer(factory);
   }
 
   public async create(cwd: string) {
@@ -120,5 +183,20 @@ export class AgentSessionContainer {
     if (runtime) {
       await runtime.dispose();
     }
+  }
+
+  /**
+   * Delete a session: moves its file to the OS trash when the `trash` CLI is
+   * available, otherwise deletes it directly. Any loaded runtime is disposed
+   * first so a running chat cannot keep writing to the deleted session.
+   * Throws if no session with the given id exists.
+   */
+  public async delete(sessionId: string, hints: { cwd: string; sessionDir?: string }) {
+    const found = await findSessionInfo(sessionId, hints);
+    if (!found) {
+      throw new Error(`Session ${JSON.stringify(sessionId)} not found`);
+    }
+    await this.dispose(sessionId);
+    await deleteSessionFile(found.path);
   }
 }

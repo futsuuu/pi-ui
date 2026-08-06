@@ -1,6 +1,17 @@
 import path from "node:path";
 
-import { Clock, GitBranch, Layers, MessageCirclePlus, Moon, Plus, Sun } from "lucide-react";
+import {
+  Clock,
+  GitBranch,
+  Layers,
+  MessageCirclePlus,
+  Moon,
+  MoreVertical,
+  Plus,
+  Sun,
+  Trash2,
+} from "lucide-react";
+import { DropdownMenu } from "radix-ui";
 import { data, Link, redirect, useFetcher, useLoaderData } from "react-router";
 import * as v from "valibot";
 
@@ -21,6 +32,11 @@ export function meta(_: Route.MetaArgs) {
 const ActionSchema = v.variant("type", [
   v.object({
     type: v.literal("addWorktree"),
+    dir: v.pipe(v.string(), v.minLength(1)),
+  }),
+  v.object({
+    type: v.literal("deleteSession"),
+    id: v.pipe(v.string(), v.minLength(1)),
     dir: v.pipe(v.string(), v.minLength(1)),
   }),
 ]);
@@ -46,6 +62,18 @@ export async function action({ request, context }: Route.ActionArgs) {
     } catch (error) {
       return data(
         { error: error instanceof Error ? error.message : "Failed to create worktree" },
+        { status: 400 },
+      );
+    }
+  }
+  if (result.output.type === "deleteSession") {
+    const sessionContainer = context.get(agentSessionContainerContext);
+    try {
+      await sessionContainer.delete(result.output.id, { cwd: result.output.dir });
+      return { ok: true as const };
+    } catch (error) {
+      return data(
+        { error: error instanceof Error ? error.message : "Failed to delete session" },
         { status: 400 },
       );
     }
@@ -134,6 +162,28 @@ export default function Sessions() {
       method: "post",
       encType: "application/json",
     });
+  }
+
+  function deleteSession(session: (typeof sessions)[number]) {
+    const title = session.firstMessage || "Untitled Session";
+    if (!window.confirm(`Delete this session?\n\n"${title}"`)) return;
+    void fetcher.submit(
+      {
+        type: "deleteSession",
+        id: session.id,
+        dir: session.worktree?.path ?? cwd,
+      } satisfies ActionInput,
+      { method: "post", encType: "application/json" },
+    );
+  }
+
+  /** True while a delete request for this session is in flight. */
+  function isDeleting(sessionId: string): boolean {
+    return (
+      fetcher.state !== "idle" &&
+      fetcher.formData?.get("type") === "deleteSession" &&
+      fetcher.formData?.get("id") === sessionId
+    );
   }
 
   return (
@@ -240,29 +290,66 @@ export default function Sessions() {
           </div>
         ) : (
           <div className="space-y-2">
+            {fetcher.formData?.get("type") === "deleteSession" &&
+              fetcher.data &&
+              "error" in fetcher.data && (
+                <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
+                  {fetcher.data.error}
+                </p>
+              )}
             {sessions.map((session) => (
-              <Link
+              <div
                 key={session.id}
-                to={`/session/${encodeURIComponent(session.id)}`}
-                className="block w-full text-left bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-sm transition-all"
+                className={`relative ${isDeleting(session.id) ? "opacity-50 pointer-events-none" : ""}`}
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-gray-900 dark:text-gray-100 truncate">
-                      {session.firstMessage || "Untitled Session"}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1.5 flex-wrap">
-                      {formatDate(session.timestamp)} · {session.messageCount} messages
-                      {session.worktree && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 font-mono">
-                          <GitBranch className="w-3 h-3" />
-                          {session.worktree.branch ?? session.worktree.head ?? "detached"}
-                        </span>
-                      )}
-                    </p>
+                <Link
+                  to={`/session/${encodeURIComponent(session.id)}`}
+                  className="block w-full text-left bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-sm transition-all"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-gray-900 dark:text-gray-100 truncate pr-12">
+                        {session.firstMessage || "Untitled Session"}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1.5 flex-wrap">
+                        {formatDate(session.timestamp)} · {session.messageCount} messages
+                        {session.worktree && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 font-mono">
+                            <GitBranch className="w-3 h-3" />
+                            {session.worktree.branch ?? session.worktree.head ?? "detached"}
+                          </span>
+                        )}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </Link>
+                </Link>
+                <DropdownMenu.Root>
+                  <DropdownMenu.Trigger asChild>
+                    <button
+                      type="button"
+                      aria-label="Session actions"
+                      className="absolute top-1/2 -translate-y-1/2 right-3 p-1.5 rounded-lg text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                    >
+                      <MoreVertical className="w-5 h-5" />
+                    </button>
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Portal>
+                    <DropdownMenu.Content
+                      align="end"
+                      sideOffset={4}
+                      className="z-50 min-w-[160px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-1"
+                    >
+                      <DropdownMenu.Item
+                        onSelect={() => deleteSession(session)}
+                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm text-red-600 dark:text-red-400 outline-none cursor-pointer data-[highlighted]:bg-red-50 dark:data-[highlighted]:bg-red-900/30 data-[highlighted]:text-red-700 dark:data-[highlighted]:text-red-300"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Delete Session
+                      </DropdownMenu.Item>
+                    </DropdownMenu.Content>
+                  </DropdownMenu.Portal>
+                </DropdownMenu.Root>
+              </div>
             ))}
           </div>
         )}
