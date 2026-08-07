@@ -33,6 +33,8 @@ describe("DiffView", () => {
       <DiffView path="foo.ts" diff={" 1 const a = 1;\n-2 const b = 2;\n+2 const b = 3;"} />,
     );
 
+    // Wait for the commit (rendering can be deferred past `render()` resolve).
+    await expect.poll(() => screen.container.querySelectorAll("tbody tr").length).toBe(3);
     const rows = screen.container.querySelectorAll("tbody tr");
     expect(rows).toHaveLength(3);
     // Row backgrounds mark removals (red) and additions (green).
