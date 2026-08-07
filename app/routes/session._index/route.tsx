@@ -9,12 +9,11 @@ import {
   MoreVertical,
   Plus,
   Sun,
-  Trash2,
 } from "lucide-react";
-import { DropdownMenu } from "radix-ui";
 import { data, Link, redirect, useFetcher, useLoaderData } from "react-router";
 import * as v from "valibot";
 
+import { ActionsMenu, DeleteMenuItem } from "~/components/actions-menu";
 import { useTheme } from "~/contexts/theme";
 import {
   agentSessionContainerContext,
@@ -38,6 +37,11 @@ const ActionSchema = v.variant("type", [
     type: v.literal("deleteSession"),
     id: v.pipe(v.string(), v.minLength(1)),
     dir: v.pipe(v.string(), v.minLength(1)),
+  }),
+  v.object({
+    type: v.literal("deleteWorktree"),
+    dir: v.pipe(v.string(), v.minLength(1)),
+    path: v.pipe(v.string(), v.minLength(1)),
   }),
 ]);
 
@@ -78,6 +82,41 @@ export async function action({ request, context }: Route.ActionArgs) {
       );
     }
   }
+  if (result.output.type === "deleteWorktree") {
+    const { dir, path: worktreePath } = result.output;
+    try {
+      const worktrees = await worktreeRepository.list(dir);
+      const worktree = worktrees.find((entry) => entry.path === worktreePath);
+      if (!worktree) {
+        return data({ error: "Worktree not found" }, { status: 400 });
+      }
+      // Server-side guards: the main worktree is never deletable, and only
+      // worktrees the app created (under its data dir) can be removed.
+      if (path.resolve(worktreePath) === path.resolve(await worktreeRepository.mainPath(dir))) {
+        return data({ error: "Cannot delete the main worktree" }, { status: 400 });
+      }
+      if (!(await worktreeRepository.isManagedWorktreePath(dir, worktree.path))) {
+        return data({ error: "Only app-managed worktrees can be deleted" }, { status: 400 });
+      }
+      // Sessions are stored outside the working tree (~/.pi/agent/sessions,
+      // keyed by cwd), so delete them explicitly before removing the worktree.
+      // Ordering trade-off: deleting sessions first means a failed worktree
+      // removal leaves the worktree with its sessions already gone, rather
+      // than orphaned session files the UI can no longer show.
+      const sessionContainer = context.get(agentSessionContainerContext);
+      const sessions = await sessionContainer.listInfo(worktree.path);
+      for (const session of sessions) {
+        await sessionContainer.delete(session.id, { cwd: worktree.path });
+      }
+      await worktreeRepository.remove(dir, worktree);
+      return { ok: true as const };
+    } catch (error) {
+      return data(
+        { error: error instanceof Error ? error.message : "Failed to delete worktree" },
+        { status: 400 },
+      );
+    }
+  }
 }
 
 export async function loader({ request, context }: Route.LoaderArgs) {
@@ -107,6 +146,19 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   );
 
   const mainBranch = await worktreeRepository.mainBranch(dir).catch(() => null);
+  // Resolve the app's per-project worktree dir once instead of once per worktree.
+  const projectWorktreeDir = await worktreeRepository.projectDir(dir);
+  const managedPaths = new Set(
+    (
+      await Promise.all(
+        worktrees.map(async (worktree) =>
+          (await worktreeRepository.isManagedWorktreePath(dir, worktree.path, projectWorktreeDir))
+            ? worktree.path
+            : null,
+        ),
+      )
+    ).filter((p): p is string => p !== null),
+  );
 
   const sessions = [
     ...rootSessions.map((session) => ({ ...session, worktree: null })),
@@ -123,11 +175,13 @@ export async function loader({ request, context }: Route.LoaderArgs) {
         head: null,
         path: dir,
         isMain: true,
+        isManaged: false,
         sessionCount: rootSessions.length,
       },
       ...worktrees.map((worktree) => ({
         ...worktree,
         isMain: false,
+        isManaged: managedPaths.has(worktree.path),
         sessionCount:
           worktreeEntries.find((entry) => entry.worktree.path === worktree.path)?.sessions.length ??
           0,
@@ -158,6 +212,7 @@ export default function Sessions() {
   const newSessionHref = `/session/new?dir=${encodeURIComponent(cwd)}`;
 
   function addWorktree() {
+    fetcher.reset();
     void fetcher.submit({ type: "addWorktree", dir: cwd } satisfies ActionInput, {
       method: "post",
       encType: "application/json",
@@ -167,6 +222,7 @@ export default function Sessions() {
   function deleteSession(session: (typeof sessions)[number]) {
     const title = session.firstMessage || "Untitled Session";
     if (!window.confirm(`Delete this session?\n\n"${title}"`)) return;
+    fetcher.reset();
     void fetcher.submit(
       {
         type: "deleteSession",
@@ -183,6 +239,34 @@ export default function Sessions() {
       fetcher.state !== "idle" &&
       fetcher.formData?.get("type") === "deleteSession" &&
       fetcher.formData?.get("id") === sessionId
+    );
+  }
+
+  function deleteWorktree(worktree: (typeof worktrees)[number]) {
+    const branch = worktree.branch ?? worktree.head ?? "detached";
+    const { sessionCount } = worktree;
+    const message =
+      sessionCount > 0
+        ? `Delete this worktree?\n\nBranch "${branch}" has ${sessionCount} ${sessionCount === 1 ? "session" : "sessions"} stored for it, which will also be deleted.`
+        : `Delete this worktree?\n\nBranch "${branch}"`;
+    if (!window.confirm(message)) return;
+    fetcher.reset();
+    void fetcher.submit(
+      {
+        type: "deleteWorktree",
+        dir: cwd,
+        path: worktree.path,
+      } satisfies ActionInput,
+      { method: "post", encType: "application/json" },
+    );
+  }
+
+  /** True while a delete request for this worktree is in flight. */
+  function isDeletingWorktree(worktreePath: string): boolean {
+    return (
+      fetcher.state !== "idle" &&
+      fetcher.formData?.get("type") === "deleteWorktree" &&
+      fetcher.formData?.get("path") === worktreePath
     );
   }
 
@@ -221,16 +305,19 @@ export default function Sessions() {
               Add Worktree
             </button>
           </div>
-          {fetcher.data && "error" in fetcher.data && (
-            <p className="text-sm text-red-600 dark:text-red-400 mb-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
-              {fetcher.data.error}
-            </p>
-          )}
+          {(fetcher.formData?.get("type") === "addWorktree" ||
+            fetcher.formData?.get("type") === "deleteWorktree") &&
+            fetcher.data &&
+            "error" in fetcher.data && (
+              <p className="text-sm text-red-600 dark:text-red-400 mb-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
+                {fetcher.data.error}
+              </p>
+            )}
           <div className="space-y-2">
             {worktrees.map((worktree) => (
               <div
                 key={worktree.path}
-                className="flex items-center justify-between gap-4 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3"
+                className={`flex items-center justify-between gap-4 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3${isDeletingWorktree(worktree.path) ? " opacity-50 pointer-events-none" : ""}`}
               >
                 <div className="min-w-0">
                   <p className="font-mono text-sm text-gray-900 dark:text-gray-100 truncate flex items-center gap-2">
@@ -258,6 +345,17 @@ export default function Sessions() {
                   >
                     <MessageCirclePlus className="w-5 h-5" />
                   </Link>
+                  <ActionsMenu
+                    ariaLabel="Worktree actions"
+                    trigger={<MoreVertical className="w-5 h-5" />}
+                    triggerClassName="p-2 -m-1"
+                  >
+                    <DeleteMenuItem
+                      onSelect={() => deleteWorktree(worktree)}
+                      label="Delete Worktree"
+                      disabled={worktree.isMain || !worktree.isManaged}
+                    />
+                  </ActionsMenu>
                 </div>
               </div>
             ))}
@@ -323,32 +421,13 @@ export default function Sessions() {
                     </div>
                   </div>
                 </Link>
-                <DropdownMenu.Root>
-                  <DropdownMenu.Trigger asChild>
-                    <button
-                      type="button"
-                      aria-label="Session actions"
-                      className="absolute top-1/2 -translate-y-1/2 right-3 p-1.5 rounded-lg text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                    >
-                      <MoreVertical className="w-5 h-5" />
-                    </button>
-                  </DropdownMenu.Trigger>
-                  <DropdownMenu.Portal>
-                    <DropdownMenu.Content
-                      align="end"
-                      sideOffset={4}
-                      className="z-50 min-w-[160px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-1"
-                    >
-                      <DropdownMenu.Item
-                        onSelect={() => deleteSession(session)}
-                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm text-red-600 dark:text-red-400 outline-none cursor-pointer data-[highlighted]:bg-red-50 dark:data-[highlighted]:bg-red-900/30 data-[highlighted]:text-red-700 dark:data-[highlighted]:text-red-300"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        Delete Session
-                      </DropdownMenu.Item>
-                    </DropdownMenu.Content>
-                  </DropdownMenu.Portal>
-                </DropdownMenu.Root>
+                <ActionsMenu
+                  ariaLabel="Session actions"
+                  trigger={<MoreVertical className="w-5 h-5" />}
+                  triggerClassName="absolute top-1/2 -translate-y-1/2 right-3 p-1.5"
+                >
+                  <DeleteMenuItem onSelect={() => deleteSession(session)} label="Delete Session" />
+                </ActionsMenu>
               </div>
             ))}
           </div>
