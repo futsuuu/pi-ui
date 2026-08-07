@@ -321,7 +321,7 @@ export default function Sessions() {
             {worktrees.map((worktree) => (
               <div
                 key={worktree.path}
-                className={`flex items-center justify-between gap-4 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3${isDeletingWorktree(worktree.path) ? " opacity-50 pointer-events-none" : ""}`}
+                className={`flex items-center justify-between gap-4 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 ${isDeletingWorktree(worktree.path) ? "opacity-50 pointer-events-none" : ""}`}
               >
                 <div className="min-w-0">
                   <p className="font-mono text-sm text-gray-900 dark:text-gray-100 truncate flex items-center gap-2">
