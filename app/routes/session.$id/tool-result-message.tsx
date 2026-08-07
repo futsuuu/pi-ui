@@ -1,11 +1,10 @@
 import type { ToolResultMessage as Data, TextContent } from "@earendil-works/pi-ai";
 import type { EditToolDetails } from "@earendil-works/pi-coding-agent";
-import { CheckIcon, WrenchIcon, XIcon } from "lucide-react";
+import { CheckIcon, Loader2Icon, WrenchIcon, XIcon } from "lucide-react";
 
 import { ScrollArea } from "~/components/scroll-area";
 
 import { DiffView } from "./diff-view";
-import { StreamingCursor } from "./streaming-cursor";
 import { useToolCall } from "./tool-call-context";
 
 export type Props = Pick<Data, "role" | "content" | "toolName" | "toolCallId" | "isError"> & {
@@ -75,12 +74,15 @@ export function ToolResultMessage({
                   {summary}
                 </span>
               ) : null}
-              {isError !== undefined &&
-                (isError ? (
+              {isStreaming ? (
+                <Loader2Icon className="ml-auto w-4 h-4 text-gray-400 dark:text-gray-500 shrink-0 animate-spin" />
+              ) : isError !== undefined ? (
+                isError ? (
                   <XIcon className="ml-auto w-4 h-4 text-red-500 dark:text-red-400 shrink-0" />
                 ) : (
                   <CheckIcon className="ml-auto w-4 h-4 text-green-500 dark:text-green-400 shrink-0" />
-                ))}
+                )
+              ) : null}
             </summary>
             <div className="mt-2 space-y-2">
               {diff ? (
@@ -95,10 +97,7 @@ export function ToolResultMessage({
                       {JSON.stringify(toolArgs, null, 2)}
                     </ScrollArea>
                   )}
-                  <ScrollArea viewportClassName="font-mono whitespace-pre">
-                    {text || (isStreaming ? "..." : "")}
-                    {isStreaming && <StreamingCursor />}
-                  </ScrollArea>
+                  <ScrollArea viewportClassName="font-mono whitespace-pre">{text}</ScrollArea>
                 </>
               )}
             </div>
