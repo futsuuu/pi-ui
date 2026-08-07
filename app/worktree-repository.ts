@@ -339,9 +339,19 @@ export class WorktreeRepository {
       if (existsSync(worktree.path)) {
         throw error;
       }
-      await this.runGit(["worktree", "prune"], { cwd: projectPath }).catch(() => {});
+      // A failed prune leaves the registration behind; surface it rather than
+      // delete the branch underneath a stale entry.
+      await this.runGit(["worktree", "prune"], { cwd: projectPath });
     }
     if (worktree.branch) {
+      // Confirm git's bookkeeping no longer lists the worktree before deleting
+      // its branch, so a stale registration can never lose a checked-out branch.
+      const stillRegistered = parseWorktreeList(
+        await this.runGit(["worktree", "list", "--porcelain"], { cwd: projectPath }),
+      ).some((entry) => entry.path === worktree.path);
+      if (stillRegistered) {
+        throw new Error("Worktree is still registered after removal");
+      }
       await this.runGit(["branch", "--delete", "--force", worktree.branch], {
         cwd: projectPath,
       }).catch(() => {});
