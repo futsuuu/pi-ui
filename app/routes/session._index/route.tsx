@@ -102,16 +102,17 @@ export async function action({ request, context }: Route.ActionArgs) {
         return data({ error: "Only app-managed worktrees can be deleted" }, { status: 400 });
       }
       // Sessions are stored outside the working tree (~/.pi/agent/sessions,
-      // keyed by cwd), so delete them explicitly before removing the worktree.
-      // Ordering trade-off: deleting sessions first means a failed worktree
-      // removal leaves the worktree with its sessions already gone, rather
-      // than orphaned session files the UI can no longer show.
+      // keyed by cwd), so delete them explicitly. Removing the worktree first
+      // preserves the sessions if removal fails: a failed `git worktree
+      // remove` (e.g. locked files on Windows) then leaves the worktree and
+      // its chat history intact for a retry, rather than destroying the
+      // history before the removal attempt.
+      await worktreeRepository.remove(dir, worktree);
       const sessionContainer = context.get(agentSessionContainerContext);
       const sessions = await sessionContainer.listInfo(worktree.path);
       for (const session of sessions) {
         await sessionContainer.delete(session.id, { cwd: worktree.path });
       }
-      await worktreeRepository.remove(dir, worktree);
       return { ok: true as const };
     } catch (error) {
       return data(

@@ -25,6 +25,11 @@ function git(cwd: string, args: string[]): void {
   execFileSync("git", args, { cwd, stdio: "ignore" });
 }
 
+/** Async git runner delegating to the real git (for mocked repositories). */
+function runGit(args: string[], options: { cwd?: string } = {}): Promise<string> {
+  return Promise.resolve(execFileSync("git", args, { cwd: options.cwd, encoding: "utf8" }).trim());
+}
+
 function createRepo(): { root: string; project: string; dataDir: string; agentDir: string } {
   const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-route-"));
   const project = path.join(root, "project");
@@ -162,6 +167,49 @@ describe("session list action", () => {
         expect(() =>
           git(project, ["rev-parse", "--verify", "refs/heads/feature/user"]),
         ).not.toThrow();
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("deleteWorktree preserves sessions when worktree removal fails", async () => {
+    const { root, project, dataDir, agentDir } = createRepo();
+    try {
+      await withAgentDir(agentDir, async () => {
+        // Simulate a removal failure (e.g. locked files on Windows): the
+        // worktree is removed from git only after its sessions are deleted,
+        // so a failure must not destroy the chat history.
+        const repo = new WorktreeRepository({
+          dataDir,
+          runGit: async (args, options = {}) => {
+            if (args[0] === "worktree" && args[1] === "remove") {
+              throw new Error("fatal: failed to remove worktree (locked)");
+            }
+            return runGit(args, options);
+          },
+        });
+        const worktree = await repo.add(project);
+        const { file } = createSession(worktree.path);
+        expect(existsSync(file)).toBe(true);
+
+        const context = new RouterContextProvider();
+        context.set(worktreeRepositoryContext, repo);
+        context.set(agentSessionContainerContext, AgentSessionContainer.withFactory(noopFactory));
+
+        const result = await postAction(context, {
+          type: "deleteWorktree",
+          dir: project,
+          path: worktree.path,
+        });
+        const response = result as { type: string; data: { error?: string } };
+        expect(response.type).toBe("DataWithResponseInit");
+        expect(response.data.error).toMatch(/failed to remove worktree/);
+
+        // The failed removal must leave both the worktree and its sessions.
+        expect(await repo.list(project)).toHaveLength(1);
+        expect(existsSync(file)).toBe(true);
+        expect(await SessionManager.list(worktree.path)).toHaveLength(1);
       });
     } finally {
       rmSync(root, { recursive: true, force: true });
