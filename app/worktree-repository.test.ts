@@ -189,6 +189,68 @@ describe("WorktreeRepository", () => {
     }
   });
 
+  it("refuses to remove the main worktree and leaves the main branch intact", async () => {
+    const { root, project, dataDir } = createRepo();
+    try {
+      const repo = new WorktreeRepository({ dataDir });
+      await expect(
+        repo.remove(project, { branch: "main", head: null, path: project }),
+      ).rejects.toThrow("Cannot remove the main worktree");
+      // The main branch must not have been force-deleted.
+      expect(() => git(project, ["rev-parse", "--verify", "refs/heads/main"])).not.toThrow();
+      expect(await repo.list(project)).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to remove a worktree the app does not manage", async () => {
+    const { root, project, dataDir } = createRepo();
+    try {
+      const repo = new WorktreeRepository({ dataDir });
+      // A linked worktree created outside the app data dir.
+      const otherDir = path.join(root, "user-worktree");
+      git(project, ["worktree", "add", "-b", "feature/user", otherDir, "HEAD"]);
+      await expect(
+        repo.remove(project, { branch: "feature/user", head: null, path: otherDir }),
+      ).rejects.toThrow("Only app-managed worktrees can be removed");
+      // The worktree and its branch are untouched.
+      expect(existsSync(otherDir)).toBe(true);
+      expect(() =>
+        git(project, ["rev-parse", "--verify", "refs/heads/feature/user"]),
+      ).not.toThrow();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not delete the branch when worktree removal fails while the tree still exists", async () => {
+    const { root, project, dataDir } = createRepo();
+    try {
+      const repo = new WorktreeRepository({
+        dataDir,
+        runGit: async (args, options) => {
+          if (args[0] === "worktree" && args[1] === "remove") {
+            throw new Error("fatal: failed to remove worktree (permissions)");
+          }
+          return runGit(args, options);
+        },
+      });
+      await repo.add(project);
+      const [worktree] = await repo.list(project);
+      // The tree still exists, so removal must fail and leave the branch alone.
+      await expect(repo.remove(project, worktree)).rejects.toThrow(
+        "fatal: failed to remove worktree (permissions)",
+      );
+      expect(existsSync(worktree.path)).toBe(true);
+      expect(() =>
+        git(project, ["rev-parse", "--verify", `refs/heads/${worktree.branch}`]),
+      ).not.toThrow();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("reports the current branch of the main worktree", async () => {
     const { root, project, dataDir } = createRepo();
     try {

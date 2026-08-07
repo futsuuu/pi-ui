@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { mkdir, rmdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -222,8 +222,10 @@ export class WorktreeRepository {
     return resolvePath(root || projectPath);
   }
 
-  /** Directory under the data dir that holds this project's worktrees. */
-  private async projectDir(projectPath: string): Promise<string> {
+  /**
+   * Directory under the data dir that holds this project's worktrees.
+   */
+  public async projectDir(projectPath: string): Promise<string> {
     return path.join(this.dataDir, hashProjectPath(await this.toplevel(projectPath)));
   }
 
@@ -238,6 +240,11 @@ export class WorktreeRepository {
     } catch {
       return null;
     }
+  }
+
+  /** Path of the main worktree (repository toplevel) for a project. */
+  public async mainPath(projectPath: string): Promise<string> {
+    return this.toplevel(projectPath);
   }
 
   /** List the linked worktrees of a project, excluding the main worktree. */
@@ -278,16 +285,47 @@ export class WorktreeRepository {
   }
 
   /**
+   * Whether a worktree path is managed by the app, i.e. created under this
+   * repository's per-project data dir. Only managed worktrees are removed by
+   * {@link remove}; linked worktrees the user created elsewhere are listed
+   * but left alone so a stray click can never destroy them.
+   *
+   * Pass a pre-resolved `projectDir` to avoid resolving the toplevel again
+   * when the caller already knows it.
+   */
+  public async isManagedWorktreePath(
+    projectPath: string,
+    worktreePath: string,
+    projectDir?: string,
+  ): Promise<boolean> {
+    const dir = path.resolve(projectDir ?? (await this.projectDir(projectPath)));
+    const resolved = path.resolve(worktreePath);
+    return resolved === dir || resolved.startsWith(dir + path.sep);
+  }
+
+  /**
    * Remove a worktree: deletes the working tree and its branch. If the working
    * tree directory no longer exists, falls back to pruning stale bookkeeping.
-   * Deletion is intentionally not exposed outside this repository.
+   * Only app-managed worktrees can be removed, and the main worktree is always
+   * refused, so a remove can never destroy a branch the app did not create.
    */
   public async remove(projectPath: string, worktree: Worktree): Promise<void> {
+    if (path.resolve(worktree.path) === path.resolve(await this.toplevel(projectPath))) {
+      throw new Error("Cannot remove the main worktree");
+    }
+    if (!(await this.isManagedWorktreePath(projectPath, worktree.path))) {
+      throw new Error("Only app-managed worktrees can be removed");
+    }
     try {
       await this.runGit(["worktree", "remove", "--force", worktree.path], {
         cwd: projectPath,
       });
-    } catch {
+    } catch (error) {
+      // Only stale bookkeeping (the working tree is already gone) falls back to
+      // prune; any other failure aborts before the branch is touched.
+      if (existsSync(worktree.path)) {
+        throw error;
+      }
       await this.runGit(["worktree", "prune"], { cwd: projectPath }).catch(() => {});
     }
     if (worktree.branch) {
