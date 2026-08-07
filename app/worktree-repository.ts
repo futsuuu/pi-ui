@@ -224,9 +224,22 @@ export class WorktreeRepository {
 
   /**
    * Directory under the data dir that holds this project's worktrees.
+   * Canonicalized (realpath) so it compares equal to the paths git reports
+   * for the worktrees it holds; on Windows the data dir may sit under a
+   * base with 8.3 short names (RUNNER~1) or non-canonical case.
    */
   public async projectDir(projectPath: string): Promise<string> {
-    return path.join(this.dataDir, hashProjectPath(await this.toplevel(projectPath)));
+    return resolvePath(path.join(this.dataDir, hashProjectPath(await this.toplevel(projectPath))));
+  }
+
+  /**
+   * OS-canonical form of a path (realpath when it exists, plain resolve
+   * otherwise) — the same normalization {@link list} applies to git's
+   * output. Use it to compare client-supplied paths (which on Windows may
+   * use 8.3 short names or non-canonical case) against listed worktrees.
+   */
+  public canonicalize(p: string): string {
+    return resolvePath(p);
   }
 
   /**
@@ -298,8 +311,8 @@ export class WorktreeRepository {
     worktreePath: string,
     projectDir?: string,
   ): Promise<boolean> {
-    const dir = path.resolve(projectDir ?? (await this.projectDir(projectPath)));
-    const resolved = path.resolve(worktreePath);
+    const dir = resolvePath(projectDir ?? (await this.projectDir(projectPath)));
+    const resolved = resolvePath(worktreePath);
     return resolved === dir || resolved.startsWith(dir + path.sep);
   }
 
