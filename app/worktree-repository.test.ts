@@ -157,6 +157,37 @@ describe("WorktreeRepository", () => {
     }
   });
 
+  it("canonicalize resolves non-canonical spellings of the same path", async () => {
+    const { root, project, dataDir } = createRepo();
+    try {
+      const repo = new WorktreeRepository({ dataDir });
+      const worktree = await repo.add(project);
+      // Dot segments and trailing separators are normalized away, the same
+      // way 8.3 short names / case differences are on Windows.
+      expect(repo.canonicalize(worktree.path + path.sep + ".")).toBe(worktree.path);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("isManagedWorktreePath compares paths in canonical form", async () => {
+    const { root, project, dataDir } = createRepo();
+    try {
+      const repo = new WorktreeRepository({ dataDir });
+      const worktree = await repo.add(project);
+      // A non-canonical spelling of the app-created worktree (dot segment)
+      // is still recognized as managed after canonicalization.
+      const variant = worktree.path + path.sep + ".";
+      expect(await repo.isManagedWorktreePath(project, variant)).toBe(true);
+      // A linked worktree outside the app data dir stays unmanaged.
+      const otherDir = path.join(root, "user-worktree");
+      git(project, ["worktree", "add", "-b", "feature/user", otherDir, "HEAD"]);
+      expect(await repo.isManagedWorktreePath(project, otherDir)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("removes the worktree directory and branch", async () => {
     const { root, project, dataDir } = createRepo();
     try {

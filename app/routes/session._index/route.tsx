@@ -85,14 +85,17 @@ export async function action({ request, context }: Route.ActionArgs) {
   if (result.output.type === "deleteWorktree") {
     const { dir, path: worktreePath } = result.output;
     try {
+      // Client-supplied paths may use a different Windows spelling (8.3 short
+      // names, case) than git reports; compare in canonical form.
+      const canonicalPath = worktreeRepository.canonicalize(worktreePath);
       const worktrees = await worktreeRepository.list(dir);
-      const worktree = worktrees.find((entry) => entry.path === worktreePath);
+      const worktree = worktrees.find((entry) => entry.path === canonicalPath);
       if (!worktree) {
         return data({ error: "Worktree not found" }, { status: 400 });
       }
       // Server-side guards: the main worktree is never deletable, and only
       // worktrees the app created (under its data dir) can be removed.
-      if (path.resolve(worktreePath) === path.resolve(await worktreeRepository.mainPath(dir))) {
+      if (path.resolve(canonicalPath) === path.resolve(await worktreeRepository.mainPath(dir))) {
         return data({ error: "Cannot delete the main worktree" }, { status: 400 });
       }
       if (!(await worktreeRepository.isManagedWorktreePath(dir, worktree.path))) {
