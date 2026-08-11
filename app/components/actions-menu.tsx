@@ -1,4 +1,4 @@
-import { Trash2 } from "lucide-react";
+import { Copy, Trash2 } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { Children, type ReactNode } from "react";
 
@@ -51,6 +51,19 @@ export function ActionsMenu({
         </DropdownMenu.Portal>
       )}
     </DropdownMenu.Root>
+  );
+}
+
+/** Standard "copy" menu item used by row action menus. */
+export function CopyMenuItem({ onSelect, label }: { onSelect: () => void; label: string }) {
+  return (
+    <DropdownMenu.Item
+      onSelect={onSelect}
+      className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm text-gray-700 dark:text-gray-300 outline-none cursor-pointer data-[highlighted]:bg-gray-100 dark:data-[highlighted]:bg-gray-700"
+    >
+      <Copy className="w-4 h-4" />
+      {label}
+    </DropdownMenu.Item>
   );
 }
 

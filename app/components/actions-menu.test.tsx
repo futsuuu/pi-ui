@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
 
-import { ActionsMenu, DeleteMenuItem } from "./actions-menu";
+import { ActionsMenu, CopyMenuItem, DeleteMenuItem } from "./actions-menu";
 
 describe("ActionsMenu", () => {
   it("renders a trigger button with the given accessible name and content", async () => {
@@ -57,6 +57,24 @@ describe("ActionsMenu", () => {
     await screen.getByRole("button", { name: "Worktree actions" }).click();
     // No items: nothing is portaled, so no menu appears.
     expect(document.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it("fires onSelect when the copy item is chosen", async () => {
+    let calls = 0;
+    const screen = await render(
+      <ActionsMenu ariaLabel="Worktree actions" trigger={<span>menu</span>} triggerClassName="p-2">
+        <CopyMenuItem
+          onSelect={() => {
+            calls++;
+          }}
+          label="Copy Path"
+        />
+      </ActionsMenu>,
+    );
+
+    await screen.getByRole("button", { name: "Worktree actions" }).click();
+    await screen.getByText("Copy Path", { exact: true }).click();
+    expect(calls).toBe(1);
   });
 
   it("fires onSelect when the delete item is chosen", async () => {

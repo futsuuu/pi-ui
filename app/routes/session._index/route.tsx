@@ -4,7 +4,7 @@ import { GitBranch, Layers, MessageCirclePlus, Moon, MoreVertical, Plus, Sun } f
 import { data, Link, redirect, useFetcher, useLoaderData } from "react-router";
 import * as v from "valibot";
 
-import { ActionsMenu, DeleteMenuItem } from "~/components/actions-menu";
+import { ActionsMenu, CopyMenuItem, DeleteMenuItem } from "~/components/actions-menu";
 import { useTheme } from "~/contexts/theme";
 import {
   agentSessionContainerContext,
@@ -343,6 +343,10 @@ export default function Sessions() {
                     trigger={<MoreVertical className="w-5 h-5" />}
                     triggerClassName="p-2 -m-1"
                   >
+                    <CopyMenuItem
+                      label="Copy Path"
+                      onSelect={() => void navigator.clipboard.writeText(worktree.path)}
+                    />
                     <DeleteMenuItem
                       onSelect={() => deleteWorktree(worktree)}
                       label="Delete Worktree"
