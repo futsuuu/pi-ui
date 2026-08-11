@@ -1,5 +1,5 @@
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
-import { Layers, MessageCircle, Moon, Plus, Sun } from "lucide-react";
+import { Layers, Moon, Plus, Sun } from "lucide-react";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { data, Link, useFetcher } from "react-router";
 
@@ -166,8 +166,6 @@ export default function Chat({
     dispatch({ type: "abort" });
   }
 
-  const hasModel = state.model != null;
-
   return (
     <div className="h-full flex flex-col relative">
       {/* Top bar — fixed at top */}
@@ -215,33 +213,23 @@ export default function Chat({
       {/* Messages */}
       <ScrollArea key={`messages-${sessionId}`} autoScroll viewportClassName="pb-36">
         <div className="max-w-5xl max-lg:max-w-[100vw] w-full mx-auto px-4 py-4 space-y-4 min-h-full min-w-0">
-          {chat.loadedMessages.length === 0 &&
-          chat.eventMessages.length === 0 &&
-          !chat.pendingUserMessage ? (
-            <div className="flex flex-col items-center justify-center text-center py-16">
-              <MessageCircle
-                className="w-16 h-16 mb-4 text-gray-300 dark:text-gray-600"
-                strokeWidth={1.5}
-              />
-              <p className="text-gray-500 dark:text-gray-400 mb-2">
-                {!hasModel
-                  ? "No model configured. Set ANTHROPIC_API_KEY or other API key environment variable."
-                  : "Send a message to start chatting with Pi"}
-              </p>
-            </div>
-          ) : (
-            <ToolCallContext value={chat.toolCallMap}>
-              {chat.loadedMessages.map((msg, index) => (
-                <AgentMessage key={index} {...msg} />
-              ))}
-              {chat.eventMessages.map((msg) => (
-                <AgentMessage key={msg._key} {...msg} />
-              ))}
-              {chat.pendingUserMessage && (
-                <AgentMessage key={chat.pendingUserMessage._key} {...chat.pendingUserMessage} />
-              )}
-            </ToolCallContext>
+          {state.model == null && (
+            <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
+              No model configured. Set an API key environment variable (e.g. ANTHROPIC_API_KEY), or
+              select a model from the dropdown below.
+            </p>
           )}
+          <ToolCallContext value={chat.toolCallMap}>
+            {chat.loadedMessages.map((msg, index) => (
+              <AgentMessage key={index} {...msg} />
+            ))}
+            {chat.eventMessages.map((msg) => (
+              <AgentMessage key={msg._key} {...msg} />
+            ))}
+            {chat.pendingUserMessage && (
+              <AgentMessage key={chat.pendingUserMessage._key} {...chat.pendingUserMessage} />
+            )}
+          </ToolCallContext>
         </div>
       </ScrollArea>
 

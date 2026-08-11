@@ -1,15 +1,6 @@
 import path from "node:path";
 
-import {
-  Clock,
-  GitBranch,
-  Layers,
-  MessageCirclePlus,
-  Moon,
-  MoreVertical,
-  Plus,
-  Sun,
-} from "lucide-react";
+import { GitBranch, Layers, MessageCirclePlus, Moon, MoreVertical, Plus, Sun } from "lucide-react";
 import { data, Link, redirect, useFetcher, useLoaderData } from "react-router";
 import * as v from "valibot";
 
@@ -213,8 +204,6 @@ export default function Sessions() {
     return d.toLocaleDateString();
   }
 
-  const newSessionHref = `/session/new?dir=${encodeURIComponent(cwd)}`;
-
   function addWorktree() {
     fetcher.reset();
     void fetcher.submit({ type: "addWorktree", dir: cwd } satisfies ActionInput, {
@@ -364,78 +353,53 @@ export default function Sessions() {
               </div>
             ))}
           </div>
-          {worktrees.length === 1 && (
-            <p className="text-xs text-gray-400 dark:text-gray-500 px-1 mt-2">
-              No extra worktrees yet. Add one to work on a separate branch without touching the main
-              working tree.
-            </p>
-          )}
         </div>
 
         {/* Sessions */}
-        {sessions.length === 0 ? (
-          <div className="text-center py-16">
-            <Clock
-              className="w-16 h-16 mx-auto mb-4 text-gray-300 dark:text-gray-600"
-              strokeWidth={1.5}
-            />
-            <p className="text-gray-500 dark:text-gray-400 mb-2">No previous sessions</p>
-            <p className="text-sm text-gray-400 dark:text-gray-500 mb-6">
-              Start a new chat session to begin working with Pi
-            </p>
-            <Link
-              to={newSessionHref}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
+        <div className="space-y-2">
+          {fetcher.formData?.get("type") === "deleteSession" &&
+            fetcher.data &&
+            "error" in fetcher.data && (
+              <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
+                {fetcher.data.error}
+              </p>
+            )}
+          {sessions.map((session) => (
+            <div
+              key={session.id}
+              className={`relative ${isDeleting(session.id) ? "opacity-50 pointer-events-none" : ""}`}
             >
-              Start Chatting
-            </Link>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {fetcher.formData?.get("type") === "deleteSession" &&
-              fetcher.data &&
-              "error" in fetcher.data && (
-                <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
-                  {fetcher.data.error}
-                </p>
-              )}
-            {sessions.map((session) => (
-              <div
-                key={session.id}
-                className={`relative ${isDeleting(session.id) ? "opacity-50 pointer-events-none" : ""}`}
+              <Link
+                to={`/session/${encodeURIComponent(session.id)}`}
+                className="block w-full text-left bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-sm transition-all"
               >
-                <Link
-                  to={`/session/${encodeURIComponent(session.id)}`}
-                  className="block w-full text-left bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-sm transition-all"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-gray-900 dark:text-gray-100 truncate pr-12">
-                        {session.firstMessage || "Untitled Session"}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1.5 flex-wrap">
-                        {formatDate(session.timestamp)} · {session.messageCount} messages
-                        {session.worktree && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 font-mono">
-                            <GitBranch className="w-3 h-3" />
-                            {session.worktree.branch ?? session.worktree.head ?? "detached"}
-                          </span>
-                        )}
-                      </p>
-                    </div>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-gray-900 dark:text-gray-100 truncate pr-12">
+                      {session.firstMessage || "Untitled Session"}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1.5 flex-wrap">
+                      {formatDate(session.timestamp)} · {session.messageCount} messages
+                      {session.worktree && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 font-mono">
+                          <GitBranch className="w-3 h-3" />
+                          {session.worktree.branch ?? session.worktree.head ?? "detached"}
+                        </span>
+                      )}
+                    </p>
                   </div>
-                </Link>
-                <ActionsMenu
-                  ariaLabel="Session actions"
-                  trigger={<MoreVertical className="w-5 h-5" />}
-                  triggerClassName="absolute top-1/2 -translate-y-1/2 right-3 p-1.5"
-                >
-                  <DeleteMenuItem onSelect={() => deleteSession(session)} label="Delete Session" />
-                </ActionsMenu>
-              </div>
-            ))}
-          </div>
-        )}
+                </div>
+              </Link>
+              <ActionsMenu
+                ariaLabel="Session actions"
+                trigger={<MoreVertical className="w-5 h-5" />}
+                triggerClassName="absolute top-1/2 -translate-y-1/2 right-3 p-1.5"
+              >
+                <DeleteMenuItem onSelect={() => deleteSession(session)} label="Delete Session" />
+              </ActionsMenu>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
