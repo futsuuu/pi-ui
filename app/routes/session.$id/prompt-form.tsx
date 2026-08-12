@@ -7,7 +7,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon, SendIcon } from "lucide-react";
 import { Select } from "radix-ui";
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { memo, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Await } from "react-router";
 
 const THINKING_LEVELS = [
@@ -214,23 +214,7 @@ function ModelListItems({
   );
 }
 
-/**
- * Prompt form. Owns model / thinking-level selection, delegates input to
- * MessageInput so the Select components stay isolated from typing.
- *
- * The model list arrives as a promise from the loader. The closed trigger only
- * depends on `selectedModel` (seeded from the session's default model), so it
- * renders the default model regardless of whether the list has loaded yet.
- * Only the open dropdown resolves the promise via <Await> and shows a
- * "Loading..." fallback until it settles.
- */
-export function PromptForm({
-  isStreaming,
-  models,
-  defaultModel,
-  defaultThinkingLevel,
-  onSend,
-}: {
+export interface PromptFormProps {
   isStreaming: boolean;
   models: Promise<readonly Model<Api>[]>;
   defaultModel: SelectedModel | null;
@@ -240,7 +224,29 @@ export function PromptForm({
     model: { provider: string; modelId: string },
     thinkingLevel: ModelThinkingLevel,
   ) => void;
-}) {
+}
+
+/**
+ * Prompt form. Owns model / thinking-level selection, delegates input to
+ * MessageInput so the Select components stay isolated from typing.
+ *
+ * Memoized: while the session streams, the Chat route re-renders on every
+ * token (its message list updates), but the model list and selection props do
+ * not change, so the whole selector tree must not re-render either.
+ *
+ * The model list arrives as a promise from the loader. The closed trigger only
+ * depends on `selectedModel` (seeded from the session's default model), so it
+ * renders the default model regardless of whether the list has loaded yet.
+ * Only the open dropdown resolves the promise via <Await> and shows a
+ * "Loading..." fallback until it settles.
+ */
+export const PromptForm = memo(function PromptForm({
+  isStreaming,
+  models,
+  defaultModel,
+  defaultThinkingLevel,
+  onSend,
+}: PromptFormProps) {
   const [selectedModel, setSelectedModel] = useState<SelectedModel | null>(defaultModel);
   const [selectedThinkingLevel, setSelectedThinkingLevel] = useState(defaultThinkingLevel);
   // Latest resolved model list, fed by <ModelListItems> once the wrapped
@@ -347,7 +353,7 @@ export function PromptForm({
       </SelectPicker>
     </MessageInput>
   );
-}
+});
 
 function ModelLoadError() {
   return <div className="px-3 py-2 text-sm text-red-600">Failed to load models</div>;

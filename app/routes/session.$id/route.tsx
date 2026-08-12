@@ -1,6 +1,8 @@
+import type { AgentMessage as SessionMessage } from "@earendil-works/pi-agent-core";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
+import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { Layers, Moon, Plus, Sun } from "lucide-react";
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { data, Link, useFetcher } from "react-router";
 
 import { ScrollArea } from "~/components/scroll-area";
@@ -30,6 +32,16 @@ export const middleware: Route.MiddlewareFunction[] = [
     context.set(agentSessionContext, session);
   },
 ];
+
+/** Length of the streamed text in the newest partial message. */
+function textLengthOf(message: SessionMessage): number {
+  if (message.role !== "assistant") return 0;
+  let length = 0;
+  for (const block of message.content) {
+    if (block.type === "text") length += block.text.length;
+  }
+  return length;
+}
 
 export async function loader({ context }: Route.LoaderArgs) {
   const session = context.get(agentSessionContext);
@@ -91,8 +103,52 @@ export default function Chat({
     dispatch({ type: "reset", loadedMessages });
   }, [sessionId]);
 
-  // Forward the session's stream events to the chat reducer.
-  useEffect(() => subscribe((event) => dispatch(event)), [subscribe]);
+  // Forward the session's stream events to the chat reducer. Per-token
+  // `message_update` partials are coalesced into a single dispatch: the
+  // streaming message re-renders and re-parses its markdown on every token,
+  // a cost that grows with the text length. The delay for each batch is
+  // derived from the newest partial at the time the batch starts (16ms for
+  // short text, capped at 200ms), so the interval widens as the stream grows.
+  const pendingUpdateRef = useRef<AgentSessionEvent | null>(null);
+  const updateTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    const flushPendingUpdate = () => {
+      if (updateTimerRef.current != null) {
+        clearTimeout(updateTimerRef.current);
+        updateTimerRef.current = null;
+      }
+      const pending = pendingUpdateRef.current;
+      pendingUpdateRef.current = null;
+      if (pending) dispatch(pending);
+    };
+    const unsubscribe = subscribe((event) => {
+      if (event.type !== "message_update") {
+        // Non-delta events (message_start/end, tool steps, turn/agent end)
+        // must not be reordered behind a pending partial: flush it first.
+        flushPendingUpdate();
+        dispatch(event);
+        return;
+      }
+      // Keep only the newest partial; render it after a delay that grows
+      // with the streamed text length so long streams don't drop frames.
+      pendingUpdateRef.current = event;
+      if (updateTimerRef.current == null) {
+        const interval = Math.min(16 + Math.floor(textLengthOf(event.message) / 250), 200);
+        updateTimerRef.current = window.setTimeout(() => {
+          updateTimerRef.current = null;
+          const pending = pendingUpdateRef.current;
+          pendingUpdateRef.current = null;
+          if (pending) dispatch(pending);
+        }, interval);
+      }
+    });
+    return () => {
+      unsubscribe();
+      if (updateTimerRef.current != null) {
+        clearTimeout(updateTimerRef.current);
+      }
+    };
+  }, [subscribe]);
 
   // Reflect the streamed session state into the local state.
   useEffect(() => {
@@ -105,27 +161,30 @@ export default function Chat({
     }
   }, [info]);
 
-  function sendMessage(
-    text: string,
-    model: { provider: string; modelId: string },
-    thinkingLevel: ModelThinkingLevel,
-  ) {
-    // Show the user's own message immediately via `pendingUserMessage`; the
-    // SSE `message_start` (user) event later promotes it into `messages`.
-    dispatch({ type: "user_message", content: text });
-    void fetcher.submit(
-      {
-        type: "prompt",
-        text,
-        model: { provider: model.provider, id: model.modelId },
-        thinkingLevel,
-      } satisfies ActionInput,
-      {
-        method: "post",
-        encType: "application/json",
-      },
-    );
-  }
+  const sendMessage = useCallback(
+    (
+      text: string,
+      model: { provider: string; modelId: string },
+      thinkingLevel: ModelThinkingLevel,
+    ) => {
+      // Show the user's own message immediately via `pendingUserMessage`; the
+      // SSE `message_start` (user) event later promotes it into `messages`.
+      dispatch({ type: "user_message", content: text });
+      void fetcher.submit(
+        {
+          type: "prompt",
+          text,
+          model: { provider: model.provider, id: model.modelId },
+          thinkingLevel,
+        } satisfies ActionInput,
+        {
+          method: "post",
+          encType: "application/json",
+        },
+      );
+    },
+    [fetcher],
+  );
 
   function abortMessage() {
     void fetcher.submit({ type: "abort" } satisfies ActionInput, {
