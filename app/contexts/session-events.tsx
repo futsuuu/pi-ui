@@ -60,12 +60,21 @@ export function SessionEventProvider({ children }: { children: ReactNode }) {
         case "internal:init":
           store.sessions = new Map(message.sessions.map((info) => [info.id, info]));
           break;
-        case "internal:event":
-          store.sessions = new Map(store.sessions).set(message.sessionId, message.info);
+        case "internal:event": {
+          // The server sends a fresh info object on every event, but the
+          // payload only changes on user-visible transitions (model,
+          // streaming flag, message count, ...). Reusing the previous object
+          // when nothing consumers read changed keeps useSessionStream's
+          // snapshot stable, so the chat page does not re-render (and re-run
+          // its info-sync effect) on every streamed token.
+          const prev = store.sessions.get(message.sessionId);
+          const nextInfo = prev && sameSessionInfo(prev, message.info) ? prev : message.info;
+          store.sessions = new Map(store.sessions).set(message.sessionId, nextInfo);
           for (const listener of store.eventListeners.get(message.sessionId) ?? []) {
             listener(message.event);
           }
           break;
+        }
         case "internal:deleted": {
           const next = new Map(store.sessions);
           next.delete(message.sessionId);
@@ -142,6 +151,26 @@ function useSessionEventsContext(): SessionEventsContextValue {
   const ctx = useContext(SessionEventsContext);
   if (!ctx) throw new Error("useSessionEvents must be used within a SessionEventProvider");
   return ctx;
+}
+
+/** True when two infos carry identical user-visible state. */
+function sameSessionInfo(a: SessionInfo, b: SessionInfo): boolean {
+  return (
+    a.cwd === b.cwd &&
+    a.name === b.name &&
+    a.firstMessage === b.firstMessage &&
+    a.messageCount === b.messageCount &&
+    a.timestamp === b.timestamp &&
+    a.thinkingLevel === b.thinkingLevel &&
+    a.isStreaming === b.isStreaming &&
+    a.isCompacting === b.isCompacting &&
+    ((a.model === null && b.model === null) ||
+      (a.model !== null &&
+        b.model !== null &&
+        a.model.name === b.model.name &&
+        a.model.provider === b.model.provider &&
+        a.model.id === b.model.id))
+  );
 }
 
 /**

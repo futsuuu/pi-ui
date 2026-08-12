@@ -219,4 +219,58 @@ describe("SessionEventProvider", () => {
       vi.useRealTimers();
     }
   });
+
+  it("reuses the info snapshot object while the payload is unchanged", async () => {
+    const changes = { current: 0 };
+    function InfoStabilityHarness() {
+      const { info } = useSessionStream("s1");
+      const prev = useRef<SessionInfo | null | undefined>(undefined);
+      useEffect(() => {
+        // The mount-time null snapshot is not a payload change worth counting.
+        if (prev.current === undefined) {
+          prev.current = info;
+          return;
+        }
+        if (prev.current !== info) {
+          prev.current = info;
+          changes.current += 1;
+        }
+      }, [info]);
+      return null;
+    }
+    await render(
+      <SessionEventProvider>
+        <InfoStabilityHarness />
+      </SessionEventProvider>,
+    );
+
+    MockEventSource.instances[0].open();
+    emit({ type: "internal:init", sessions: [info({ thinkingLevel: "high" })] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(changes.current).toBe(1);
+
+    // Identical info payloads: the previous snapshot object is reused, so
+    // useSessionStream does not re-render (and the chat page's info-sync
+    // effect does not re-run) on every streamed token.
+    for (let i = 0; i < 5; i++) {
+      emit({
+        type: "internal:event",
+        sessionId: "s1",
+        event: { type: "thinking_level_changed", level: "high" },
+        info: info({ thinkingLevel: "high" }),
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(changes.current).toBe(1);
+
+    // A changed payload is reflected exactly once.
+    emit({
+      type: "internal:event",
+      sessionId: "s1",
+      event: { type: "thinking_level_changed", level: "max" },
+      info: info({ thinkingLevel: "max" }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(changes.current).toBe(2);
+  });
 });
