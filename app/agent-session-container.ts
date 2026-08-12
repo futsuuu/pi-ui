@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { promisify } from "node:util";
 
+import type { TextContent } from "@earendil-works/pi-ai/compat";
 import {
   createAgentSessionFromServices,
   createAgentSessionRuntime,
@@ -10,11 +11,14 @@ import {
   getAgentDir,
   ModelRuntime,
   SessionManager,
+  type AgentSession,
   type AgentSessionEvent,
   type AgentSessionRuntime,
   type CreateAgentSessionRuntimeFactory,
-  type SessionInfo,
+  type SessionInfo as PersistedSessionInfo,
 } from "@earendil-works/pi-coding-agent";
+
+import type { SessionInfo } from "./session-info";
 
 const execFileAsync = promisify(execFile);
 
@@ -56,7 +60,7 @@ async function deleteSessionFile(sessionPath: string): Promise<void> {
 async function findSessionInfo(
   sessionId: string,
   hints: { cwd: string; sessionDir?: string },
-): Promise<SessionInfo | null> {
+): Promise<PersistedSessionInfo | null> {
   // Passing the cwd lets `list` match the session header's cwd when a custom
   // sessionDir is used; without it `resolvePath("")` would fall back to the
   // server process cwd and wrongly filter out sessions.
@@ -64,10 +68,13 @@ async function findSessionInfo(
   return infoList.find((info) => info.id === sessionId) ?? null;
 }
 
+/** Events broadcast to container subscribers: session events plus session deletion. */
+export type ContainerEvent = AgentSessionEvent | { type: "session_deleted" };
+
 export class AgentSessionContainer {
   // We should not expose `AgentSessionRuntime` because it can modify the inner `session` field.
   private runtimes: Map<string, Promise<AgentSessionRuntime | null>> = new Map();
-  private listeners: Set<(sessionId: string, event: AgentSessionEvent) => void> = new Set();
+  private listeners: Set<(sessionId: string, event: ContainerEvent) => void> = new Set();
 
   private constructor(private createRuntimeFactory: CreateAgentSessionRuntimeFactory) {}
 
@@ -81,12 +88,12 @@ export class AgentSessionContainer {
     }));
   }
 
-  public subscribe(callback: (sessionId: string, event: AgentSessionEvent) => void): () => void {
+  public subscribe(callback: (sessionId: string, event: ContainerEvent) => void): () => void {
     this.listeners.add(callback);
     return () => this.listeners.delete(callback);
   }
 
-  private broadcast(sessionId: string, event: AgentSessionEvent) {
+  private broadcast(sessionId: string, event: ContainerEvent) {
     for (const listener of this.listeners) {
       try {
         listener(sessionId, event);
@@ -175,6 +182,47 @@ export class AgentSessionContainer {
     return runtime;
   }
 
+  /**
+   * Current info for all sessions, merging live session info into the
+   * persisted list. Never force-loads a runtime: unloaded sessions keep
+   * their persisted info only.
+   */
+  public async currentInfoList(): Promise<SessionInfo[]> {
+    const persisted = await SessionManager.listAll();
+    return Promise.all(persisted.map((info) => this.infoFromPersisted(info)));
+  }
+
+  private async infoFromPersisted(persisted: PersistedSessionInfo): Promise<SessionInfo> {
+    const runtime = this.runtimes.get(persisted.id);
+    if (runtime) {
+      const loaded = await runtime.catch(() => null);
+      if (loaded) return sessionInfo(loaded.session);
+    }
+    return {
+      id: persisted.id,
+      cwd: persisted.cwd,
+      name: persisted.name ?? null,
+      firstMessage: persisted.firstMessage,
+      messageCount: persisted.messageCount,
+      timestamp: persisted.modified.getTime(),
+      model: null,
+      thinkingLevel: "medium",
+      isStreaming: false,
+      isCompacting: false,
+    };
+  }
+
+  /**
+   * Current info for a session with a loaded runtime only; `null` when the
+   * session is not loaded. Never creates a runtime.
+   */
+  public async currentInfo(sessionId: string): Promise<SessionInfo | null> {
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime) return null;
+    const loaded = await runtime.catch(() => null);
+    return loaded ? sessionInfo(loaded.session) : null;
+  }
+
   public async dispose(sessionId: string) {
     const promise = this.runtimes.get(sessionId);
     if (!promise) return;
@@ -198,5 +246,48 @@ export class AgentSessionContainer {
     }
     await this.dispose(sessionId);
     await deleteSessionFile(found.path);
+    // Only broadcast once the file is actually gone, so a failed deletion
+    // cannot leave clients with a removed session.
+    this.broadcast(sessionId, { type: "session_deleted" });
   }
+}
+
+/**
+ * Info for a loaded session, derived from its live state. The persisted file
+ * is not read here: `currentInfo` runs per event and must stay cheap.
+ */
+function sessionInfo(session: AgentSession): SessionInfo {
+  const messages = session.messages;
+  const firstUser = messages.find((message) => message.role === "user");
+  const last = messages[messages.length - 1];
+  return {
+    id: session.sessionId,
+    cwd: session.sessionManager.getCwd(),
+    name: session.sessionName ?? null,
+    firstMessage: firstUser ? userMessageText(firstUser) : "",
+    messageCount: messages.length,
+    timestamp: last?.timestamp ?? Date.now(),
+    model: session.model
+      ? {
+          name: session.model.name,
+          provider: session.model.provider,
+          id: session.model.id,
+        }
+      : null,
+    thinkingLevel: session.thinkingLevel,
+    isStreaming: session.isStreaming,
+    isCompacting: session.isCompacting,
+  };
+}
+
+/** Text content of a user message (its string form or its text parts). */
+function userMessageText(
+  message: Extract<AgentSession["messages"][number], { role: "user" }>,
+): string {
+  const content = message.content;
+  if (typeof content === "string") return content;
+  return content
+    .filter((part): part is TextContent => part.type === "text")
+    .map((part) => part.text)
+    .join("");
 }

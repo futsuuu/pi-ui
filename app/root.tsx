@@ -10,6 +10,7 @@ import {
 
 import "./app.css";
 import type { Route } from "./+types/root";
+import { SessionEventProvider } from "./contexts/session-events";
 import { ThemeProvider, ThemeScript } from "./contexts/theme";
 import {
   agentSessionContainerContext,
@@ -69,7 +70,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </head>
       <body className="bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 h-(--visual-viewport-height,100dvh) flex flex-col">
         <ThemeProvider>
-          <div className="flex-1 min-h-0 flex flex-col">{children}</div>
+          <SessionEventProvider>
+            <div className="flex-1 min-h-0 flex flex-col">{children}</div>
+          </SessionEventProvider>
         </ThemeProvider>
         <ScrollRestoration />
         <Scripts />

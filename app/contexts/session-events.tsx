@@ -1,0 +1,176 @@
+import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
+
+import type { SseEvent } from "~/routes/events/loader";
+import type { SessionInfo } from "~/session-info";
+
+interface SessionEventsContextValue {
+  connected: boolean;
+  /** Latest known info for a session, or null while unknown. */
+  getInfo: (sessionId: string) => SessionInfo | null;
+  /** All known sessions; the map is replaced on every store update. */
+  getSessions: () => Map<string, SessionInfo>;
+  /** Subscribe to store updates (for useSyncExternalStore). */
+  subscribeStore: (onChange: () => void) => () => void;
+  /** Subscribe to one session's events. */
+  subscribe: (sessionId: string, listener: (event: AgentSessionEvent) => void) => () => void;
+}
+
+const SessionEventsContext = createContext<SessionEventsContextValue | null>(null);
+
+/** Stable empty snapshot for server rendering and the initial client state. */
+const EMPTY_SESSIONS: Map<string, SessionInfo> = new Map();
+
+interface SessionEventStore {
+  sessions: Map<string, SessionInfo>;
+  eventListeners: Map<string, Set<(event: AgentSessionEvent) => void>>;
+  storeListeners: Set<() => void>;
+}
+
+/**
+ * Single multiplexed `/events` SSE connection carrying events and current
+ * info for all sessions. Reconnects after 3s on error; on reconnect the
+ * server re-sends `internal:init`, which resets the store.
+ */
+export function SessionEventProvider({ children }: { children: ReactNode }) {
+  const [connected, setConnected] = useState(false);
+  const storeRef = useRef<SessionEventStore>({
+    sessions: EMPTY_SESSIONS,
+    eventListeners: new Map(),
+    storeListeners: new Set(),
+  });
+
+  useEffect(() => {
+    const store = storeRef.current;
+    let es: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const apply = (message: SseEvent) => {
+      switch (message.type) {
+        case "internal:init":
+          store.sessions = new Map(message.sessions.map((info) => [info.id, info]));
+          break;
+        case "internal:event":
+          store.sessions = new Map(store.sessions).set(message.sessionId, message.info);
+          for (const listener of store.eventListeners.get(message.sessionId) ?? []) {
+            listener(message.event);
+          }
+          break;
+        case "internal:deleted": {
+          const next = new Map(store.sessions);
+          next.delete(message.sessionId);
+          store.sessions = next;
+          break;
+        }
+      }
+      for (const listener of store.storeListeners) listener();
+    };
+
+    const connect = () => {
+      es?.close();
+      const source = new EventSource("/events");
+      es = source;
+      source.onopen = () => setConnected(true);
+      source.onmessage = (message) => {
+        try {
+          apply(JSON.parse(message.data) as SseEvent);
+        } catch (error) {
+          console.warn("SSE parse error:", error);
+        }
+      };
+      source.onerror = () => {
+        setConnected(false);
+        source.close();
+        reconnectTimer = setTimeout(connect, 3000);
+      };
+    };
+
+    connect();
+    return () => {
+      es?.close();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+    };
+  }, []);
+
+  const subscribeStore = useCallback((onChange: () => void) => {
+    storeRef.current.storeListeners.add(onChange);
+    return () => storeRef.current.storeListeners.delete(onChange);
+  }, []);
+
+  const getInfo = useCallback((sessionId: string) => {
+    return storeRef.current.sessions.get(sessionId) ?? null;
+  }, []);
+
+  const getSessions = useCallback(() => storeRef.current.sessions, []);
+
+  const subscribe = useCallback(
+    (sessionId: string, listener: (event: AgentSessionEvent) => void) => {
+      const listeners = storeRef.current.eventListeners;
+      let set = listeners.get(sessionId);
+      if (!set) {
+        set = new Set();
+        listeners.set(sessionId, set);
+      }
+      set.add(listener);
+      return () => {
+        set.delete(listener);
+        if (set.size === 0) listeners.delete(sessionId);
+      };
+    },
+    [],
+  );
+
+  const value = useMemo(
+    () => ({ connected, subscribeStore, getInfo, getSessions, subscribe }),
+    [connected, subscribeStore, getInfo, getSessions, subscribe],
+  );
+
+  return <SessionEventsContext value={value}>{children}</SessionEventsContext>;
+}
+
+function useSessionEventsContext(): SessionEventsContextValue {
+  const ctx = useContext(SessionEventsContext);
+  if (!ctx) throw new Error("useSessionEvents must be used within a SessionEventProvider");
+  return ctx;
+}
+
+/**
+ * All known sessions (updates on every stream message), the connection
+ * state, and a per-session event subscription. Intended for the session
+ * list's live status display, which is a deferred task (non-goal); kept
+ * because the stream protocol (`internal:init` / `internal:deleted`) and
+ * the store tests are built around this consumer.
+ */
+export function useSessionEvents() {
+  const ctx = useSessionEventsContext();
+  const sessions = useSyncExternalStore(ctx.subscribeStore, ctx.getSessions, () => EMPTY_SESSIONS);
+  return { sessions, connected: ctx.connected, subscribe: ctx.subscribe };
+}
+
+/**
+ * The chat page's view of the stream for one session: its current info (only
+ * re-renders when this session's info changes) and an event subscription.
+ */
+export function useSessionStream(sessionId: string) {
+  const ctx = useSessionEventsContext();
+  const info = useSyncExternalStore(
+    ctx.subscribeStore,
+    () => ctx.getInfo(sessionId),
+    () => null,
+  );
+  const subscribe = useCallback(
+    (listener: (event: AgentSessionEvent) => void) => ctx.subscribe(sessionId, listener),
+    [ctx.subscribe, sessionId],
+  );
+  return { info, connected: ctx.connected, subscribe };
+}

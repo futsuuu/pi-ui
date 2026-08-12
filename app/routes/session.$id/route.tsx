@@ -4,10 +4,10 @@ import { useEffect, useReducer, useRef, useState } from "react";
 import { data, Link, useFetcher } from "react-router";
 
 import { ScrollArea } from "~/components/scroll-area";
+import { useSessionStream } from "~/contexts/session-events";
 import { useTheme } from "~/contexts/theme";
 import { agentSessionContainerContext } from "~/router-contexts";
 
-import type { SseEvent } from "../session.$id.events/loader";
 import type { Route } from "./+types/route";
 import type { ActionInput, action } from "./action";
 import { AgentMessage } from "./agent-message";
@@ -34,7 +34,7 @@ export const middleware: Route.MiddlewareFunction[] = [
 export async function loader({ context }: Route.LoaderArgs) {
   const session = context.get(agentSessionContext);
   // Pass only the fields the Chat component uses, read directly from the
-  // session, instead of a full SessionState snapshot.
+  // session, instead of the full SessionInfo.
   const messages = session.messages;
   // The model list is streamed to the client as a promise.
   const models = session.modelRuntime.getAvailable();
@@ -76,11 +76,12 @@ export default function Chat({
       dispatch({ type: "reset", loadedMessages });
     }
   }
-  const [connected, setConnected] = useState(false);
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const fetcher = useFetcher<typeof action>();
+
+  // The global /events stream: current info for this session (model,
+  // thinking level, streaming flag) plus its events. The provider only
+  // delivers events for the subscribed session, so no filtering is needed.
+  const { info, connected, subscribe } = useSessionStream(sessionId);
 
   // Reset local state when navigating to a different session.
   // Only depend on sessionId so that loader re-validation after actions
@@ -90,51 +91,19 @@ export default function Chat({
     dispatch({ type: "reset", loadedMessages });
   }, [sessionId]);
 
-  // Connect SSE for real-time updates
+  // Forward the session's stream events to the chat reducer.
+  useEffect(() => subscribe((event) => dispatch(event)), [subscribe]);
+
+  // Reflect the streamed session state into the local state.
   useEffect(() => {
-    function connectSSE() {
-      eventSourceRef.current?.close();
-      const es = new EventSource(`/session/${encodeURIComponent(sessionId)}/events`);
-      eventSourceRef.current = es;
-
-      es.onopen = () => {
-        console.log("SSE connected");
-        setConnected(true);
-      };
-
-      es.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data) as SseEvent;
-          if (data.sessionId !== sessionId) return;
-          if (data.type === "internal:state") {
-            setState({
-              model: data.model,
-              thinkingLevel: data.thinkingLevel,
-              isStreaming: data.isStreaming,
-            });
-          } else {
-            dispatch(data);
-          }
-        } catch (err) {
-          console.warn("SSE parse error:", err);
-        }
-      };
-
-      es.onerror = () => {
-        console.warn("SSE connection error, reconnecting in 3s");
-        setConnected(false);
-        es.close();
-        reconnectTimerRef.current = setTimeout(connectSSE, 3000);
-      };
+    if (info) {
+      setState({
+        model: info.model,
+        thinkingLevel: info.thinkingLevel,
+        isStreaming: info.isStreaming,
+      });
     }
-
-    connectSSE();
-
-    return () => {
-      eventSourceRef.current?.close();
-      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-    };
-  }, [sessionId]);
+  }, [info]);
 
   function sendMessage(
     text: string,
