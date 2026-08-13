@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render } from "vitest-browser-react";
+import { render, renderHook } from "vitest-browser-react";
 
 import type { SseEvent } from "~/routes/events/loader";
 import type { SessionInfo } from "~/session-info";
@@ -61,19 +61,13 @@ function useStoreSessions(): Map<string, SessionInfo> {
   return useSyncExternalStore(subscribeStore, getSessions, () => EMPTY_MAP);
 }
 
-function Harness({ sessionId }: { sessionId: string }) {
+/** The stream's full observable output for one session. */
+function useStreamSnapshot(sessionId = "s1") {
   const { info, connected, subscribe } = useSessionStream(sessionId);
   const sessions = useStoreSessions();
   const [events, setEvents] = useState<string[]>([]);
   useEffect(() => subscribe((event) => setEvents((prev) => [...prev, event.type])), [subscribe]);
-  return (
-    <div>
-      <p data-testid="connected">{String(connected)}</p>
-      <p data-testid="info">{info ? JSON.stringify(info) : "null"}</p>
-      <p data-testid="events">{events.join(",")}</p>
-      <p data-testid="sessions">{JSON.stringify([...sessions.keys()])}</p>
-    </div>
-  );
+  return { connected, info, sessions, events };
 }
 
 /** Counts effect re-runs caused by `subscribe` identity changes. */
@@ -87,11 +81,6 @@ function SubscribeStabilityHarness({ sessionId }: { sessionId: string }) {
     return subscribe(() => {});
   }, [subscribe]);
   return <p data-testid="runs">{effectRuns}</p>;
-}
-
-function ReadyHarness() {
-  const { ready } = useSessionEventsContext();
-  return <p data-testid="ready">{String(ready)}</p>;
 }
 
 /** Emit a message on the currently open connection. */
@@ -110,80 +99,90 @@ afterEach(() => {
 
 describe("SessionEventProvider", () => {
   it("connects to /events and seeds sessions from internal:init", async () => {
-    const screen = await render(
-      <SessionEventProvider>
-        <Harness sessionId="s1" />
-      </SessionEventProvider>,
-    );
+    const hook = await renderHook(useStreamSnapshot, {
+      initialProps: "s1",
+      wrapper: SessionEventProvider,
+    });
 
     expect(MockEventSource.instances).toHaveLength(1);
     expect(MockEventSource.instances[0].url).toBe("/events");
-    await expect.element(screen.getByTestId("connected")).toHaveTextContent("false");
+    expect(hook.result.current.connected).toBe(false);
 
-    MockEventSource.instances[0].open();
-    emit({ type: "internal:init", sessions: [info()] });
+    await hook.act(() => {
+      MockEventSource.instances[0].open();
+      emit({ type: "internal:init", sessions: [info()] });
+    });
 
-    await expect.element(screen.getByTestId("connected")).toHaveTextContent("true");
-    await expect.element(screen.getByTestId("sessions")).toHaveTextContent('["s1"]');
-    await expect.element(screen.getByTestId("info")).toHaveTextContent('"id":"s1"');
+    expect(hook.result.current.connected).toBe(true);
+    expect([...hook.result.current.sessions.keys()]).toEqual(["s1"]);
+    expect(hook.result.current.info?.id).toBe("s1");
   });
 
   it("delivers session events and updates the session's info", async () => {
-    const screen = await render(
-      <SessionEventProvider>
-        <Harness sessionId="s1" />
-      </SessionEventProvider>,
-    );
-    MockEventSource.instances[0].open();
-    emit({ type: "internal:init", sessions: [info()] });
-
-    emit({
-      type: "internal:event",
-      sessionId: "s1",
-      event: { type: "thinking_level_changed", level: "high" },
-      info: info({ thinkingLevel: "high", isStreaming: true }),
+    const hook = await renderHook(useStreamSnapshot, {
+      initialProps: "s1",
+      wrapper: SessionEventProvider,
+    });
+    await hook.act(() => {
+      MockEventSource.instances[0].open();
+      emit({ type: "internal:init", sessions: [info()] });
     });
 
-    await expect.element(screen.getByTestId("events")).toHaveTextContent("thinking_level_changed");
-    await expect.element(screen.getByTestId("info")).toHaveTextContent('"thinkingLevel":"high"');
-    await expect.element(screen.getByTestId("info")).toHaveTextContent('"isStreaming":true');
+    await hook.act(() => {
+      emit({
+        type: "internal:event",
+        sessionId: "s1",
+        event: { type: "thinking_level_changed", level: "high" },
+        info: info({ thinkingLevel: "high", isStreaming: true }),
+      });
+    });
+
+    expect(hook.result.current.events).toEqual(["thinking_level_changed"]);
+    expect(hook.result.current.info?.thinkingLevel).toBe("high");
+    expect(hook.result.current.info?.isStreaming).toBe(true);
   });
 
   it("ignores events for other sessions while keeping them in the session map", async () => {
-    const screen = await render(
-      <SessionEventProvider>
-        <Harness sessionId="s1" />
-      </SessionEventProvider>,
-    );
-    MockEventSource.instances[0].open();
-    emit({ type: "internal:init", sessions: [info()] });
-
-    emit({
-      type: "internal:event",
-      sessionId: "s2",
-      event: { type: "thinking_level_changed", level: "high" },
-      info: info({ id: "s2" }),
+    const hook = await renderHook(useStreamSnapshot, {
+      initialProps: "s1",
+      wrapper: SessionEventProvider,
+    });
+    await hook.act(() => {
+      MockEventSource.instances[0].open();
+      emit({ type: "internal:init", sessions: [info()] });
     });
 
-    await expect.element(screen.getByTestId("events")).toHaveTextContent("");
-    await expect.element(screen.getByTestId("sessions")).toHaveTextContent('["s1","s2"]');
+    await hook.act(() => {
+      emit({
+        type: "internal:event",
+        sessionId: "s2",
+        event: { type: "thinking_level_changed", level: "high" },
+        info: info({ id: "s2" }),
+      });
+    });
+
+    expect(hook.result.current.events).toEqual([]);
+    expect([...hook.result.current.sessions.keys()]).toEqual(["s1", "s2"]);
     // This session's info is untouched by the other session's event.
-    await expect.element(screen.getByTestId("info")).toHaveTextContent('"id":"s1"');
+    expect(hook.result.current.info?.id).toBe("s1");
   });
 
   it("removes sessions on internal:deleted", async () => {
-    const screen = await render(
-      <SessionEventProvider>
-        <Harness sessionId="s1" />
-      </SessionEventProvider>,
-    );
-    MockEventSource.instances[0].open();
-    emit({ type: "internal:init", sessions: [info()] });
+    const hook = await renderHook(useStreamSnapshot, {
+      initialProps: "s1",
+      wrapper: SessionEventProvider,
+    });
+    await hook.act(() => {
+      MockEventSource.instances[0].open();
+      emit({ type: "internal:init", sessions: [info()] });
+    });
 
-    emit({ type: "internal:deleted", sessionId: "s1" });
+    await hook.act(() => {
+      emit({ type: "internal:deleted", sessionId: "s1" });
+    });
 
-    await expect.element(screen.getByTestId("sessions")).toHaveTextContent("[]");
-    await expect.element(screen.getByTestId("info")).toHaveTextContent("null");
+    expect([...hook.result.current.sessions.keys()]).toEqual([]);
+    expect(hook.result.current.info).toBeNull();
   });
 
   it("keeps subscribe stable across connection state changes", async () => {
@@ -208,27 +207,32 @@ describe("SessionEventProvider", () => {
   });
 
   it("reconnects 3s after an error and restores info from internal:init", async () => {
-    const screen = await render(
-      <SessionEventProvider>
-        <Harness sessionId="s1" />
-      </SessionEventProvider>,
-    );
-    MockEventSource.instances[0].open();
-    emit({ type: "internal:init", sessions: [info()] });
+    const hook = await renderHook(useStreamSnapshot, {
+      initialProps: "s1",
+      wrapper: SessionEventProvider,
+    });
+    await hook.act(() => {
+      MockEventSource.instances[0].open();
+      emit({ type: "internal:init", sessions: [info()] });
+    });
 
     vi.useFakeTimers();
     try {
-      MockEventSource.instances[0].fail();
-      await expect.element(screen.getByTestId("connected")).toHaveTextContent("false");
+      await hook.act(() => {
+        MockEventSource.instances[0].fail();
+      });
+      expect(hook.result.current.connected).toBe(false);
       expect(MockEventSource.instances[0].closed).toBe(true);
 
       vi.advanceTimersByTime(3000);
       expect(MockEventSource.instances).toHaveLength(2);
 
-      MockEventSource.instances[1].open();
-      emit({ type: "internal:init", sessions: [info({ isStreaming: true })] });
-      await expect.element(screen.getByTestId("connected")).toHaveTextContent("true");
-      await expect.element(screen.getByTestId("info")).toHaveTextContent('"isStreaming":true');
+      await hook.act(() => {
+        MockEventSource.instances[1].open();
+        emit({ type: "internal:init", sessions: [info({ isStreaming: true })] });
+      });
+      expect(hook.result.current.connected).toBe(true);
+      expect(hook.result.current.info?.isStreaming).toBe(true);
     } finally {
       vi.useRealTimers();
     }
@@ -289,27 +293,31 @@ describe("SessionEventProvider", () => {
   });
 
   it("exposes ready only after the first internal:init and keeps it across reconnects", async () => {
-    const screen = await render(
-      <SessionEventProvider>
-        <ReadyHarness />
-      </SessionEventProvider>,
-    );
-    await expect.element(screen.getByTestId("ready")).toHaveTextContent("false");
+    const hook = await renderHook(() => useSessionEventsContext().ready, {
+      wrapper: SessionEventProvider,
+    });
+    expect(hook.result.current).toBe(false);
 
-    MockEventSource.instances[0].open();
-    emit({ type: "internal:init", sessions: [] });
-    await expect.element(screen.getByTestId("ready")).toHaveTextContent("true");
+    await hook.act(() => {
+      MockEventSource.instances[0].open();
+      emit({ type: "internal:init", sessions: [] });
+    });
+    expect(hook.result.current).toBe(true);
 
     // A reconnect (with its own internal:init) must not reset ready: the
     // session list keeps showing the stale store instead of a loader.
     vi.useFakeTimers();
     try {
-      MockEventSource.instances[0].fail();
+      await hook.act(() => {
+        MockEventSource.instances[0].fail();
+      });
       vi.advanceTimersByTime(3000);
       expect(MockEventSource.instances).toHaveLength(2);
-      MockEventSource.instances[1].open();
-      emit({ type: "internal:init", sessions: [] });
-      await expect.element(screen.getByTestId("ready")).toHaveTextContent("true");
+      await hook.act(() => {
+        MockEventSource.instances[1].open();
+        emit({ type: "internal:init", sessions: [] });
+      });
+      expect(hook.result.current).toBe(true);
     } finally {
       vi.useRealTimers();
     }
