@@ -25,7 +25,7 @@ import {
 import type { Worktree } from "~/worktree-repository";
 
 import type { Route } from "./+types/route";
-import { useSessionRows, type SessionRow } from "./session-list";
+import { useSessionList, type SessionListItem } from "./session-list";
 
 export function meta(_: Route.MetaArgs) {
   return [{ title: "Pi UI - Sessions" }];
@@ -196,16 +196,16 @@ export default function Sessions() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const sessionRows = useSessionRows(worktrees, cwd);
+  const sessionList = useSessionList(worktrees, cwd);
   const worktreesWithCount = useMemo(
     () =>
       worktrees.map((worktree) => ({
         ...worktree,
-        sessionCount: sessionRows.filter(
-          (row) => row.worktree === (worktree.isMain ? null : worktree),
+        sessionCount: sessionList.filter(
+          (item) => item.worktree === (worktree.isMain ? null : worktree),
         ).length,
       })),
-    [worktrees, sessionRows],
+    [worktrees, sessionList],
   );
 
   function formatDate(ts: number): string {
@@ -229,7 +229,7 @@ export default function Sessions() {
     });
   }
 
-  function deleteSession(session: SessionRow) {
+  function deleteSession(session: SessionListItem) {
     const title = session.firstMessage || "Untitled Session";
     if (!window.confirm(`Delete this session?\n\n"${title}"`)) return;
     fetcher.reset();
@@ -386,7 +386,7 @@ export default function Sessions() {
               <Loader2Icon className="w-6 h-6 text-gray-400 animate-spin" />
             </div>
           ) : (
-            sessionRows.map((session) => (
+            sessionList.map((session) => (
               <div
                 key={session.id}
                 className={`relative ${isDeleting(session.id) ? "opacity-50 pointer-events-none" : ""}`}

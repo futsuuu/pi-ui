@@ -4,13 +4,13 @@ import { useSessionEventsContext } from "~/contexts/session-events";
 import type { SessionInfo } from "~/session-info";
 import type { Worktree } from "~/worktree-repository";
 
-/** A session row for the list: stream info joined with its worktree badge. */
-export interface SessionRow extends SessionInfo {
+/** One session in the list: stream info joined with its worktree badge. */
+export interface SessionListItem extends SessionInfo {
   worktree: Worktree | null;
 }
 
 /** Stable empty snapshot for server rendering and the pre-seed state. */
-const EMPTY_ROWS: SessionRow[] = [];
+const EMPTY_SESSION_LIST: SessionListItem[] = [];
 
 /**
  * Filter the global session store to one project and attach the worktree
@@ -19,43 +19,43 @@ const EMPTY_ROWS: SessionRow[] = [];
  * root nor a listed worktree (e.g. a worktree deleted in another tab) are
  * dropped, mirroring the previous loader behavior.
  */
-export function buildSessionRows(
+export function buildSessionList(
   sessions: ReadonlyMap<string, SessionInfo>,
   worktrees: readonly Worktree[],
   cwd: string,
-): SessionRow[] {
+): SessionListItem[] {
   const byPath = new Map(worktrees.map((worktree) => [worktree.path, worktree]));
-  const rows: SessionRow[] = [];
+  const list: SessionListItem[] = [];
   for (const info of sessions.values()) {
     if (info.cwd !== cwd && !byPath.has(info.cwd)) continue;
-    rows.push({
+    list.push({
       ...info,
       worktree: info.cwd === cwd ? null : (byPath.get(info.cwd) ?? null),
     });
   }
-  rows.sort((a, b) => b.timestamp - a.timestamp);
-  return rows;
+  list.sort((a, b) => b.timestamp - a.timestamp);
+  return list;
 }
 
 /**
- * Rows for one project, cached so the list re-renders only when a displayed
+ * List for one project, cached so the list re-renders only when a displayed
  * field (title, message count, timestamp, streaming flag, badge) changes;
  * the store otherwise replaces its map on every event for any session.
  */
-export function useSessionRows(worktrees: readonly Worktree[], cwd: string): SessionRow[] {
+export function useSessionList(worktrees: readonly Worktree[], cwd: string): SessionListItem[] {
   const { subscribeStore, getSessions } = useSessionEventsContext();
-  const cached = useRef<SessionRow[] | null>(null);
+  const cached = useRef<SessionListItem[] | null>(null);
   const getSnapshot = useCallback(() => {
-    const rows = buildSessionRows(getSessions(), worktrees, cwd);
-    if (cached.current && sameSessionRows(cached.current, rows)) return cached.current;
-    cached.current = rows;
-    return rows;
+    const list = buildSessionList(getSessions(), worktrees, cwd);
+    if (cached.current && sameSessionList(cached.current, list)) return cached.current;
+    cached.current = list;
+    return list;
   }, [getSessions, worktrees, cwd]);
-  return useSyncExternalStore(subscribeStore, getSnapshot, () => EMPTY_ROWS);
+  return useSyncExternalStore(subscribeStore, getSnapshot, () => EMPTY_SESSION_LIST);
 }
 
-/** True when two row lists render identically (same order and displayed fields). */
-function sameSessionRows(a: readonly SessionRow[], b: readonly SessionRow[]): boolean {
+/** True when two lists render identically (same order and displayed fields). */
+function sameSessionList(a: readonly SessionListItem[], b: readonly SessionListItem[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
     const x = a[i];
