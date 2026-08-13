@@ -16,6 +16,8 @@ import type { SessionInfo } from "~/session-info";
 
 interface SessionEventsContextValue {
   connected: boolean;
+  /** True once `internal:init` has been applied, so the store holds data. */
+  ready: boolean;
   /** Latest known info for a session, or null while unknown. */
   getInfo: (sessionId: string) => SessionInfo | null;
   /** All known sessions; the map is replaced on every store update. */
@@ -44,6 +46,7 @@ interface SessionEventStore {
  */
 export function SessionEventProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false);
+  const [ready, setReady] = useState(false);
   const storeRef = useRef<SessionEventStore>({
     sessions: EMPTY_SESSIONS,
     eventListeners: new Map(),
@@ -59,6 +62,10 @@ export function SessionEventProvider({ children }: { children: ReactNode }) {
       switch (message.type) {
         case "internal:init":
           store.sessions = new Map(message.sessions.map((info) => [info.id, info]));
+          // Stays true across reconnects: the store keeps its previous data
+          // until the new init replaces it, so the list must not flash a
+          // loading state on every reconnect.
+          setReady(true);
           break;
         case "internal:event": {
           // The server sends a fresh info object on every event, but the
@@ -140,16 +147,17 @@ export function SessionEventProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ connected, subscribeStore, getInfo, getSessions, subscribe }),
-    [connected, subscribeStore, getInfo, getSessions, subscribe],
+    () => ({ connected, ready, subscribeStore, getInfo, getSessions, subscribe }),
+    [connected, ready, subscribeStore, getInfo, getSessions, subscribe],
   );
 
   return <SessionEventsContext value={value}>{children}</SessionEventsContext>;
 }
 
-function useSessionEventsContext(): SessionEventsContextValue {
+/** Access the session events store; throws when used outside the provider. */
+export function useSessionEventsContext(): SessionEventsContextValue {
   const ctx = useContext(SessionEventsContext);
-  if (!ctx) throw new Error("useSessionEvents must be used within a SessionEventProvider");
+  if (!ctx) throw new Error("useSessionEventsContext must be used within a SessionEventProvider");
   return ctx;
 }
 
@@ -171,19 +179,6 @@ function sameSessionInfo(a: SessionInfo, b: SessionInfo): boolean {
         a.model.provider === b.model.provider &&
         a.model.id === b.model.id))
   );
-}
-
-/**
- * All known sessions (updates on every stream message), the connection
- * state, and a per-session event subscription. Intended for the session
- * list's live status display, which is a deferred task (non-goal); kept
- * because the stream protocol (`internal:init` / `internal:deleted`) and
- * the store tests are built around this consumer.
- */
-export function useSessionEvents() {
-  const ctx = useSessionEventsContext();
-  const sessions = useSyncExternalStore(ctx.subscribeStore, ctx.getSessions, () => EMPTY_SESSIONS);
-  return { sessions, connected: ctx.connected, subscribe: ctx.subscribe };
 }
 
 /**

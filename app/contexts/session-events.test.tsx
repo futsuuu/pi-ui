@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
 import type { SseEvent } from "~/routes/events/loader";
 import type { SessionInfo } from "~/session-info";
 
-import { SessionEventProvider, useSessionEvents, useSessionStream } from "./session-events";
+import { SessionEventProvider, useSessionEventsContext, useSessionStream } from "./session-events";
 
 /** Minimal EventSource stand-in recording instances and exposing emit hooks. */
 class MockEventSource {
@@ -52,9 +52,18 @@ function info(overrides: Partial<SessionInfo> = {}): SessionInfo {
   };
 }
 
+/** Empty snapshot for the store subscription in tests (no SSR). */
+const EMPTY_MAP: Map<string, SessionInfo> = new Map();
+
+/** All sessions as a live map; re-renders on every store change. */
+function useStoreSessions(): Map<string, SessionInfo> {
+  const { subscribeStore, getSessions } = useSessionEventsContext();
+  return useSyncExternalStore(subscribeStore, getSessions, () => EMPTY_MAP);
+}
+
 function Harness({ sessionId }: { sessionId: string }) {
   const { info, connected, subscribe } = useSessionStream(sessionId);
-  const { sessions } = useSessionEvents();
+  const sessions = useStoreSessions();
   const [events, setEvents] = useState<string[]>([]);
   useEffect(() => subscribe((event) => setEvents((prev) => [...prev, event.type])), [subscribe]);
   return (
@@ -78,6 +87,11 @@ function SubscribeStabilityHarness({ sessionId }: { sessionId: string }) {
     return subscribe(() => {});
   }, [subscribe]);
   return <p data-testid="runs">{effectRuns}</p>;
+}
+
+function ReadyHarness() {
+  const { ready } = useSessionEventsContext();
+  return <p data-testid="ready">{String(ready)}</p>;
 }
 
 /** Emit a message on the currently open connection. */
@@ -272,5 +286,32 @@ describe("SessionEventProvider", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(changes.current).toBe(2);
+  });
+
+  it("exposes ready only after the first internal:init and keeps it across reconnects", async () => {
+    const screen = await render(
+      <SessionEventProvider>
+        <ReadyHarness />
+      </SessionEventProvider>,
+    );
+    await expect.element(screen.getByTestId("ready")).toHaveTextContent("false");
+
+    MockEventSource.instances[0].open();
+    emit({ type: "internal:init", sessions: [] });
+    await expect.element(screen.getByTestId("ready")).toHaveTextContent("true");
+
+    // A reconnect (with its own internal:init) must not reset ready: the
+    // session list keeps showing the stale store instead of a loader.
+    vi.useFakeTimers();
+    try {
+      MockEventSource.instances[0].fail();
+      vi.advanceTimersByTime(3000);
+      expect(MockEventSource.instances).toHaveLength(2);
+      MockEventSource.instances[1].open();
+      emit({ type: "internal:init", sessions: [] });
+      await expect.element(screen.getByTestId("ready")).toHaveTextContent("true");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
