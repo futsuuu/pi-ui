@@ -6,7 +6,7 @@ import type { SseEvent } from "~/routes/events/loader";
 import type { SessionInfo } from "~/session-info";
 import type { Worktree } from "~/worktree-repository";
 
-import { buildSessionRows, useSessionRows } from "./session-list";
+import { buildSessionList, useSessionList } from "./session-list";
 
 /** Minimal EventSource stand-in recording instances and exposing emit hooks. */
 class MockEventSource {
@@ -68,15 +68,15 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("buildSessionRows", () => {
+describe("buildSessionList", () => {
   it("keeps only sessions of the project (root + worktrees)", () => {
     const sessions = new Map([
       ["root", info("root", "/repo", 100)],
       ["wt", info("wt", "/repo/wt-feature", 200)],
       ["other", info("other", "/elsewhere", 300)],
     ]);
-    const rows = buildSessionRows(sessions, worktrees, "/repo");
-    expect(rows.map((row) => row.id).sort()).toEqual(["root", "wt"]);
+    const list = buildSessionList(sessions, worktrees, "/repo");
+    expect(list.map((item) => item.id).sort()).toEqual(["root", "wt"]);
   });
 
   it("attaches the worktree by cwd and null for root sessions", () => {
@@ -84,9 +84,9 @@ describe("buildSessionRows", () => {
       ["root", info("root", "/repo", 100)],
       ["wt", info("wt", "/repo/wt-feature", 200)],
     ]);
-    const rows = buildSessionRows(sessions, worktrees, "/repo");
-    expect(rows.find((row) => row.id === "root")?.worktree).toBeNull();
-    expect(rows.find((row) => row.id === "wt")?.worktree).toEqual(worktrees[0]);
+    const list = buildSessionList(sessions, worktrees, "/repo");
+    expect(list.find((item) => item.id === "root")?.worktree).toBeNull();
+    expect(list.find((item) => item.id === "wt")?.worktree).toEqual(worktrees[0]);
   });
 
   it("sorts by timestamp descending", () => {
@@ -95,7 +95,7 @@ describe("buildSessionRows", () => {
       ["new", info("new", "/repo", 300)],
       ["mid", info("mid", "/repo", 200)],
     ]);
-    expect(buildSessionRows(sessions, worktrees, "/repo").map((row) => row.id)).toEqual([
+    expect(buildSessionList(sessions, worktrees, "/repo").map((item) => item.id)).toEqual([
       "new",
       "mid",
       "old",
@@ -104,18 +104,18 @@ describe("buildSessionRows", () => {
 
   it("drops sessions whose cwd is a worktree deleted elsewhere", () => {
     const sessions = new Map([["gone", info("gone", "/repo/wt-removed", 100)]]);
-    expect(buildSessionRows(sessions, worktrees, "/repo")).toEqual([]);
+    expect(buildSessionList(sessions, worktrees, "/repo")).toEqual([]);
   });
 });
 
-describe("useSessionRows", () => {
+describe("useSessionList", () => {
   it("re-renders only when a displayed field of a visible session changes", async () => {
     const renders = { current: 0 };
     const hook = await renderHook(
       () => {
-        const rows = useSessionRows(worktrees, "/repo");
+        const list = useSessionList(worktrees, "/repo");
         renders.current += 1;
-        return rows;
+        return list;
       },
       { wrapper: SessionEventProvider },
     );
@@ -123,7 +123,7 @@ describe("useSessionRows", () => {
     await hook.act(() => {
       emit({ type: "internal:init", sessions: [info("s1", "/repo", 1000)] });
     });
-    expect(hook.result.current.map((row) => `${row.id}:${row.messageCount}`).join(",")).toBe(
+    expect(hook.result.current.map((item) => `${item.id}:${item.messageCount}`).join(",")).toBe(
       "s1:1",
     );
     const baseline = renders.current;
@@ -161,7 +161,7 @@ describe("useSessionRows", () => {
       });
     });
     expect(renders.current).toBe(baseline + 1);
-    expect(hook.result.current.map((row) => `${row.id}:${row.messageCount}`).join(",")).toBe(
+    expect(hook.result.current.map((item) => `${item.id}:${item.messageCount}`).join(",")).toBe(
       "s1:2",
     );
   });
