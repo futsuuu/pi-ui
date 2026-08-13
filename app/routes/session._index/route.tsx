@@ -135,6 +135,10 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const projectRepository = context.get(projectRepositoryContext);
   await projectRepository.add(dir);
   const worktreeRepository = context.get(worktreeRepositoryContext);
+  // SessionManager stores session cwd values in canonical form. Use the same
+  // form for the project root so sessions opened through a symlink or an
+  // alternate path spelling are not filtered out of the list.
+  const canonicalDir = worktreeRepository.canonicalize(dir);
 
   let worktrees: Worktree[] = [];
   try {
@@ -163,7 +167,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       {
         branch: mainBranch ?? path.basename(dir),
         head: null,
-        path: dir,
+        path: canonicalDir,
         isMain: true,
         isManaged: false,
       },
@@ -173,7 +177,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
         isManaged: managedPaths.has(worktree.path),
       })),
     ],
-    cwd: dir,
+    cwd: canonicalDir,
   };
 }
 
