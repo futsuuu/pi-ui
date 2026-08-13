@@ -1,10 +1,21 @@
 import path from "node:path";
 
-import { GitBranch, Layers, MessageCirclePlus, Moon, MoreVertical, Plus, Sun } from "lucide-react";
+import {
+  GitBranch,
+  Layers,
+  Loader2Icon,
+  MessageCirclePlus,
+  Moon,
+  MoreVertical,
+  Plus,
+  Sun,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { data, Link, redirect, useFetcher, useLoaderData } from "react-router";
 import * as v from "valibot";
 
 import { ActionsMenu, DeleteMenuItem } from "~/components/actions-menu";
+import { useSessionEventsContext } from "~/contexts/session-events";
 import { useTheme } from "~/contexts/theme";
 import {
   agentSessionContainerContext,
@@ -14,6 +25,7 @@ import {
 import type { Worktree } from "~/worktree-repository";
 
 import type { Route } from "./+types/route";
+import { useSessionRows, type SessionRow } from "./session-list";
 
 export function meta(_: Route.MetaArgs) {
   return [{ title: "Pi UI - Sessions" }];
@@ -122,7 +134,6 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   }
   const projectRepository = context.get(projectRepositoryContext);
   await projectRepository.add(dir);
-  const sessionContainer = context.get(agentSessionContainerContext);
   const worktreeRepository = context.get(worktreeRepositoryContext);
 
   let worktrees: Worktree[] = [];
@@ -131,14 +142,6 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   } catch {
     worktrees = [];
   }
-
-  const rootSessions = await sessionContainer.listInfo(dir);
-  const worktreeEntries = await Promise.all(
-    worktrees.map(async (worktree) => ({
-      worktree,
-      sessions: await sessionContainer.listInfo(worktree.path),
-    })),
-  );
 
   const mainBranch = await worktreeRepository.mainBranch(dir).catch(() => null);
   // Resolve the app's per-project worktree dir once instead of once per worktree.
@@ -155,15 +158,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     ).filter((p): p is string => p !== null),
   );
 
-  const sessions = [
-    ...rootSessions.map((session) => ({ ...session, worktree: null })),
-    ...worktreeEntries.flatMap(({ worktree, sessions }) =>
-      sessions.map((session) => ({ ...session, worktree })),
-    ),
-  ].sort((a, b) => b.timestamp - a.timestamp);
-
   return {
-    sessions,
     worktrees: [
       {
         branch: mainBranch ?? path.basename(dir),
@@ -171,15 +166,11 @@ export async function loader({ request, context }: Route.LoaderArgs) {
         path: dir,
         isMain: true,
         isManaged: false,
-        sessionCount: rootSessions.length,
       },
       ...worktrees.map((worktree) => ({
         ...worktree,
         isMain: false,
         isManaged: managedPaths.has(worktree.path),
-        sessionCount:
-          worktreeEntries.find((entry) => entry.worktree.path === worktree.path)?.sessions.length ??
-          0,
       })),
     ],
     cwd: dir,
@@ -188,8 +179,30 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
 export default function Sessions() {
   const { theme, toggleTheme } = useTheme();
-  const { sessions, worktrees, cwd } = useLoaderData<typeof loader>();
+  const { worktrees, cwd } = useLoaderData<typeof loader>();
+  const { ready } = useSessionEventsContext();
   const fetcher = useFetcher<typeof action>();
+
+  // Re-render once a minute so relative timestamps stay current even while
+  // no stream event arrives (an idle session would otherwise freeze at e.g.
+  // "5m ago").
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setTick((tick) => tick + 1), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const sessionRows = useSessionRows(worktrees, cwd);
+  const worktreesWithCount = useMemo(
+    () =>
+      worktrees.map((worktree) => ({
+        ...worktree,
+        sessionCount: sessionRows.filter(
+          (row) => row.worktree === (worktree.isMain ? null : worktree),
+        ).length,
+      })),
+    [worktrees, sessionRows],
+  );
 
   function formatDate(ts: number): string {
     const d = new Date(ts);
@@ -212,7 +225,7 @@ export default function Sessions() {
     });
   }
 
-  function deleteSession(session: (typeof sessions)[number]) {
+  function deleteSession(session: SessionRow) {
     const title = session.firstMessage || "Untitled Session";
     if (!window.confirm(`Delete this session?\n\n"${title}"`)) return;
     fetcher.reset();
@@ -220,7 +233,7 @@ export default function Sessions() {
       {
         type: "deleteSession",
         id: session.id,
-        dir: session.worktree?.path ?? cwd,
+        dir: session.cwd,
       } satisfies ActionInput,
       { method: "post", encType: "application/json" },
     );
@@ -235,7 +248,7 @@ export default function Sessions() {
     );
   }
 
-  function deleteWorktree(worktree: (typeof worktrees)[number]) {
+  function deleteWorktree(worktree: (typeof worktreesWithCount)[number]) {
     const branch = worktree.branch ?? worktree.head ?? "detached";
     const { sessionCount } = worktree;
     const message =
@@ -307,7 +320,7 @@ export default function Sessions() {
               </p>
             )}
           <div className="space-y-2">
-            {worktrees.map((worktree) => (
+            {worktreesWithCount.map((worktree) => (
               <div
                 key={worktree.path}
                 className={`flex items-center justify-between gap-4 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 ${isDeletingWorktree(worktree.path) ? "opacity-50 pointer-events-none" : ""}`}
@@ -364,41 +377,52 @@ export default function Sessions() {
                 {fetcher.data.error}
               </p>
             )}
-          {sessions.map((session) => (
-            <div
-              key={session.id}
-              className={`relative ${isDeleting(session.id) ? "opacity-50 pointer-events-none" : ""}`}
-            >
-              <Link
-                to={`/session/${encodeURIComponent(session.id)}`}
-                className="block w-full text-left bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-sm transition-all"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-gray-900 dark:text-gray-100 truncate pr-12">
-                      {session.firstMessage || "Untitled Session"}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1.5 flex-wrap">
-                      {formatDate(session.timestamp)} · {session.messageCount} messages
-                      {session.worktree && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 font-mono">
-                          <GitBranch className="w-3 h-3" />
-                          {session.worktree.branch ?? session.worktree.head ?? "detached"}
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                </div>
-              </Link>
-              <ActionsMenu
-                ariaLabel="Session actions"
-                trigger={<MoreVertical className="w-5 h-5" />}
-                triggerClassName="absolute top-1/2 -translate-y-1/2 right-3 p-1.5"
-              >
-                <DeleteMenuItem onSelect={() => deleteSession(session)} label="Delete Session" />
-              </ActionsMenu>
+          {!ready ? (
+            <div className="flex justify-center py-10">
+              <Loader2Icon className="w-6 h-6 text-gray-400 animate-spin" />
             </div>
-          ))}
+          ) : (
+            sessionRows.map((session) => (
+              <div
+                key={session.id}
+                className={`relative ${isDeleting(session.id) ? "opacity-50 pointer-events-none" : ""}`}
+              >
+                <Link
+                  to={`/session/${encodeURIComponent(session.id)}`}
+                  className="block w-full text-left bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-sm transition-all"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-gray-900 dark:text-gray-100 pr-12 flex items-center gap-2">
+                        <span className="truncate">
+                          {session.firstMessage || "Untitled Session"}
+                        </span>
+                        {session.isStreaming && (
+                          <Loader2Icon className="w-4 h-4 text-blue-500 animate-spin flex-shrink-0" />
+                        )}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1.5 flex-wrap">
+                        {formatDate(session.timestamp)} · {session.messageCount} messages
+                        {session.worktree && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 font-mono">
+                            <GitBranch className="w-3 h-3" />
+                            {session.worktree.branch ?? session.worktree.head ?? "detached"}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </Link>
+                <ActionsMenu
+                  ariaLabel="Session actions"
+                  trigger={<MoreVertical className="w-5 h-5" />}
+                  triggerClassName="absolute top-1/2 -translate-y-1/2 right-3 p-1.5"
+                >
+                  <DeleteMenuItem onSelect={() => deleteSession(session)} label="Delete Session" />
+                </ActionsMenu>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>
