@@ -146,7 +146,9 @@ export default function Chat({
       unsubscribe();
       if (updateTimerRef.current != null) {
         clearTimeout(updateTimerRef.current);
+        updateTimerRef.current = null;
       }
+      pendingUpdateRef.current = null;
     };
   }, [subscribe]);
 
