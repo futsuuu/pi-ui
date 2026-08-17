@@ -135,12 +135,16 @@ function agentEnd(messages: Message[], willRetry = false): AgentSessionEvent {
  * message is appended by the SSE `message_start` (user) event, so every
  * connected tab sees the same conversation.
  */
-function run(events: ChatAction[], eventMessages: AgentMessagePropsWithKey[] = []): ChatState {
+function run(
+  events: ChatAction[],
+  eventMessages: AgentMessagePropsWithKey[] = [],
+  sessionId: string | null = null,
+): ChatState {
   let state: ChatState = {
     loadedMessages: [],
     eventMessages,
     toolCallMap: new Map(),
-    sessionId: null,
+    sessionId,
   };
   for (const event of events) {
     state = chatReducer(state, event);
@@ -842,6 +846,10 @@ describe("chatReducer", () => {
           toolExecutionStart("call-1", "bash", { command: "ls" }),
         ],
         [],
+        // Same session as the reset below: the kept-events path is exercised
+        // (the in-flight tool survives from the live eventMessages), instead
+        // of a session change that would rebuild it from turnEvents.
+        "s1",
       );
       const rebuilt = chatReducer(before, {
         type: "reset",
