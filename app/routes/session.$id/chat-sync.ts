@@ -17,11 +17,13 @@ export interface ChatSyncOptions {
 }
 
 /**
- * The /events stream lifecycle for the chat page, captured at render time:
- * the disconnect's streaming state must be recorded in the render that
- * observes the drop (an effect would read the state after the next update
- * instead). The budgets are spent by the effect, which moves the state back
- * to `connected` after a reconnect revalidation.
+ * The /events stream lifecycle for the chat page. Connect-state transitions
+ * are applied in a committed effect: the closure captures the committed
+ * render's streaming state, so the disconnect's state is recorded from the
+ * commit that observed the drop (commit timing, not render timing), and an
+ * abandoned render can never create a dangling disconnected/reconnected
+ * state. The budgets are spent by the revalidation effect, which moves the
+ * state back to `connected` after a reconnect revalidation.
  *
  * - connected: the stream is up, or the session just started (no outage has
  *   been recorded yet).
@@ -75,25 +77,32 @@ export function useChatSync({
   const prevSessionRef = useRef(sessionId);
   const prevConnectedRef = useRef(connected);
 
-  // Render-time transitions. A session change resets the lifecycle and
-  // re-freezes the mount budget with the new session's loader state.
+  // Render-time session reset: a session change resets the lifecycle and
+  // re-freezes the mount budget with the new session's loader state. This is
+  // not a connect transition (those live in the effect below), so it is safe
+  // as a render-phase ref adjustment.
   if (prevSessionRef.current !== sessionId) {
     prevSessionRef.current = sessionId;
     connectionRef.current = { status: "connected" };
     mountBudgetRef.current = initialStreaming || hasTurnEvents ? "pending" : "none";
     prevConnectedRef.current = connected;
   }
-  if (prevConnectedRef.current && !connected) {
-    // A drop re-opens the reconnect budget; record this render's streaming
-    // state so a reconnect revalidation can be decided from it.
-    connectionRef.current = { status: "disconnected", streaming: isStreaming };
-  } else if (!prevConnectedRef.current && connected) {
-    const connection = connectionRef.current;
-    if (connection.status === "disconnected") {
-      connectionRef.current = { status: "reconnected", streaming: connection.streaming };
+
+  // Connect-state transitions, committed via an effect: a drop re-opens the
+  // reconnect budget and records the streaming state at the outage; the next
+  // reconnect marks the budget as owed. Runs after every commit; without a
+  // transition it only re-syncs `prevConnectedRef`.
+  useEffect(() => {
+    if (prevConnectedRef.current && !connected) {
+      connectionRef.current = { status: "disconnected", streaming: isStreaming };
+    } else if (!prevConnectedRef.current && connected) {
+      const connection = connectionRef.current;
+      if (connection.status === "disconnected") {
+        connectionRef.current = { status: "reconnected", streaming: connection.streaming };
+      }
     }
-  }
-  prevConnectedRef.current = connected;
+    prevConnectedRef.current = connected;
+  });
 
   // `isStreaming` is in the dependency array only to spend the reconnect
   // budget when a stream starts after the reconnect (a turn that began while
