@@ -136,7 +136,12 @@ function agentEnd(messages: Message[], willRetry = false): AgentSessionEvent {
  * connected tab sees the same conversation.
  */
 function run(events: ChatAction[], eventMessages: AgentMessagePropsWithKey[] = []): ChatState {
-  let state: ChatState = { loadedMessages: [], eventMessages, toolCallMap: new Map() };
+  let state: ChatState = {
+    loadedMessages: [],
+    eventMessages,
+    toolCallMap: new Map(),
+    sessionId: null,
+  };
   for (const event of events) {
     state = chatReducer(state, event);
   }
@@ -413,7 +418,7 @@ describe("chatReducer", () => {
       arguments: { command: "ls" },
     };
     const turn1Assistant = assistantMessage([toolCall], "toolUse");
-    const turn2Assistant = assistantMessage(textBlock("All done"), "stop");
+    const turn2Assistant = assistantMessage(textBlock("All done"), "stop", { timestamp: 2 });
     const toolResult = toolResultMessage("call-1", "bash", textBlock("file1"));
 
     const events: AgentSessionEvent[] = [
@@ -429,7 +434,9 @@ describe("chatReducer", () => {
       messageEnd(toolResult),
       turnEnd(turn1Assistant, [toolResult]),
       turnStart(),
-      messageStart(assistantMessage([], "stop")),
+      // Distinct timestamp so the identity (role + timestamp) does not collide
+      // with the turn-1 assistant.
+      messageStart(assistantMessage([], "stop", { timestamp: 2 })),
       messageEnd(turn2Assistant),
       turnEnd(turn2Assistant),
       agentEnd([userMessage("hello"), turn1Assistant, toolResult, turn2Assistant]),
@@ -647,8 +654,19 @@ describe("chatReducer", () => {
         "toolUse",
       ),
     ];
-    const cleared = chatReducer(withPending, { type: "reset", loadedMessages: loaded });
-    expect(cleared.eventMessages).toEqual([]);
+    const cleared = chatReducer(withPending, {
+      type: "reset",
+      loadedMessages: loaded,
+      sessionId: null,
+    });
+    // Messages promoted into the snapshot are dropped; the in-flight tool
+    // (not yet persisted) survives the rebuild so its stream never jumps.
+    expect(cleared.eventMessages).toHaveLength(1);
+    expect(cleared.eventMessages[0]).toMatchObject({
+      role: "toolResult",
+      toolCallId: "call-1",
+      isStreaming: true,
+    });
     expect(cleared.pendingUserMessage).toBeUndefined();
     expect(cleared.loadedMessages).toBe(loaded);
     // The toolCallMap is rebuilt from the loader messages, so tool summaries
@@ -656,6 +674,327 @@ describe("chatReducer", () => {
     expect(cleared.toolCallMap.get("call-1")).toEqual({
       toolName: "bash",
       args: { command: "ls" },
+    });
+  });
+
+  describe("identity reconciliation (loader turnEvents and lost starts)", () => {
+    it("creates the assistant entry when message_start was lost (message_update)", () => {
+      // The loader snapshot carried only the user message; the assistant's
+      // message_start was emitted in the [loader read -> subscription] window.
+      const state = run([
+        agentStart(),
+        turnStart(),
+        messageStart(userMessage("hello")),
+        messageEnd(userMessage("hello")),
+      ]);
+      const partial = assistantMessage(textBlock("Hello"), "stop", { timestamp: 5 });
+      const updated = chatReducer(state, messageUpdate(textDelta("Hello"), partial));
+
+      expect(updated.eventMessages).toHaveLength(2);
+      expect(updated.eventMessages[1]).toMatchObject({
+        role: "assistant",
+        content: textBlock("Hello"),
+      });
+      const entry = updated.eventMessages[1] as Extract<
+        AgentMessagePropsWithKey,
+        { role: "assistant" }
+      >;
+      expect(entry.stopReason).toBeUndefined();
+    });
+
+    it("creates the assistant entry when message_start was lost (message_end)", () => {
+      const state = run([
+        agentStart(),
+        turnStart(),
+        messageStart(userMessage("hello")),
+        messageEnd(userMessage("hello")),
+      ]);
+      const final = assistantMessage(textBlock("Hello"), "stop", { timestamp: 5 });
+      const ended = chatReducer(state, messageEnd(final));
+
+      expect(ended.eventMessages).toHaveLength(2);
+      expect(ended.eventMessages[1]).toMatchObject({
+        role: "assistant",
+        content: textBlock("Hello"),
+        stopReason: "stop",
+      });
+    });
+
+    it("creates the tool entry when tool_execution_start was lost", () => {
+      const state = run([
+        agentStart(),
+        turnStart(),
+        messageStart(userMessage("hello")),
+        messageEnd(userMessage("hello")),
+      ]);
+      const updated = chatReducer(
+        state,
+        toolExecutionUpdate("call-1", { content: textBlock("partial"), details: {} }),
+      );
+      expect(updated.eventMessages[1]).toMatchObject({
+        role: "toolResult",
+        toolCallId: "call-1",
+        content: textBlock("partial"),
+        isStreaming: true,
+      });
+      expect(updated.toolCallMap.get("call-1")).toEqual({ toolName: "bash", args: {} });
+
+      const ended = chatReducer(
+        updated,
+        toolExecutionEnd("call-1", { content: textBlock("done"), details: {} }, false),
+      );
+      expect(ended.eventMessages[1]).toMatchObject({
+        role: "toolResult",
+        toolCallId: "call-1",
+        content: textBlock("done"),
+        isStreaming: false,
+        isError: false,
+      });
+    });
+
+    it("applies message_update to the matching assistant by identity, not the last assistant", () => {
+      // Turn 1 completed; turn 2's assistant message_start was lost, so the
+      // update must create a new entry instead of clobbering the finalized
+      // turn-1 assistant.
+      const state = run([
+        agentStart(),
+        turnStart(),
+        messageStart(userMessage("hello")),
+        messageEnd(userMessage("hello")),
+        messageStart(assistantMessage([], "stop")),
+        messageUpdate(textDelta("old"), assistantMessage(textBlock("old"), "stop")),
+        messageEnd(assistantMessage(textBlock("old answer"), "stop")),
+        // Distinct timestamp: message identity is role + timestamp, so turn
+        // 2's prompt must not collide with turn 1's.
+        messageStart({ ...userMessage("second"), timestamp: 2 }),
+        messageEnd({ ...userMessage("second"), timestamp: 2 }),
+      ]);
+      const partial = assistantMessage(textBlock("new answer"), "stop", { timestamp: 5 });
+      const updated = chatReducer(state, messageUpdate(textDelta("new"), partial));
+
+      expect(updated.eventMessages).toHaveLength(4);
+      // The finalized turn-1 assistant is untouched.
+      expect(updated.eventMessages[1]).toMatchObject({
+        role: "assistant",
+        content: textBlock("old answer"),
+        stopReason: "stop",
+      });
+      // The new streaming assistant is created at the end.
+      expect(updated.eventMessages[3]).toMatchObject({
+        role: "assistant",
+        content: textBlock("new answer"),
+      });
+    });
+
+    it("seeds the loader's turnEvents, skipping identities already in the snapshot", () => {
+      // The loader snapshot already contains the persisted conversation; the
+      // buffered turn events for those messages must not append duplicates.
+      const loaded: Message[] = [
+        userMessage("hello"),
+        assistantMessage(textBlock("final answer"), "stop"),
+      ];
+      const turnEvents: AgentSessionEvent[] = [
+        messageStart(userMessage("hello")),
+        messageEnd(userMessage("hello")),
+        messageStart(assistantMessage(textBlock("final answer"), "stop")),
+        messageEnd(assistantMessage(textBlock("final answer"), "stop")),
+        messageStart(assistantMessage([], "stop", { timestamp: 5 })),
+        messageUpdate(
+          textDelta("Hel"),
+          assistantMessage(textBlock("Hel"), "stop", { timestamp: 5 }),
+        ),
+      ];
+      const state = chatReducer(createChatState(loaded, "s1"), {
+        type: "reset",
+        loadedMessages: loaded,
+        turnEvents,
+        sessionId: "s1",
+      });
+
+      expect(state.loadedMessages).toBe(loaded);
+      // Only the in-flight assistant (not in the snapshot) is seeded.
+      expect(state.eventMessages).toHaveLength(1);
+      expect(state.eventMessages[0]).toMatchObject({
+        role: "assistant",
+        content: textBlock("Hel"),
+      });
+    });
+
+    it("keeps live entries not yet in the snapshot across a revalidation rebuild", () => {
+      // A revalidation snapshot promotes the finalized messages; the still
+      // streaming partial (same identity) stays live, and the tool in flight
+      // survives.
+      const loaded: Message[] = [
+        userMessage("hello"),
+        assistantMessage(textBlock("final answer"), "stop"),
+      ];
+      const before = run(
+        [
+          agentStart(),
+          turnStart(),
+          messageStart(userMessage("hello")),
+          messageEnd(userMessage("hello")),
+          messageStart(assistantMessage([], "stop")),
+          messageUpdate(textDelta("fin"), assistantMessage(textBlock("fin"), "stop")),
+          toolExecutionStart("call-1", "bash", { command: "ls" }),
+        ],
+        [],
+      );
+      const rebuilt = chatReducer(before, {
+        type: "reset",
+        loadedMessages: loaded,
+        turnEvents: [
+          messageStart(userMessage("hello")),
+          messageStart(assistantMessage(textBlock("final answer"), "stop")),
+          messageEnd(assistantMessage(textBlock("final answer"), "stop")),
+          toolExecutionStart("call-1", "bash", { command: "ls" }),
+        ],
+        sessionId: "s1",
+      });
+
+      expect(rebuilt.loadedMessages).toBe(loaded);
+      // user + finalized assistant are dropped (rendered from the snapshot);
+      // the in-flight tool survives the rebuild.
+      expect(rebuilt.eventMessages).toHaveLength(1);
+      expect(rebuilt.eventMessages[0]).toMatchObject({
+        role: "toolResult",
+        toolCallId: "call-1",
+        isStreaming: true,
+      });
+      expect(rebuilt.toolCallMap.get("call-1")).toEqual({
+        toolName: "bash",
+        args: { command: "ls" },
+      });
+    });
+
+    it("drops a finalized tool entry whose result is in the revalidation snapshot", () => {
+      // The tool finished and was persisted: the revalidation snapshot now
+      // carries its toolResult message. The live entry must be dropped (it is
+      // rendered from the snapshot), otherwise the result renders twice. Tool
+      // identity is toolCallId — the entries carry no timestamp, so the
+      // role+timestamp comparison must not be used for them.
+      const toolCall: AssistantMessage["content"][number] = {
+        type: "toolCall",
+        id: "call-1",
+        name: "bash",
+        arguments: { command: "ls" },
+      };
+      const before = run([
+        agentStart(),
+        turnStart(),
+        messageStart(userMessage("hello")),
+        messageEnd(userMessage("hello")),
+        messageStart(assistantMessage([toolCall], "toolUse")),
+        messageEnd(assistantMessage([toolCall], "toolUse")),
+        toolExecutionStart("call-1", "bash", { command: "ls" }),
+        toolExecutionEnd("call-1", { content: textBlock("done"), details: {} }, false),
+      ]);
+      const loaded: Message[] = [
+        userMessage("hello"),
+        assistantMessage([toolCall], "toolUse"),
+        toolResultMessage("call-1", "bash", textBlock("done")),
+      ];
+      const rebuilt = chatReducer(before, {
+        type: "reset",
+        loadedMessages: loaded,
+        turnEvents: [],
+        sessionId: "s1",
+      });
+
+      // Every message is rendered from the snapshot; nothing is kept.
+      expect(rebuilt.eventMessages).toEqual([]);
+    });
+
+    it("does not double-append a user message from a seed and the live stream", () => {
+      // A revalidation seed and the live SSE stream can both carry the same
+      // message_start when the loader response races the delivery: the second
+      // start must not render the prompt twice.
+      const state = run([
+        agentStart(),
+        turnStart(),
+        messageStart(userMessage("hello")),
+        messageEnd(userMessage("hello")),
+      ]);
+      const replay = chatReducer(state, messageStart(userMessage("hello")));
+      expect(replay.eventMessages).toHaveLength(1);
+      expect(replay.pendingUserMessage).toBeUndefined();
+    });
+
+    it("does not double-append an assistant placeholder from a seed and the live stream", () => {
+      const state = run([
+        agentStart(),
+        turnStart(),
+        messageStart(userMessage("hello")),
+        messageEnd(userMessage("hello")),
+        messageStart(assistantMessage([], "stop", { timestamp: 5 })),
+      ]);
+      const replay = chatReducer(
+        state,
+        messageStart(assistantMessage([], "stop", { timestamp: 5 })),
+      );
+      expect(replay.eventMessages).toHaveLength(2);
+      // The live partial still streams into the single entry.
+      const updated = chatReducer(
+        replay,
+        messageUpdate(
+          textDelta("Hel"),
+          assistantMessage(textBlock("Hel"), "stop", { timestamp: 5 }),
+        ),
+      );
+      expect(updated.eventMessages).toHaveLength(2);
+      expect(updated.eventMessages[1]).toMatchObject({
+        role: "assistant",
+        content: textBlock("Hel"),
+      });
+    });
+
+    it("does not double-append a tool entry from a seed and the live stream", () => {
+      const state = run([
+        agentStart(),
+        turnStart(),
+        messageStart(userMessage("hello")),
+        messageEnd(userMessage("hello")),
+        toolExecutionStart("call-1", "bash", { command: "ls" }),
+      ]);
+      const replay = chatReducer(state, toolExecutionStart("call-1", "bash", { command: "ls" }));
+      expect(replay.eventMessages).toHaveLength(2);
+      expect(replay.toolCallMap.get("call-1")).toEqual({
+        toolName: "bash",
+        args: { command: "ls" },
+      });
+      // The live end still finalizes the single entry.
+      const ended = chatReducer(
+        replay,
+        toolExecutionEnd("call-1", { content: textBlock("done"), details: {} }, false),
+      );
+      expect(ended.eventMessages.filter((m) => m.role === "toolResult")).toHaveLength(1);
+      expect(ended.eventMessages[1]).toMatchObject({
+        role: "toolResult",
+        toolCallId: "call-1",
+        isStreaming: false,
+      });
+    });
+
+    it("clears event messages when the session changes", () => {
+      // A stale (role, timestamp) from the previous session could collide
+      // with a fresh event of the new session and be wrongly skipped, so a
+      // session switch drops all live entries first.
+      const state = run([
+        agentStart(),
+        turnStart(),
+        messageStart(userMessage("hello")),
+        messageEnd(userMessage("hello")),
+        messageStart(assistantMessage([], "stop")),
+        toolExecutionStart("call-1", "bash", { command: "ls" }),
+      ]);
+      const switched = chatReducer(state, {
+        type: "reset",
+        loadedMessages: [],
+        turnEvents: [],
+        sessionId: "s2",
+      });
+      expect(switched.eventMessages).toEqual([]);
+      expect(switched.sessionId).toBe("s2");
     });
   });
 });

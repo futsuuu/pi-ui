@@ -71,10 +71,73 @@ async function findSessionInfo(
 /** Events broadcast to container subscribers: session events plus session deletion. */
 export type ContainerEvent = AgentSessionEvent | { type: "session_deleted" };
 
+/** Stable empty buffer shared by idle sessions (no current turn in flight). */
+const EMPTY_TURN_EVENTS: AgentSessionEvent[] = [];
+
+/**
+ * Fold one session event into the current turn's buffer. Returns the new
+ * buffer, or `undefined` when the turn ended (buffer cleared). `message_update`
+ * and `tool_execution_update` events are coalesced to the newest value per
+ * message/tool identity: both carry the full accumulated content, so only the
+ * newest matters. The buffer is therefore bounded by the turn's
+ * message/tool-event count, not by the streamed text length.
+ */
+export function applyTurnEvent(
+  buffer: readonly AgentSessionEvent[] | undefined,
+  event: AgentSessionEvent,
+): AgentSessionEvent[] | undefined {
+  if (buffer) {
+    switch (event.type) {
+      case "turn_start":
+        // A new turn starts: the previous turn's events are irrelevant now.
+        return [event];
+      case "message_update": {
+        const idx = buffer.findIndex(
+          (e) => e.type === "message_update" && sameMessageIdentity(e.message, event.message),
+        );
+        if (idx !== -1) {
+          const next = [...buffer];
+          next[idx] = event;
+          return next;
+        }
+        return [...buffer, event];
+      }
+      case "tool_execution_update": {
+        // Tool updates carry the full cumulative partial output per tool call
+        // (the bash tool emits one per ~100ms throttle interval), so the newest
+        // update per toolCallId is authoritative and the rest can be dropped.
+        const idx = buffer.findIndex(
+          (e) => e.type === "tool_execution_update" && e.toolCallId === event.toolCallId,
+        );
+        if (idx !== -1) {
+          const next = [...buffer];
+          next[idx] = event;
+          return next;
+        }
+        return [...buffer, event];
+      }
+      case "agent_settled":
+        // The run ended; persisted messages cover the turn from now on.
+        return undefined;
+      default:
+        return [...buffer, event];
+    }
+  }
+  return event.type === "turn_start" ? [event] : undefined;
+}
+
 export class AgentSessionContainer {
   // We should not expose `AgentSessionRuntime` because it can modify the inner `session` field.
   private runtimes: Map<string, Promise<AgentSessionRuntime | null>> = new Map();
   private listeners: Set<(sessionId: string, event: ContainerEvent) => void> = new Set();
+  /**
+   * Current turn's events per session, shared across connections. Bounded by
+   * the turn's message/tool-event count: `message_update` and
+   * `tool_execution_update` events are coalesced to the newest value per
+   * message/tool identity. Replaced on `turn_start`, cleared on
+   * `agent_settled`, deletion, and runtime disposal.
+   */
+  private turnBuffers: Map<string, AgentSessionEvent[]> = new Map();
 
   private constructor(private createRuntimeFactory: CreateAgentSessionRuntimeFactory) {}
 
@@ -93,6 +156,18 @@ export class AgentSessionContainer {
     return () => this.listeners.delete(callback);
   }
 
+  /**
+   * The current turn's events for a session, for the chat loader. Every
+   * session event replaces the buffer with a new array, so each loader call
+   * returns the buffer as of that moment; a loader that races the turn keeps
+   * the snapshot it read (the correct `[loader read]` point in time). A fresh
+   * array on every event also lets the route detect the turn's progress by
+   * reference and rebuild on revalidation.
+   */
+  public getTurnEvents(sessionId: string): AgentSessionEvent[] {
+    return this.turnBuffers.get(sessionId) ?? EMPTY_TURN_EVENTS;
+  }
+
   private broadcast(sessionId: string, event: ContainerEvent) {
     for (const listener of this.listeners) {
       try {
@@ -101,6 +176,14 @@ export class AgentSessionContainer {
         // ignore disconnected clients
       }
     }
+  }
+
+  /** Keep the per-session turn buffer in sync with the session's events. */
+  private handleSessionEvent(sessionId: string, event: AgentSessionEvent) {
+    const next = applyTurnEvent(this.turnBuffers.get(sessionId), event);
+    if (next) this.turnBuffers.set(sessionId, next);
+    else this.turnBuffers.delete(sessionId);
+    this.broadcast(sessionId, event);
   }
 
   public static async create() {
@@ -140,7 +223,7 @@ export class AgentSessionContainer {
     });
     const sessionId = runtime.session.sessionId;
     this.runtimes.set(sessionId, Promise.resolve(runtime));
-    runtime.session.subscribe((event) => this.broadcast(sessionId, event));
+    runtime.session.subscribe((event) => this.handleSessionEvent(sessionId, event));
     return runtime.session;
   }
 
@@ -178,7 +261,7 @@ export class AgentSessionContainer {
       agentDir: getAgentDir(),
       sessionManager,
     });
-    runtime.session.subscribe((event) => this.broadcast(sessionId, event));
+    runtime.session.subscribe((event) => this.handleSessionEvent(sessionId, event));
     return runtime;
   }
 
@@ -227,6 +310,7 @@ export class AgentSessionContainer {
     const promise = this.runtimes.get(sessionId);
     if (!promise) return;
     this.runtimes.delete(sessionId);
+    this.turnBuffers.delete(sessionId);
     const runtime = await promise;
     if (runtime) {
       await runtime.dispose();
@@ -248,6 +332,7 @@ export class AgentSessionContainer {
     await deleteSessionFile(found.path);
     // Only broadcast once the file is actually gone, so a failed deletion
     // cannot leave clients with a removed session.
+    this.turnBuffers.delete(sessionId);
     this.broadcast(sessionId, { type: "session_deleted" });
   }
 }
@@ -290,4 +375,12 @@ function userMessageText(
     .filter((part): part is TextContent => part.type === "text")
     .map((part) => part.text)
     .join("");
+}
+
+/** True when two messages share the streaming identity `role + timestamp`. */
+function sameMessageIdentity(
+  a: { role: string; timestamp?: number },
+  b: { role: string; timestamp?: number },
+): boolean {
+  return a.role === b.role && a.timestamp === b.timestamp;
 }
