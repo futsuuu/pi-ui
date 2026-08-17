@@ -215,7 +215,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           ...entry,
           content: action.partialResult?.content ?? [],
         }),
-        (toolName, args) => ({
+        (toolName) => ({
           _key: uid(),
           role: "toolResult",
           content: action.partialResult?.content ?? [],
@@ -223,7 +223,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           toolCallId: action.toolCallId,
           isError: false,
           isStreaming: true,
-          ...(args ? { args } : {}),
+          // args stay out of the entry: they are recorded in toolCallMap by
+          // updateToolResult, mirroring tool_execution_start's entry.
         }),
       );
     }
