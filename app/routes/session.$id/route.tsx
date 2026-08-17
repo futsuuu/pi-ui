@@ -216,7 +216,10 @@ function Chat({
         },
       );
     },
-    [fetcher],
+    // `fetcher.submit` is stable: depending on the whole `fetcher` object
+    // would re-create this callback on every fetcher state transition and
+    // defeat PromptForm's memoization during submissions.
+    [fetcher.submit],
   );
 
   function abortMessage() {
