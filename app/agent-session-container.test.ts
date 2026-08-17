@@ -2,10 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { getModel } from "@earendil-works/pi-ai/compat";
 import {
-  createAgentSessionFromServices,
-  createAgentSessionServices,
   SessionManager,
   type AgentSessionEvent,
   type CreateAgentSessionRuntimeFactory,
@@ -13,69 +10,12 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { AgentSessionContainer, applyTurnEvent } from "./agent-session-container";
+import { createSession, realFactory, withAgentDir } from "./test-helpers";
 
 /** A runtime factory that is never invoked by the tested paths. */
 const noopFactory: CreateAgentSessionRuntimeFactory = async () => {
   throw new Error("runtime factory should not be called");
 };
-
-/**
- * Real runtime factory mirroring production, used to exercise loaded
- * sessions. Pins a reasoning model so `setThinkingLevel` is not clamped to
- * "off" by the default (non-reasoning) model.
- */
-const realFactory: CreateAgentSessionRuntimeFactory = async ({
-  cwd,
-  agentDir,
-  sessionManager,
-  sessionStartEvent,
-}) => {
-  const services = await createAgentSessionServices({ cwd, agentDir });
-  const result = await createAgentSessionFromServices({
-    services,
-    sessionManager,
-    sessionStartEvent,
-    model: getModel("anthropic", "claude-opus-4-5"),
-  });
-  return { ...result, services, diagnostics: services.diagnostics };
-};
-
-/** Redirect the session storage dir so tests never touch the real ~/.pi/agent. */
-function withAgentDir(agentDir: string, fn: () => Promise<void>): Promise<void> {
-  const previous = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = agentDir;
-  return fn().finally(() => {
-    if (previous === undefined) {
-      // Assignment would store the string "undefined"; delete to unset.
-      delete process.env.PI_CODING_AGENT_DIR;
-    } else {
-      process.env.PI_CODING_AGENT_DIR = previous;
-    }
-  });
-}
-
-/**
- * Create a persisted session and return its id and file path. Uses the
- * default session dir (under the current PI_CODING_AGENT_DIR) when
- * `sessionDir` is omitted. Session files are only written once an assistant
- * message arrives, so append a user message followed by an assistant reply.
- */
-function createSession(cwd: string, sessionDir?: string): { id: string; file: string } {
-  const sm = SessionManager.create(cwd, sessionDir);
-  const timestamp = Date.now();
-  sm.appendMessage({ role: "user", content: "hello", timestamp });
-  sm.appendMessage({
-    role: "assistant",
-    content: [{ type: "text", text: "Hi there!" }],
-    api: "anthropic-messages",
-    provider: "anthropic",
-    model: "test-model",
-    usage: usage(),
-    stopReason: "stop",
-    timestamp,
-  });
-  return { id: sm.getSessionId(), file: sm.getSessionFile()! };
-}
 
 function usage() {
   return {
