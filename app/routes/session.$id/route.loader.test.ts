@@ -2,50 +2,15 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { getModel } from "@earendil-works/pi-ai/compat";
-import {
-  createAgentSessionFromServices,
-  createAgentSessionServices,
-  type CreateAgentSessionRuntimeFactory,
-} from "@earendil-works/pi-coding-agent";
 import { RouterContextProvider } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import { AgentSessionContainer } from "~/agent-session-container";
 import { agentSessionContainerContext } from "~/router-contexts";
+import { realFactory, withAgentDir } from "~/test-helpers";
 
 import { loader } from "./route";
 import { agentSessionContext } from "./router-contexts";
-
-/** Real runtime factory mirroring production. */
-const realFactory: CreateAgentSessionRuntimeFactory = async ({
-  cwd,
-  agentDir,
-  sessionManager,
-  sessionStartEvent,
-}) => {
-  const services = await createAgentSessionServices({ cwd, agentDir });
-  const result = await createAgentSessionFromServices({
-    services,
-    sessionManager,
-    sessionStartEvent,
-    model: getModel("anthropic", "claude-opus-4-5"),
-  });
-  return { ...result, services, diagnostics: services.diagnostics };
-};
-
-/** Redirect the session storage dir so tests never touch the real ~/.pi/agent. */
-function withAgentDir(agentDir: string, fn: () => Promise<void>): Promise<void> {
-  const previous = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = agentDir;
-  return fn().finally(() => {
-    if (previous === undefined) {
-      delete process.env.PI_CODING_AGENT_DIR;
-    } else {
-      process.env.PI_CODING_AGENT_DIR = previous;
-    }
-  });
-}
 
 function callLoader(
   container: AgentSessionContainer,

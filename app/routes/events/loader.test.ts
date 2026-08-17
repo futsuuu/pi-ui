@@ -2,51 +2,15 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { getModel } from "@earendil-works/pi-ai/compat";
-import {
-  createAgentSessionFromServices,
-  createAgentSessionServices,
-  SessionManager,
-  type CreateAgentSessionRuntimeFactory,
-} from "@earendil-works/pi-coding-agent";
 import { RouterContextProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AgentSessionContainer } from "~/agent-session-container";
 import { agentSessionContainerContext } from "~/router-contexts";
 import type { SessionInfo } from "~/session-info";
+import { createSession, realFactory, withAgentDir } from "~/test-helpers";
 
 import { loader, type SseEvent } from "./loader";
-
-/** Real runtime factory mirroring production. */
-const realFactory: CreateAgentSessionRuntimeFactory = async ({
-  cwd,
-  agentDir,
-  sessionManager,
-  sessionStartEvent,
-}) => {
-  const services = await createAgentSessionServices({ cwd, agentDir });
-  const result = await createAgentSessionFromServices({
-    services,
-    sessionManager,
-    sessionStartEvent,
-    model: getModel("anthropic", "claude-opus-4-5"),
-  });
-  return { ...result, services, diagnostics: services.diagnostics };
-};
-
-/** Redirect the session storage dir so tests never touch the real ~/.pi/agent. */
-function withAgentDir(agentDir: string, fn: () => Promise<void>): Promise<void> {
-  const previous = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = agentDir;
-  return fn().finally(() => {
-    if (previous === undefined) {
-      delete process.env.PI_CODING_AGENT_DIR;
-    } else {
-      process.env.PI_CODING_AGENT_DIR = previous;
-    }
-  });
-}
 
 /** A parsed SSE block: a `data:` message or a comment (keep-alive) line. */
 type SseBlock = { kind: "data"; value: SseEvent } | { kind: "comment" };
@@ -108,35 +72,6 @@ function callLoader(container: AgentSessionContainer): Promise<Response> {
   });
 }
 
-/**
- * Create a persisted session under the default session dir and return its id.
- * Session files are only written once an assistant message arrives, so append
- * a user message followed by an assistant reply.
- */
-function createPersistedSession(cwd: string): { id: string } {
-  const sm = SessionManager.create(cwd);
-  const timestamp = Date.now();
-  sm.appendMessage({ role: "user", content: "hello", timestamp });
-  sm.appendMessage({
-    role: "assistant",
-    content: [{ type: "text", text: "Hi there!" }],
-    api: "anthropic-messages",
-    provider: "anthropic",
-    model: "test-model",
-    usage: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 0,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-    },
-    stopReason: "stop",
-    timestamp,
-  });
-  return { id: sm.getSessionId() };
-}
-
 /** SSE connection under test, canceled after each test to clear timers. */
 let activeReader: SseReader | null = null;
 
@@ -154,7 +89,7 @@ describe("GET /events", () => {
     try {
       await withAgentDir(root, async () => {
         const cwd = path.join(root, "cwd");
-        const { id } = createPersistedSession(cwd);
+        const { id } = createSession(cwd);
 
         const container = AgentSessionContainer.withFactory(realFactory);
         const response = await callLoader(container);
@@ -281,7 +216,7 @@ describe("GET /events", () => {
       await withAgentDir(root, async () => {
         const cwd = path.join(root, "cwd");
         mkdirSync(cwd, { recursive: true });
-        const { id } = createPersistedSession(cwd);
+        const { id } = createSession(cwd);
 
         const container = AgentSessionContainer.withFactory(realFactory);
         // Load the runtime so delete() has something to dispose.
