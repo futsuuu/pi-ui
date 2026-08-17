@@ -99,16 +99,17 @@ function Chat({
   );
   {
     // If the loader re-validates, the fresh snapshot and turn events replace
-    // the previous ones. Render-time dispatch is safe here because:
-    // - it's conditional (only when a reference changes), preventing infinite loop
-    // - React applies it synchronously within the render phase, before commit
-    // - this avoids race conditions with SSE events that useEffect would have
-    const prevLoaded = useRef({ messages: loadedMessages, turnEvents });
+    // the previous ones. Render-time state adjustment is the supported
+    // pattern for comparing against a previous render's values: the reset is
+    // dispatched only when a reference changes, and React applies it
+    // synchronously within the render phase (it cannot be dropped by an
+    // abandoned render, unlike a ref write).
+    const [prevLoaded, setPrevLoaded] = useState({ messages: loadedMessages, turnEvents });
     if (
-      loadedMessages !== prevLoaded.current.messages ||
-      turnEvents !== prevLoaded.current.turnEvents
+      loadedMessages !== prevLoaded.messages ||
+      turnEvents !== prevLoaded.turnEvents
     ) {
-      prevLoaded.current = { messages: loadedMessages, turnEvents };
+      setPrevLoaded({ messages: loadedMessages, turnEvents });
       dispatch({ type: "reset", loadedMessages, turnEvents, sessionId });
     }
   }
