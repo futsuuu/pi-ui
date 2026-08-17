@@ -143,4 +143,22 @@ describe("useChatSync", () => {
     // s2's outage spends the fresh reconnect budget.
     expect(revalidate).toHaveBeenCalledTimes(2);
   });
+
+  it("re-freezes the mount budget from the committed session change", async () => {
+    const revalidate = vi.fn();
+    const { rerender } = await mountChatSync(options({ initialStreaming: true }, revalidate));
+    expect(revalidate).toHaveBeenCalledTimes(1); // s1 mount budget
+    // Switch to an idle session: the mount budget is re-frozen as "none" in
+    // the committed effect (the session-reset lifecycle runs only on
+    // committed renders, so an abandoned session-change render cannot leave
+    // the old session's budget in place).
+    await rerender(options({ sessionId: "s2" }, revalidate));
+    expect(revalidate).toHaveBeenCalledTimes(1);
+    // A later loader run reporting a streaming turn cannot spend the fresh
+    // budget either: it was frozen from the committed idle state.
+    await rerender(
+      options({ sessionId: "s2", initialStreaming: true, isStreaming: true }, revalidate),
+    );
+    expect(revalidate).toHaveBeenCalledTimes(1);
+  });
 });
