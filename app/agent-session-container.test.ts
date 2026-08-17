@@ -88,6 +88,61 @@ function usage() {
   };
 }
 
+/** Append a user message; returns its entry id. */
+function appendUser(sm: SessionManager, content: string, timestamp: number): string {
+  return sm.appendMessage({ role: "user", content, timestamp });
+}
+
+/** Append an assistant reply; returns its entry id. */
+function appendAssistant(sm: SessionManager, text: string, timestamp: number): string {
+  return sm.appendMessage({
+    role: "assistant",
+    content: [{ type: "text", text }],
+    api: "anthropic-messages",
+    provider: "anthropic",
+    model: "test-model",
+    usage: usage(),
+    stopReason: "stop",
+    timestamp,
+  });
+}
+
+/**
+ * Append three user/assistant turns, then compact the first turn away by
+ * keeping everything from the second turn's user message on. Returns the
+ * SessionManager with the compacted persisted history (6 message entries).
+ */
+function compactedSession(cwd: string): SessionManager {
+  const sm = SessionManager.create(cwd);
+  appendUser(sm, "hello", 1000);
+  appendAssistant(sm, "reply 1", 1000);
+  const secondUser = appendUser(sm, "second", 2000);
+  appendAssistant(sm, "reply 2", 2000);
+  appendUser(sm, "third", 3000);
+  appendAssistant(sm, "reply 3", 3000);
+  sm.appendCompaction("summary of the first turn", secondUser, 100);
+  return sm;
+}
+
+/**
+ * Append three turns, branch at the second turn's user message, and append
+ * an alternative fourth turn on the new branch. Returns the SessionManager
+ * with 8 persisted message entries.
+ */
+function branchedSession(cwd: string): SessionManager {
+  const sm = SessionManager.create(cwd);
+  appendUser(sm, "hello", 1000);
+  appendAssistant(sm, "reply 1", 1000);
+  const secondUser = appendUser(sm, "second", 2000);
+  appendAssistant(sm, "reply 2", 2000);
+  appendUser(sm, "third", 3000);
+  appendAssistant(sm, "reply 3", 3000);
+  sm.branch(secondUser);
+  appendUser(sm, "alternative", 4000);
+  appendAssistant(sm, "reply alt", 4000);
+  return sm;
+}
+
 describe("AgentSessionContainer.currentInfoList", () => {
   it("lists persisted sessions with their persisted info when no runtime is loaded", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
@@ -158,6 +213,132 @@ describe("AgentSessionContainer.currentInfoList", () => {
         const container = AgentSessionContainer.withFactory(noopFactory);
         const sessions = await container.currentInfoList();
         expect(sessions).toHaveLength(1);
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the persisted title and count for a loaded session after compaction", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        // 6 message entries + a compaction entry summarizing the first turn.
+        const sm = compactedSession(cwd);
+        expect(sm.getEntries().filter((entry) => entry.type === "message")).toHaveLength(6);
+
+        const container = AgentSessionContainer.withFactory(realFactory);
+        // Unloaded: the persisted info drives the list.
+        const before = await container.currentInfoList();
+        expect(before).toHaveLength(1);
+        expect(before[0]).toMatchObject({ firstMessage: "hello", messageCount: 6 });
+
+        // Loading the runtime replaces agent.state.messages with the compacted
+        // context; the listed info must not follow it.
+        const session = await container.get(before[0].id, { cwd });
+        expect(session).not.toBeNull();
+
+        const after = await container.currentInfoList();
+        expect(after[0]).toMatchObject({
+          firstMessage: before[0].firstMessage,
+          messageCount: before[0].messageCount,
+          timestamp: before[0].timestamp,
+        });
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the persisted title and count for a loaded session after a branch switch", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        // 8 message entries across the original branch and the new one.
+        const sm = branchedSession(cwd);
+        expect(sm.getEntries().filter((entry) => entry.type === "message")).toHaveLength(8);
+
+        const container = AgentSessionContainer.withFactory(realFactory);
+        const before = await container.currentInfoList();
+        expect(before[0]).toMatchObject({ firstMessage: "hello", messageCount: 8 });
+
+        const session = await container.get(before[0].id, { cwd });
+        expect(session).not.toBeNull();
+
+        const after = await container.currentInfoList();
+        expect(after[0]).toMatchObject({
+          firstMessage: before[0].firstMessage,
+          messageCount: before[0].messageCount,
+          timestamp: before[0].timestamp,
+        });
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("joins multi-part user messages for firstMessage like the persisted path", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        // Text parts are joined with a space in SessionManager.list; the loaded
+        // path must produce the same title for the same entries.
+        const sm = SessionManager.create(cwd);
+        sm.appendMessage({
+          role: "user",
+          content: [
+            { type: "text", text: "part1" },
+            { type: "text", text: "part2" },
+          ],
+          timestamp: 1000,
+        });
+        appendAssistant(sm, "reply", 1000);
+
+        const persisted = (await SessionManager.list(cwd))[0];
+        expect(persisted.firstMessage).toBe("part1 part2");
+
+        const container = AgentSessionContainer.withFactory(realFactory);
+        const session = await container.get(persisted.id, { cwd });
+        expect(session).not.toBeNull();
+        const loaded = await container.currentInfo(persisted.id);
+        expect(loaded).not.toBeNull();
+        expect(loaded!.firstMessage).toBe(persisted.firstMessage);
+        expect(loaded!.messageCount).toBe(persisted.messageCount);
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("skips text-less user messages for firstMessage like the persisted path", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        // The first user message has no text blocks: both paths skip it and
+        // the next user message with text becomes the title.
+        const sm = SessionManager.create(cwd);
+        sm.appendMessage({ role: "user", content: [], timestamp: 1000 });
+        appendAssistant(sm, "reply", 1000);
+        appendUser(sm, "second", 2000);
+        appendAssistant(sm, "reply 2", 2000);
+
+        const persisted = (await SessionManager.list(cwd))[0];
+        expect(persisted.firstMessage).toBe("second");
+
+        const container = AgentSessionContainer.withFactory(realFactory);
+        const session = await container.get(persisted.id, { cwd });
+        expect(session).not.toBeNull();
+        const loaded = await container.currentInfo(persisted.id);
+        expect(loaded).not.toBeNull();
+        expect(loaded!.firstMessage).toBe(persisted.firstMessage);
       });
     } finally {
       rmSync(root, { recursive: true, force: true });
