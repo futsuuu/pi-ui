@@ -7,11 +7,12 @@ import {
   createAgentSessionFromServices,
   createAgentSessionServices,
   SessionManager,
+  type AgentSessionEvent,
   type CreateAgentSessionRuntimeFactory,
 } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
 
-import { AgentSessionContainer } from "./agent-session-container";
+import { AgentSessionContainer, applyTurnEvent } from "./agent-session-container";
 
 /** A runtime factory that is never invoked by the tested paths. */
 const noopFactory: CreateAgentSessionRuntimeFactory = async () => {
@@ -69,18 +70,22 @@ function createSession(cwd: string, sessionDir?: string): { id: string; file: st
     api: "anthropic-messages",
     provider: "anthropic",
     model: "test-model",
-    usage: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 0,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-    },
+    usage: usage(),
     stopReason: "stop",
     timestamp,
   });
   return { id: sm.getSessionId(), file: sm.getSessionFile()! };
+}
+
+function usage() {
+  return {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
 }
 
 describe("AgentSessionContainer.currentInfoList", () => {
@@ -195,6 +200,136 @@ describe("AgentSessionContainer.currentInfo", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("applyTurnEvent (per-session turn buffer)", () => {
+  it("starts a buffer on turn_start and appends events until the turn ends", () => {
+    let buffer = applyTurnEvent(undefined, { type: "turn_start" });
+    expect(buffer).toEqual([{ type: "turn_start" }]);
+    buffer = applyTurnEvent(buffer, {
+      type: "tool_execution_start",
+      toolCallId: "call-1",
+      toolName: "bash",
+      args: { command: "ls" },
+    });
+    expect(buffer).toHaveLength(2);
+
+    // agent_settled clears the buffer: a later turn_start starts fresh.
+    expect(applyTurnEvent(buffer, { type: "agent_settled" })).toBeUndefined();
+    expect(applyTurnEvent(undefined, { type: "turn_start" })).toEqual([{ type: "turn_start" }]);
+  });
+
+  it("coalesces message_update to the newest partial per message identity", () => {
+    const start = applyTurnEvent(undefined, { type: "turn_start" })!;
+    const firstPartial = {
+      role: "assistant" as const,
+      content: [{ type: "text" as const, text: "Hel" }],
+      api: "anthropic-messages",
+      provider: "anthropic",
+      model: "test-model",
+      usage: usage(),
+      stopReason: "stop" as const,
+      timestamp: 5,
+    };
+    const first: AgentSessionEvent = {
+      type: "message_update",
+      message: firstPartial,
+      assistantMessageEvent: {
+        type: "text_delta",
+        contentIndex: 0,
+        delta: "Hel",
+        partial: firstPartial,
+      },
+    };
+    const secondPartial = {
+      ...firstPartial,
+      content: [{ type: "text" as const, text: "Hello" }],
+    };
+    const second: AgentSessionEvent = {
+      type: "message_update",
+      message: secondPartial,
+      assistantMessageEvent: {
+        type: "text_delta",
+        contentIndex: 0,
+        delta: "Hello",
+        partial: secondPartial,
+      },
+    };
+    const thirdPartial = {
+      ...firstPartial,
+      content: [{ type: "text" as const, text: "Other" }],
+      timestamp: 6,
+    };
+    const third: AgentSessionEvent = {
+      type: "message_update",
+      message: thirdPartial,
+      assistantMessageEvent: {
+        type: "text_delta",
+        contentIndex: 0,
+        delta: "Other",
+        partial: thirdPartial,
+      },
+    };
+
+    const afterFirst = applyTurnEvent(start, first)!;
+    const afterSecond = applyTurnEvent(afterFirst, second)!;
+    expect(afterSecond).toHaveLength(2); // turn_start + one coalesced update
+    expect(afterSecond[1]).toBe(second); // newest partial wins
+
+    // A different message identity appends instead of replacing.
+    const afterThird = applyTurnEvent(afterSecond, third)!;
+    expect(afterThird).toHaveLength(3);
+  });
+
+  it("coalesces tool_execution_update to the newest partial per toolCallId", () => {
+    const start = applyTurnEvent(undefined, { type: "turn_start" })!;
+    const first: AgentSessionEvent = {
+      type: "tool_execution_update",
+      toolCallId: "call-1",
+      toolName: "bash",
+      args: { command: "ls" },
+      partialResult: { content: [{ type: "text", text: "a" }] },
+    };
+    const second: AgentSessionEvent = {
+      ...first,
+      // Tool partials are cumulative: the newest update carries the full
+      // accumulated output (bash emits one per ~100ms throttle interval).
+      partialResult: { content: [{ type: "text", text: "aaaa…\n…" }] },
+    };
+    const otherTool: AgentSessionEvent = {
+      ...first,
+      toolCallId: "call-2",
+      partialResult: { content: [{ type: "text", text: "b" }] },
+    };
+
+    const afterFirst = applyTurnEvent(start, first)!;
+    const afterSecond = applyTurnEvent(afterFirst, second)!;
+    expect(afterSecond).toHaveLength(2); // turn_start + one coalesced update
+    expect(afterSecond[1]).toBe(second); // newest partial wins
+
+    // A different toolCallId appends instead of replacing.
+    const afterOther = applyTurnEvent(afterSecond, otherTool)!;
+    expect(afterOther).toHaveLength(3);
+    expect(afterOther[1]).toBe(second);
+    expect(afterOther[2]).toBe(otherTool);
+
+    // A second update for the first tool is coalesced into its original slot,
+    // keeping the relative order with the other tool's events stable.
+    const final: AgentSessionEvent = {
+      ...first,
+      partialResult: { content: [{ type: "text", text: "aaaa…" }] },
+    };
+    const afterFinal = applyTurnEvent(afterOther, final)!;
+    expect(afterFinal).toHaveLength(3);
+    expect(afterFinal[1]).toBe(final);
+    expect(afterFinal[2]).toBe(otherTool);
+  });
+
+  it("ignores events outside a turn (no buffer is created)", () => {
+    expect(
+      applyTurnEvent(undefined, { type: "thinking_level_changed", level: "high" }),
+    ).toBeUndefined();
   });
 });
 

@@ -5,7 +5,14 @@ import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import type { Props as AgentMessageProps } from "./agent-message";
 import { buildToolCallMap, type ToolCallMap } from "./tool-call-context";
 
-export type AgentMessagePropsWithKey = AgentMessageProps & { _key: string };
+export type AgentMessagePropsWithKey = AgentMessageProps & {
+  _key: string;
+  /**
+   * Streaming identity: the underlying message timestamp, stable across
+   * `message_start` / `message_update` / `message_end` and persistence.
+   */
+  timestamp?: number;
+};
 
 export interface ChatState {
   /** Session history from the loader, rendered as-is (keyed by index). */
@@ -22,6 +29,8 @@ export interface ChatState {
    * `eventMessages`.
    */
   pendingUserMessage?: AgentMessagePropsWithKey;
+  /** Session this state belongs to; `reset` clears events on a session change. */
+  sessionId: string | null;
 }
 
 /**
@@ -29,11 +38,15 @@ export interface ChatState {
  * Pass this to `useReducer` as the initializer:
  * `useReducer(chatReducer, loadedMessages, createChatState)`.
  */
-export function createChatState(loadedMessages: AgentMessage[]): ChatState {
+export function createChatState(
+  loadedMessages: AgentMessage[],
+  sessionId: string | null = null,
+): ChatState {
   return {
     loadedMessages,
     eventMessages: [],
     toolCallMap: buildToolCallMap(loadedMessages),
+    sessionId,
   };
 }
 
@@ -46,7 +59,13 @@ export type ChatAction =
   | AgentSessionEvent
   | { type: "user_message"; content: string }
   | { type: "abort" }
-  | { type: "reset"; loadedMessages: AgentMessage[] };
+  | {
+      type: "reset";
+      loadedMessages: AgentMessage[];
+      /** The session's in-flight turn events from the loader (optional). */
+      turnEvents?: readonly AgentSessionEvent[];
+      sessionId: string | null;
+    };
 
 /**
  * Reducer for the session chat UI, compatible with `React.useReducer`.
@@ -98,14 +117,23 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       // provider returns the message without streaming deltas).
       const { message } = action;
       if (message.role === "user") {
+        const pending = state.pendingUserMessage;
+        // The same start event can arrive both from the loader's turn buffer
+        // (a revalidation seed) and from the live stream (when the loader
+        // response races the SSE delivery): append only once by identity.
+        const identity = identityOf("user", pending?.timestamp ?? message.timestamp);
+        if (state.eventMessages.some((m) => m.role === "user" && entryIdentity(m) === identity)) {
+          return { ...state, pendingUserMessage: undefined };
+        }
         return {
           ...state,
           eventMessages: [
             ...state.eventMessages,
             {
-              _key: state.pendingUserMessage?._key ?? uid(),
+              _key: pending?._key ?? uid(),
               role: "user",
               content: message.content,
+              timestamp: pending?.timestamp ?? message.timestamp,
             },
           ],
           // The optimistic pending entry is promoted into `eventMessages`.
@@ -113,11 +141,25 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         };
       }
       if (message.role !== "assistant") return state;
+      // Same double-append guard: a duplicate placeholder would render an
+      // empty assistant entry that later updates (matched by identity) never
+      // see.
+      const identity = identityOf("assistant", message.timestamp);
+      if (
+        state.eventMessages.some((m) => m.role === "assistant" && entryIdentity(m) === identity)
+      ) {
+        return state;
+      }
       return {
         ...state,
         eventMessages: [
           ...state.eventMessages,
-          { _key: uid(), role: "assistant", content: message.content },
+          {
+            _key: uid(),
+            role: "assistant",
+            content: message.content,
+            timestamp: message.timestamp,
+          },
         ],
       };
     }
@@ -127,15 +169,24 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       // content is applied; the entry keeps streaming until `message_end`.
       const { message } = action;
       if (message.role !== "assistant") return state;
-      return updateAssistantContent(state, message.content);
+      return updateAssistantContent(state, message);
     }
     case "message_end": {
       // The final message (content, stopReason, errorMessage) arrives here.
       const { message } = action;
       if (message.role !== "assistant") return state;
-      return replaceLastAssistant(state, message);
+      return replaceAssistantByIdentity(state, message);
     }
     case "tool_execution_start": {
+      // Double-append guard, same race as message_start: a duplicate entry
+      // would break the single-entry-per-toolCallId self-healing.
+      if (
+        state.eventMessages.some(
+          (m) => m.role === "toolResult" && m.toolCallId === action.toolCallId,
+        )
+      ) {
+        return state;
+      }
       return {
         ...state,
         eventMessages: [
@@ -157,21 +208,49 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       };
     }
     case "tool_execution_update": {
-      return updateToolResult(state, action.toolCallId, (entry) => ({
-        ...entry,
-        content: action.partialResult?.content ?? [],
-      }));
+      return updateToolResult(
+        state,
+        action,
+        (entry) => ({
+          ...entry,
+          content: action.partialResult?.content ?? [],
+        }),
+        (toolName, args) => ({
+          _key: uid(),
+          role: "toolResult",
+          content: action.partialResult?.content ?? [],
+          toolName,
+          toolCallId: action.toolCallId,
+          isError: false,
+          isStreaming: true,
+          ...(args ? { args } : {}),
+        }),
+      );
     }
     case "tool_execution_end": {
-      return updateToolResult(state, action.toolCallId, (entry) => ({
-        ...entry,
-        content: action.result?.content ?? [],
-        // The edit tool returns its display diff here (details.diff); the
-        // chat entry carries it so ToolResultMessage can render a diff view.
-        details: action.result?.details,
-        isStreaming: false,
-        isError: action.isError,
-      }));
+      return updateToolResult(
+        state,
+        action,
+        (entry) => ({
+          ...entry,
+          content: action.result?.content ?? [],
+          // The edit tool returns its display diff here (details.diff); the
+          // chat entry carries it so ToolResultMessage can render a diff view.
+          details: action.result?.details,
+          isStreaming: false,
+          isError: action.isError,
+        }),
+        (toolName) => ({
+          _key: uid(),
+          role: "toolResult",
+          content: action.result?.content ?? [],
+          toolName,
+          toolCallId: action.toolCallId,
+          details: action.result?.details,
+          isError: action.isError,
+          isStreaming: false,
+        }),
+      );
     }
     case "turn_end":
     case "agent_settled": {
@@ -195,14 +274,14 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       let eventMessages = state.eventMessages;
       let changed = false;
 
-      // If the last assistant message is still streaming, finalise it with the
-      // stop reason/error from the run messages (catch-all for runs that ended
-      // without a message_end).
-      if (eventMessages.length > 0) {
-        const last = eventMessages[eventMessages.length - 1];
+      // If the last streaming assistant message never got a message_end,
+      // finalise it with the stop reason/error from the run messages
+      // (catch-all for runs that ended without a message_end).
+      for (let i = eventMessages.length - 1; i >= 0; i--) {
+        const last = eventMessages[i];
         if (last?.role === "assistant" && last.stopReason === undefined) {
           eventMessages = [
-            ...eventMessages.slice(0, -1),
+            ...eventMessages.slice(0, i),
             {
               _key: last._key,
               role: "assistant",
@@ -210,8 +289,10 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
               stopReason,
               ...(errorMessage ? { errorMessage } : {}),
             },
+            ...eventMessages.slice(i + 1),
           ];
           changed = true;
+          break;
         }
       }
 
@@ -258,16 +339,37 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         : state;
     }
     case "reset": {
-      // Loader revalidation or a session switch: replace the loader-derived
-      // messages and rebuild the toolCallMap from them (so a stale map from
-      // another session can never leak through). SSE-derived event messages
-      // are dropped — they are now included in the loader data.
-      return {
-        loadedMessages: action.loadedMessages,
-        eventMessages: [],
-        toolCallMap: buildToolCallMap(action.loadedMessages),
+      const { loadedMessages, turnEvents = [], sessionId } = action;
+      // On a session change, eventMessages are cleared first: message identity
+      // is only unique within a session, and a fresh event of the new session
+      // could collide with a stale (role, timestamp) from the previous one and
+      // be wrongly skipped. On a revalidation, live entries not yet promoted
+      // into the fresh snapshot survive; promoted ones are dropped because they
+      // are now rendered from `loadedMessages`.
+      const keptEvents =
+        state.sessionId !== sessionId
+          ? []
+          : state.eventMessages.filter(
+              (entry) => !loadedMessages.some((message) => sameIdentity(message, entry)),
+            );
+      const next: ChatState = {
+        loadedMessages,
+        eventMessages: keptEvents,
+        toolCallMap: buildToolCallMap(loadedMessages),
         pendingUserMessage: undefined,
+        sessionId,
       };
+      // Rebuild: kept tool entries must keep their toolCallMap (args) so the
+      // tool summary still renders while the tool is in flight.
+      const toolCallMap = new Map(next.toolCallMap);
+      for (const entry of keptEvents) {
+        if (entry.role === "toolResult" && entry.toolCallId) {
+          const prev = state.toolCallMap.get(entry.toolCallId);
+          if (prev) toolCallMap.set(entry.toolCallId, prev);
+        }
+      }
+      next.toolCallMap = toolCallMap;
+      return seedTurnEvents(next, turnEvents);
     }
     case "agent_start":
     case "auto_retry_start":
@@ -290,6 +392,34 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return state;
     }
   }
+}
+
+/**
+ * The stable identity of a message across streaming and persistence:
+ * `role + timestamp` (the provider creates the partial once with its
+ * timestamp and mutates it in place, so every streamed copy and the persisted
+ * final message carry the same value).
+ */
+function identityOf(role: string, timestamp: number | undefined): string {
+  return `${role}:${timestamp ?? ""}`;
+}
+
+function entryIdentity(entry: { role: string; timestamp?: number }): string {
+  return identityOf(entry.role, entry.timestamp);
+}
+
+/**
+ * True when a persisted message and a chat entry carry the same identity.
+ * Messages use `role + timestamp`; tool results use `toolCallId` (entries in
+ * `eventMessages` carry no timestamp, so the role+timestamp comparison would
+ * never match a persisted `toolResult` and a finalized tool entry would be
+ * kept, rendering the same result twice after a rebuild).
+ */
+function sameIdentity(message: AgentMessage, entry: AgentMessagePropsWithKey): boolean {
+  if (message.role === "toolResult" && entry.role === "toolResult") {
+    return message.toolCallId === entry.toolCallId;
+  }
+  return identityOf(message.role, message.timestamp) === entryIdentity(entry);
 }
 
 /** Find the index of a tool result message by its toolCallId */
@@ -319,22 +449,36 @@ function assistantEntry(message: AssistantMessage): {
   };
 }
 
-/** Replace the last assistant message with the given final/partial message. */
-function replaceLastAssistant(state: ChatState, message: AssistantMessage): ChatState {
-  const last = state.eventMessages[state.eventMessages.length - 1];
-  if (last?.role !== "assistant") return state;
-  return {
-    ...state,
-    eventMessages: [
-      ...state.eventMessages.slice(0, -1),
-      { _key: last._key, ...assistantEntry(message) },
-    ],
-  };
+/**
+ * Apply the final/partial assistant message to the entry with the same
+ * identity; creates the entry when its `message_start` was lost (e.g. emitted
+ * inside a loss window). `message_end` is the only event that applies the
+ * real stopReason/errorMessage.
+ */
+function replaceAssistantByIdentity(state: ChatState, message: AssistantMessage): ChatState {
+  const identity = identityOf("assistant", message.timestamp);
+  const idx = state.eventMessages.findIndex(
+    (m) => m.role === "assistant" && entryIdentity(m) === identity,
+  );
+  if (idx === -1) {
+    return {
+      ...state,
+      eventMessages: [
+        ...state.eventMessages,
+        { _key: uid(), ...assistantEntry(message), timestamp: message.timestamp },
+      ],
+    };
+  }
+  const eventMessages = [...state.eventMessages];
+  eventMessages[idx] = { ...eventMessages[idx], ...assistantEntry(message) };
+  return { ...state, eventMessages };
 }
 
 /**
- * Apply the accumulated partial content to the last assistant message without
- * touching its stopReason, so the entry keeps streaming until `message_end`.
+ * Apply the accumulated partial content to the streaming assistant message
+ * with the same identity; creates the entry when its `message_start` was
+ * lost. The stopReason is not touched, so the entry keeps streaming until
+ * `message_end`.
  *
  * TODO: the installed @earendil-works/pi-* packages (0.81.1) put a
  * placeholder `stopReason: "stop"` on in-flight partials, so only the content
@@ -343,25 +487,53 @@ function replaceLastAssistant(state: ChatState, message: AssistantMessage): Chat
  * `assistantEntry` (message_update can then replace the whole entry again)
  * and update the test fixtures from "stop" to "pending" for partials.
  */
-function updateAssistantContent(state: ChatState, content: AssistantMessage["content"]): ChatState {
-  const last = state.eventMessages[state.eventMessages.length - 1];
-  if (last?.role !== "assistant") return state;
-  return {
-    ...state,
-    eventMessages: [...state.eventMessages.slice(0, -1), { ...last, content }],
-  };
+function updateAssistantContent(state: ChatState, message: AssistantMessage): ChatState {
+  const identity = identityOf("assistant", message.timestamp);
+  const idx = state.eventMessages.findIndex(
+    (m) => m.role === "assistant" && entryIdentity(m) === identity,
+  );
+  if (idx === -1) {
+    return {
+      ...state,
+      eventMessages: [
+        ...state.eventMessages,
+        { _key: uid(), role: "assistant", content: message.content, timestamp: message.timestamp },
+      ],
+    };
+  }
+  const eventMessages = [...state.eventMessages];
+  const entry = eventMessages[idx] as Extract<AgentMessagePropsWithKey, { role: "assistant" }>;
+  eventMessages[idx] = { ...entry, content: message.content };
+  return { ...state, eventMessages };
 }
 
-/** Apply an update to the tool result message with the given toolCallId. */
+/**
+ * Apply an update to the tool result message with the given toolCallId,
+ * creating the entry (and its toolCallMap entry) when `tool_execution_start`
+ * was lost. `args` is absent on `tool_execution_end`, so a self-healed end
+ * inherits the args recorded at start (or from a previous update).
+ */
 function updateToolResult(
   state: ChatState,
-  toolCallId: string,
+  action: { toolCallId: string; toolName: string; args?: unknown },
   update: (
     entry: Extract<AgentMessagePropsWithKey, { role: "toolResult" }>,
   ) => AgentMessagePropsWithKey,
+  create: (toolName: string, args: unknown) => AgentMessagePropsWithKey,
 ): ChatState {
-  const idx = findToolIndex(state.eventMessages, toolCallId);
-  if (idx === -1) return state;
+  const idx = findToolIndex(state.eventMessages, action.toolCallId);
+  if (idx === -1) {
+    const args = action.args ?? state.toolCallMap.get(action.toolCallId)?.args ?? {};
+    const entry = create(action.toolName, args);
+    return {
+      ...state,
+      eventMessages: [...state.eventMessages, entry],
+      toolCallMap: new Map(state.toolCallMap).set(action.toolCallId, {
+        toolName: action.toolName,
+        args,
+      }),
+    };
+  }
   const eventMessages = [...state.eventMessages];
   eventMessages[idx] = update(
     eventMessages[idx] as Extract<AgentMessagePropsWithKey, { role: "toolResult" }>,
@@ -393,4 +565,71 @@ function uid(): string {
     return crypto.randomUUID();
   }
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * Apply the loader's turn events to a freshly rebuilt state, skipping any
+ * identity already rendered from the snapshot (`loadedMessages`) or kept as a
+ * live entry from the previous state (its live content is newer than the
+ * buffered event). Only `message_end` / `tool_execution_end` may finalize a
+ * kept entry. Entries created while seeding are ordinary stream events and
+ * are applied normally.
+ */
+function seedTurnEvents(state: ChatState, turnEvents: readonly AgentSessionEvent[]): ChatState {
+  // Identities kept from the previous state: the live content is newer than
+  // the buffered events, so updates are skipped (only ends finalize).
+  const keptIdentities = new Set(
+    state.eventMessages
+      .filter((m) => m.role === "assistant" || m.role === "user")
+      .map((m) => entryIdentity(m)),
+  );
+  const keptTools = new Set(
+    state.eventMessages.filter((m) => m.role === "toolResult").map((m) => m.toolCallId),
+  );
+  let next = state;
+  for (const event of turnEvents) {
+    next = applySeedEvent(next, event, keptIdentities, keptTools);
+  }
+  return next;
+}
+
+function applySeedEvent(
+  state: ChatState,
+  event: AgentSessionEvent,
+  keptIdentities: ReadonlySet<string>,
+  keptTools: ReadonlySet<string>,
+): ChatState {
+  if (
+    event.type === "message_start" ||
+    event.type === "message_update" ||
+    event.type === "message_end"
+  ) {
+    const identity = identityOf(event.message.role, event.message.timestamp);
+    if (state.loadedMessages.some((m) => identityOf(m.role, m.timestamp) === identity)) {
+      // Already rendered from the snapshot.
+      return state;
+    }
+    if (keptIdentities.has(identity)) {
+      // The kept live entry is newer than the buffered event; only the final
+      // event may finalize it.
+      return event.type === "message_end" ? chatReducer(state, event) : state;
+    }
+    return chatReducer(state, event);
+  }
+  if (
+    event.type === "tool_execution_start" ||
+    event.type === "tool_execution_update" ||
+    event.type === "tool_execution_end"
+  ) {
+    if (
+      state.loadedMessages.some((m) => m.role === "toolResult" && m.toolCallId === event.toolCallId)
+    ) {
+      return state;
+    }
+    if (keptTools.has(event.toolCallId)) {
+      return event.type === "tool_execution_end" ? chatReducer(state, event) : state;
+    }
+    return chatReducer(state, event);
+  }
+  return chatReducer(state, event);
 }

@@ -3,7 +3,7 @@ import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { Layers, Moon, Plus, Sun } from "lucide-react";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { data, Link, useFetcher } from "react-router";
+import { data, Link, useFetcher, useRevalidator } from "react-router";
 
 import { ScrollArea } from "~/components/scroll-area";
 import { useSessionStream } from "~/contexts/session-events";
@@ -14,6 +14,7 @@ import type { Route } from "./+types/route";
 import type { ActionInput, action } from "./action";
 import { AgentMessage } from "./agent-message";
 import { createChatState, chatReducer } from "./chat-reducer";
+import { useChatSync } from "./chat-sync";
 import { PromptForm } from "./prompt-form";
 import { agentSessionContext } from "./router-contexts";
 import { ToolCallContext } from "./tool-call-context";
@@ -50,6 +51,10 @@ export async function loader({ context }: Route.LoaderArgs) {
   const messages = session.messages;
   // The model list is streamed to the client as a promise.
   const models = session.modelRuntime.getAvailable();
+  // The in-flight turn's events, so a client that mounts mid-turn can render
+  // the streaming partial and tool executions without having seen their first
+  // event (closes the [loader read -> subscription] loss window).
+  const turnEvents = context.get(agentSessionContainerContext).getTurnEvents(session.sessionId);
   return {
     cwd: session.sessionManager.getCwd(),
     state: {
@@ -64,44 +69,69 @@ export async function loader({ context }: Route.LoaderArgs) {
       isStreaming: session.isStreaming,
     },
     messages,
+    turnEvents,
     models,
   };
 }
 
-export default function Chat({
+export default function SessionRoute(props: Route.ServerComponentProps) {
+  // Re-mount Chat per session: the reducer seed, loader-derived state, and
+  // the sync guards start fresh, so no session-change effect is needed.
+  return <Chat key={props.params.id} {...props} />;
+}
+
+function Chat({
   params: { id: sessionId },
-  loaderData: { cwd, state: loadedState, messages: loadedMessages, models },
+  loaderData: { cwd, state: loadedState, messages: loadedMessages, turnEvents, models },
 }: Route.ServerComponentProps) {
   const { theme, toggleTheme } = useTheme();
 
   const [state, setState] = useState(loadedState);
-  const [chat, dispatch] = useReducer(chatReducer, loadedMessages, createChatState);
+  const [chat, dispatch] = useReducer(chatReducer, null, () =>
+    // Seed the loader's turn events on the first render: the in-flight
+    // partial and tool executions render before any stream event arrives.
+    chatReducer(createChatState(loadedMessages, sessionId), {
+      type: "reset",
+      loadedMessages,
+      turnEvents,
+      sessionId,
+    }),
+  );
   {
-    // If the loader re-validates, event messages are now included in loader data.
-    const prevLoadedMessages = useRef(loadedMessages);
-    if (loadedMessages !== prevLoadedMessages.current) {
-      prevLoadedMessages.current = loadedMessages;
-      // Render-time dispatch is safe here because:
-      // - it's conditional (only when loadedMessages reference changes), preventing infinite loop
-      // - React applies it synchronously within the render phase, before commit
-      // - this avoids race conditions with SSE events that useEffect would have
-      dispatch({ type: "reset", loadedMessages });
+    // If the loader re-validates, the fresh snapshot and turn events replace
+    // the previous ones. Render-time dispatch is safe here because:
+    // - it's conditional (only when a reference changes), preventing infinite loop
+    // - React applies it synchronously within the render phase, before commit
+    // - this avoids race conditions with SSE events that useEffect would have
+    const prevLoaded = useRef({ messages: loadedMessages, turnEvents });
+    if (
+      loadedMessages !== prevLoaded.current.messages ||
+      turnEvents !== prevLoaded.current.turnEvents
+    ) {
+      prevLoaded.current = { messages: loadedMessages, turnEvents };
+      dispatch({ type: "reset", loadedMessages, turnEvents, sessionId });
     }
   }
   const fetcher = useFetcher<typeof action>();
+  const revalidator = useRevalidator();
 
   // The global /events stream: current info for this session (model,
   // thinking level, streaming flag) plus its events. The provider only
   // delivers events for the subscribed session, so no filtering is needed.
   const { info, connected, subscribe } = useSessionStream(sessionId);
 
-  // Reset local state when navigating to a different session.
-  // Only depend on sessionId so that loader re-validation after actions
-  // doesn't overwrite SSE-streamed messages.
-  useEffect(() => {
-    setState(loadedState);
-    dispatch({ type: "reset", loadedMessages });
-  }, [sessionId]);
+  // Close the [loader read -> subscription] window and [disconnect ->
+  // reconnect] outages with one revalidation per session, guarded against a
+  // flapping connection.
+  useChatSync({
+    sessionId,
+    connected,
+    isStreaming: state.isStreaming,
+    initialStreaming: loadedState.isStreaming,
+    hasTurnEvents: turnEvents.length > 0,
+    revalidatorState: revalidator.state,
+    revalidate: revalidator.revalidate,
+  });
 
   // Forward the session's stream events to the chat reducer. Per-token
   // `message_update` partials are coalesced into a single dispatch: the
