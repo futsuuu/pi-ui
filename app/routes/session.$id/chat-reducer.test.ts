@@ -533,6 +533,9 @@ describe("chatReducer", () => {
       role: "assistant",
       stopReason: "error",
       errorMessage: "boom",
+      // The entry keeps its timestamp: sameIdentity later matches it against
+      // the persisted message (role + timestamp) during a reset rebuild.
+      timestamp: 1,
     });
   });
 
