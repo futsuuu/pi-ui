@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { promisify } from "node:util";
 
@@ -16,6 +16,7 @@ import {
   type AgentSessionRuntime,
   type CreateAgentSessionRuntimeFactory,
   type SessionInfo as PersistedSessionInfo,
+  type SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent";
 
 import type { SessionInfo } from "./session-info";
@@ -338,20 +339,45 @@ export class AgentSessionContainer {
 }
 
 /**
- * Info for a loaded session, derived from its live state. The persisted file
- * is not read here: `currentInfo` runs per event and must stay cheap.
+ * Info for a loaded session. `firstMessage`, `messageCount`, and `timestamp`
+ * are always derived from the persisted session entries, never from the live
+ * context: compaction and branch switches replace `agent.state.messages` with
+ * the compacted/branch context, but the persisted file keeps the full
+ * history. The same entries drive the unloaded path (`SessionManager.list`),
+ * so loaded and unloaded sessions agree. The runtime is used only for fields
+ * that are inherently live (model, thinking level, flags, name).
+ *
+ * `currentInfo` runs per event and must stay cheap: the persisted file is not
+ * read here (`getEntries()` is an in-memory filter), but the full scan makes
+ * this O(n) in the entry count, where the previous live-context version was
+ * O(1). TODO: cache the derived fields per session and skip the scan while
+ * the message entries are unchanged (they only change on turn boundaries).
  */
 function sessionInfo(session: AgentSession): SessionInfo {
-  const messages = session.messages;
-  const firstUser = messages.find((message) => message.role === "user");
-  const last = messages[messages.length - 1];
+  const entries = session.sessionManager.getEntries();
+  let firstMessage: string | undefined;
+  let messageCount = 0;
+  let lastActivity = 0;
+  for (const entry of entries) {
+    if (entry.type !== "message") continue;
+    messageCount++;
+    const message = entry.message;
+    if (firstMessage === undefined && message.role === "user") {
+      // Skip text-less user messages, mirroring the persisted path
+      // (SessionManager.list): the first user message with text wins.
+      const text = userMessageText(message);
+      if (text) firstMessage = text;
+    }
+    const activity = messageActivityTime(entry);
+    if (activity > lastActivity) lastActivity = activity;
+  }
   return {
     id: session.sessionId,
     cwd: session.sessionManager.getCwd(),
     name: session.sessionName ?? null,
-    firstMessage: firstUser ? userMessageText(firstUser) : "",
-    messageCount: messages.length,
-    timestamp: last?.timestamp ?? Date.now(),
+    firstMessage: firstMessage || "(no messages)",
+    messageCount,
+    timestamp: lastActivity > 0 ? lastActivity : fallbackModifiedTime(session),
     model: session.model
       ? {
           name: session.model.name,
@@ -365,16 +391,53 @@ function sessionInfo(session: AgentSession): SessionInfo {
   };
 }
 
+/**
+ * Last activity time of a message entry, mirroring the persisted
+ * `SessionInfo.modified` rule (user/assistant messages only).
+ */
+function messageActivityTime(entry: SessionMessageEntry): number {
+  const message = entry.message;
+  if (message.role !== "user" && message.role !== "assistant") return 0;
+  if (typeof message.timestamp === "number") return message.timestamp;
+  const t = new Date(entry.timestamp).getTime();
+  return Number.isNaN(t) ? 0 : t;
+}
+
+/**
+ * Modified time when the session has no activity, mirroring the persisted
+ * path (SessionManager.list): header timestamp first, then the file's mtime.
+ * The `Date.now()` last resort only survives a race where the file
+ * disappeared while the runtime is still loaded.
+ */
+function fallbackModifiedTime(session: AgentSession): number {
+  const header = session.sessionManager.getHeader();
+  if (header) {
+    const t = new Date(header.timestamp).getTime();
+    if (!Number.isNaN(t)) return t;
+  }
+  const file = session.sessionManager.getSessionFile();
+  if (file) {
+    try {
+      return statSync(file).mtime.getTime();
+    } catch {
+      // Same last resort as before; the file should normally exist here.
+    }
+  }
+  return Date.now();
+}
+
 /** Text content of a user message (its string form or its text parts). */
 function userMessageText(
   message: Extract<AgentSession["messages"][number], { role: "user" }>,
 ): string {
   const content = message.content;
   if (typeof content === "string") return content;
+  // Join with a space, mirroring the persisted path (SessionManager.list's
+  // extractTextContent), so loaded and unloaded sessions show the same text.
   return content
     .filter((part): part is TextContent => part.type === "text")
     .map((part) => part.text)
-    .join("");
+    .join(" ");
 }
 
 /** True when two messages share the streaming identity `role + timestamp`. */
