@@ -105,10 +105,7 @@ function Chat({
     // synchronously within the render phase (it cannot be dropped by an
     // abandoned render, unlike a ref write).
     const [prevLoaded, setPrevLoaded] = useState({ messages: loadedMessages, turnEvents });
-    if (
-      loadedMessages !== prevLoaded.messages ||
-      turnEvents !== prevLoaded.turnEvents
-    ) {
+    if (loadedMessages !== prevLoaded.messages || turnEvents !== prevLoaded.turnEvents) {
       setPrevLoaded({ messages: loadedMessages, turnEvents });
       dispatch({ type: "reset", loadedMessages, turnEvents, sessionId });
     }

@@ -61,10 +61,7 @@ function usage() {
  * written once an assistant message arrives, so append a user message
  * followed by an assistant reply.
  */
-export function createSession(
-  cwd: string,
-  sessionDir?: string,
-): { id: string; file: string } {
+export function createSession(cwd: string, sessionDir?: string): { id: string; file: string } {
   const sm = SessionManager.create(cwd, sessionDir);
   const timestamp = Date.now();
   sm.appendMessage({ role: "user", content: "hello", timestamp });
