@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { RouterContextProvider } from "react-router";
 import { describe, expect, it } from "vitest";
 
@@ -34,7 +35,7 @@ function callLoader(
 }
 
 describe("GET /session/:id loader", () => {
-  it("returns the container's turn buffer as turnEvents", async () => {
+  it("returns an in-flight turn's events as turnEvents", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-route-"));
     try {
       await withAgentDir(root, async () => {
@@ -42,12 +43,27 @@ describe("GET /session/:id loader", () => {
         mkdirSync(cwd, { recursive: true });
         const container = AgentSessionContainer.withFactory(realFactory);
         const session = await container.create(cwd);
+        // Populate the turn buffer through the container's event handler: no
+        // public API starts a turn without running the model, so inject the
+        // events the runtime would emit for an in-flight turn.
+        const handle = container as unknown as {
+          handleSessionEvent(sessionId: string, event: AgentSessionEvent): void;
+        };
+        handle.handleSessionEvent(session.sessionId, { type: "turn_start" });
+        handle.handleSessionEvent(session.sessionId, {
+          type: "message_start",
+          message: { role: "user", content: "hello", timestamp: Date.now() },
+        });
 
         const data = await callLoader(container, session.sessionId);
         expect(data.messages).toBe(session.messages);
         // The loader forwards the container's buffer reference unchanged, so
-        // whatever the container holds (empty or in-flight turn) is delivered.
+        // a client that mounts mid-turn receives the buffered events.
         expect(data.turnEvents).toBe(container.getTurnEvents(session.sessionId));
+        expect(data.turnEvents).toEqual([
+          { type: "turn_start" },
+          expect.objectContaining({ type: "message_start" }),
+        ]);
       });
     } finally {
       rmSync(root, { recursive: true, force: true });
