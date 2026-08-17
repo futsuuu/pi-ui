@@ -283,9 +283,10 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           eventMessages = [
             ...eventMessages.slice(0, i),
             {
-              _key: last._key,
-              role: "assistant",
-              content: last.content,
+              // Spread the existing entry so the identity fields (timestamp
+              // and _key) survive: sameIdentity matches the persisted message
+              // by role+timestamp during a later reset rebuild.
+              ...last,
               stopReason,
               ...(errorMessage ? { errorMessage } : {}),
             },
