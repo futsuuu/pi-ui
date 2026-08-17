@@ -63,9 +63,10 @@ class SseReader {
   async read(count: number): Promise<SseBlock[]> {
     const blocks: SseBlock[] = [];
     while (blocks.length < count) {
-      if (this.buffer) {
-        const parsed = this.parseBlocks();
-        blocks.push(...parsed);
+      // A chunk can deliver a partial SSE block (no \n\n delimiter yet); wait
+      // for the next chunk instead of parsing (and looping on) the remainder.
+      if (this.buffer.includes("\n\n")) {
+        blocks.push(...this.parseBlocks());
         continue;
       }
       const { value, done } = await this.reader.read();
