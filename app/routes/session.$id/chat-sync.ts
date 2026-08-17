@@ -77,16 +77,18 @@ export function useChatSync({
   const prevSessionRef = useRef(sessionId);
   const prevConnectedRef = useRef(connected);
 
-  // Render-time session reset: a session change resets the lifecycle and
-  // re-freezes the mount budget with the new session's loader state. This is
-  // not a connect transition (those live in the effect below), so it is safe
-  // as a render-phase ref adjustment.
-  if (prevSessionRef.current !== sessionId) {
-    prevSessionRef.current = sessionId;
-    connectionRef.current = { status: "connected" };
-    mountBudgetRef.current = initialStreaming || hasTurnEvents ? "pending" : "none";
-    prevConnectedRef.current = connected;
-  }
+  // Committed session-change reset: the lifecycle and mount budget are
+  // re-frozen from the committed loader state of the new session. An
+  // abandoned render of an old session change cannot leave the lifecycle
+  // halfway, because the reset only runs in an effect that is committed.
+  useEffect(() => {
+    if (prevSessionRef.current !== sessionId) {
+      prevSessionRef.current = sessionId;
+      connectionRef.current = { status: "connected" };
+      mountBudgetRef.current = initialStreaming || hasTurnEvents ? "pending" : "none";
+      prevConnectedRef.current = connected;
+    }
+  }, [sessionId, initialStreaming, hasTurnEvents, connected]);
 
   // Connect-state transitions, committed via an effect: a drop re-opens the
   // reconnect budget and records the streaming state at the outage; the next
