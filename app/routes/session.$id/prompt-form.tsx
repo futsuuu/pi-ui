@@ -21,7 +21,7 @@ const THINKING_LEVELS = [
 ] as const satisfies readonly ModelThinkingLevel[];
 
 /** A model selection summarized by the parts the UI needs to render. */
-interface SelectedModel {
+export interface SelectedModel {
   name: string;
   provider: string;
   id: string;
