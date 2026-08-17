@@ -140,7 +140,12 @@ export function SessionEventProvider({ children }: { children: ReactNode }) {
       set.add(listener);
       return () => {
         set.delete(listener);
-        if (set.size === 0) listeners.delete(sessionId);
+        // Only remove the map entry when it still references the captured
+        // set: if a later subscriber re-created it, deleting it here would
+        // drop the newer listeners silently.
+        if (set.size === 0 && listeners.get(sessionId) === set) {
+          listeners.delete(sessionId);
+        }
       };
     },
     [],
