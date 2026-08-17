@@ -31,7 +31,9 @@ export async function loader({ context }: Route.LoaderArgs) {
             try {
               controller.enqueue(encoder.encode(data));
             } catch {
-              // Stream might be closed
+              // Stream closed (client gone): release the subscription,
+              // keep-alive timer, and controller.
+              teardown?.();
             }
           })
           .catch((error) => {
@@ -97,7 +99,7 @@ export async function loader({ context }: Route.LoaderArgs) {
         try {
           controller.enqueue(encoder.encode(": keepalive\n\n"));
         } catch {
-          clearInterval(keepAlive);
+          teardown?.();
         }
       }, 15000);
     },
