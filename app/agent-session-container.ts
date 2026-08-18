@@ -15,11 +15,18 @@ import {
   type AgentSessionEvent,
   type AgentSessionRuntime,
   type CreateAgentSessionRuntimeFactory,
+  type SessionEntry,
   type SessionInfo as PersistedSessionInfo,
   type SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent";
 
+import { orderedDisplayKeys } from "./routes/session.$id/message-key";
 import type { SessionInfo } from "./session-info";
+import {
+  SessionViewStateRepository,
+  type SessionReadState,
+  type SessionViewState,
+} from "./session-view-state";
 
 const execFileAsync = promisify(execFile);
 
@@ -69,8 +76,10 @@ async function findSessionInfo(
   return infoList.find((info) => info.id === sessionId) ?? null;
 }
 
-/** Events broadcast to container subscribers: session events plus session deletion. */
-export type ContainerEvent = AgentSessionEvent | { type: "session_deleted" };
+export type ContainerEvent =
+  | AgentSessionEvent
+  | { type: "session_deleted" }
+  | { type: "view_state"; viewState: SessionReadState };
 
 /** Stable empty buffer shared by idle sessions (no current turn in flight). */
 const EMPTY_TURN_EVENTS: AgentSessionEvent[] = [];
@@ -140,7 +149,10 @@ export class AgentSessionContainer {
    */
   private turnBuffers: Map<string, AgentSessionEvent[]> = new Map();
 
-  private constructor(private createRuntimeFactory: CreateAgentSessionRuntimeFactory) {}
+  private constructor(
+    private createRuntimeFactory: CreateAgentSessionRuntimeFactory,
+    private viewStateRepository: SessionViewStateRepository,
+  ) {}
 
   public async listInfo(dir: string) {
     const sessions = await SessionManager.list(dir);
@@ -184,10 +196,23 @@ export class AgentSessionContainer {
     const next = applyTurnEvent(this.turnBuffers.get(sessionId), event);
     if (next) this.turnBuffers.set(sessionId, next);
     else this.turnBuffers.delete(sessionId);
+    // A settled message must leave the session unread until a client displays
+    // it — even when the session was never opened as a page (no record yet,
+    // e.g. a prompt sent through a fetcher). Creating a null-cursor record
+    // keeps "no record" meaning "read" (e.g. after a server restart) while
+    // still flagging the new message as unread.
+    if (
+      (event.type === "message_end" || event.type === "tool_execution_end") &&
+      this.viewStateRepository.get(sessionId) === null
+    ) {
+      this.viewStateRepository.set(sessionId, null);
+    }
     this.broadcast(sessionId, event);
   }
 
-  public static async create() {
+  public static async create(
+    viewStateRepository: SessionViewStateRepository = new SessionViewStateRepository(),
+  ) {
     const modelRuntime = await ModelRuntime.create({
       allowModelNetwork: true,
     });
@@ -203,7 +228,7 @@ export class AgentSessionContainer {
         services,
         diagnostics: services.diagnostics,
       };
-    });
+    }, viewStateRepository);
   }
 
   /**
@@ -211,8 +236,11 @@ export class AgentSessionContainer {
    * {@link create}; this is exposed for tests that want to avoid the real
    * model runtime and resource discovery.
    */
-  public static withFactory(factory: CreateAgentSessionRuntimeFactory): AgentSessionContainer {
-    return new AgentSessionContainer(factory);
+  public static withFactory(
+    factory: CreateAgentSessionRuntimeFactory,
+    viewStateRepository: SessionViewStateRepository = new SessionViewStateRepository(),
+  ): AgentSessionContainer {
+    return new AgentSessionContainer(factory, viewStateRepository);
   }
 
   public async create(cwd: string) {
@@ -280,8 +308,14 @@ export class AgentSessionContainer {
     const runtime = this.runtimes.get(persisted.id);
     if (runtime) {
       const loaded = await runtime.catch(() => null);
-      if (loaded) return sessionInfo(loaded.session);
+      if (loaded) return this.loadedInfo(persisted.id, loaded.session);
     }
+    const keys = orderedDisplayKeys(
+      messageEntries(SessionManager.open(persisted.path).getEntries()),
+    );
+    const stored = this.viewStateRepository.get(persisted.id);
+    const lastDisplayed = stored?.lastDisplayedMessageKey ?? null;
+    const latest = keys.length > 0 ? keys[keys.length - 1] : null;
     return {
       id: persisted.id,
       cwd: persisted.cwd,
@@ -293,6 +327,9 @@ export class AgentSessionContainer {
       thinkingLevel: "medium",
       isStreaming: false,
       isCompacting: false,
+      lastDisplayedMessageKey: lastDisplayed,
+      latestMessageKey: latest,
+      isRead: isReadState(stored, latest),
     };
   }
 
@@ -304,7 +341,20 @@ export class AgentSessionContainer {
     const runtime = this.runtimes.get(sessionId);
     if (!runtime) return null;
     const loaded = await runtime.catch(() => null);
-    return loaded ? sessionInfo(loaded.session) : null;
+    return loaded ? this.loadedInfo(sessionId, loaded.session) : null;
+  }
+
+  private loadedInfo(sessionId: string, session: AgentSession): SessionInfo {
+    const keys = orderedDisplayKeys(session.messages, this.turnBuffers.get(sessionId) ?? []);
+    const stored = this.viewStateRepository.get(sessionId);
+    const lastDisplayed = stored?.lastDisplayedMessageKey ?? null;
+    const latest = keys.length > 0 ? keys[keys.length - 1] : null;
+    return {
+      ...sessionInfo(session),
+      lastDisplayedMessageKey: lastDisplayed,
+      latestMessageKey: latest,
+      isRead: isReadState(stored, latest),
+    };
   }
 
   public async dispose(sessionId: string) {
@@ -321,8 +371,10 @@ export class AgentSessionContainer {
   /**
    * Delete a session: moves its file to the OS trash when the `trash` CLI is
    * available, otherwise deletes it directly. Any loaded runtime is disposed
-   * first so a running chat cannot keep writing to the deleted session.
-   * Throws if no session with the given id exists.
+   * first so a running chat cannot keep writing to the deleted session, and
+   * the view state is removed only after the file is actually gone (a failed
+   * deletion must not lose the display cursor). Throws if no session with
+   * the given id exists.
    */
   public async delete(sessionId: string, hints: { cwd: string; sessionDir?: string }) {
     const found = await findSessionInfo(sessionId, hints);
@@ -334,8 +386,96 @@ export class AgentSessionContainer {
     // Only broadcast once the file is actually gone, so a failed deletion
     // cannot leave clients with a removed session.
     this.turnBuffers.delete(sessionId);
+    this.viewStateRepository.delete(sessionId);
     this.broadcast(sessionId, { type: "session_deleted" });
   }
+
+  /**
+   * The derived read state for a session: the shared cursor from the
+   * repository plus the latest renderable message key of the current
+   * projection (loaded runtime messages plus the in-flight turn buffer;
+   * persisted entries when the runtime is not loaded). `null` when the
+   * session does not exist.
+   */
+  public async getSessionReadState(
+    sessionId: string,
+    hints: { cwd?: string; sessionDir?: string } = {},
+  ): Promise<SessionReadState | null> {
+    const keys = await this.resolveOrderedKeys(sessionId, hints);
+    return keys === null ? null : this.readState(sessionId, keys);
+  }
+
+  /**
+   * Record that a message became visible in a client's viewport. The cursor
+   * only moves forward in the current display order: older or unknown keys
+   * are ignored, repeated keys are idempotent. A saved cursor that is no
+   * longer present (compaction or a branch change) does not block a
+   * genuinely observed candidate. Broadcasts the effective read state when
+   * the cursor advanced.
+   */
+  public async markMessageDisplayed(
+    sessionId: string,
+    messageKey: string,
+    hints: { cwd?: string; sessionDir?: string } = {},
+  ): Promise<SessionReadState> {
+    const keys = await this.resolveOrderedKeys(sessionId, hints);
+    if (keys === null) {
+      throw new Error(`Session ${JSON.stringify(sessionId)} not found`);
+    }
+    const candidateIndex = keys.indexOf(messageKey);
+    const stored = this.viewStateRepository.get(sessionId)?.lastDisplayedMessageKey ?? null;
+    const storedIndex = stored === null ? -1 : keys.indexOf(stored);
+    // Unknown candidates and backward moves never advance the cursor; a
+    // repeated key (candidateIndex === storedIndex) is an idempotent no-op.
+    if (candidateIndex === -1 || storedIndex >= candidateIndex) {
+      return this.readState(sessionId, keys);
+    }
+    this.viewStateRepository.set(sessionId, messageKey);
+    const readState = this.readState(sessionId, keys);
+    this.broadcast(sessionId, { type: "view_state", viewState: readState });
+    return readState;
+  }
+
+  private async resolveOrderedKeys(
+    sessionId: string,
+    hints: { cwd?: string; sessionDir?: string },
+  ): Promise<string[] | null> {
+    const runtime = this.runtimes.get(sessionId);
+    if (runtime) {
+      const loaded = await runtime.catch(() => null);
+      if (loaded) {
+        return orderedDisplayKeys(loaded.session.messages, this.turnBuffers.get(sessionId) ?? []);
+      }
+    }
+    const infoList = hints.cwd
+      ? await SessionManager.list(hints.cwd, hints.sessionDir)
+      : await SessionManager.listAll();
+    const found = infoList.find((info) => info.id === sessionId);
+    if (!found) return null;
+    return orderedDisplayKeys(messageEntries(SessionManager.open(found.path).getEntries()));
+  }
+
+  private readState(sessionId: string, keys: readonly string[]): SessionReadState {
+    const stored = this.viewStateRepository.get(sessionId);
+    const lastDisplayed = stored?.lastDisplayedMessageKey ?? null;
+    const latest = keys.length > 0 ? keys[keys.length - 1] : null;
+    return {
+      lastDisplayedMessageKey: lastDisplayed,
+      latestMessageKey: latest,
+      isRead: isReadState(stored, latest),
+    };
+  }
+}
+
+/**
+ * A session with no view-state record (e.g. after a server restart) is
+ * treated as read; otherwise it is read only when the cursor reached the
+ * latest message. A record with a null cursor is an unread marker created
+ * when a new message settled without any client having displayed it.
+ */
+function isReadState(stored: SessionViewState | null, latest: string | null): boolean {
+  if (!stored) return true;
+  return stored.lastDisplayedMessageKey === latest;
 }
 
 /**
@@ -353,7 +493,9 @@ export class AgentSessionContainer {
  * O(1). TODO: cache the derived fields per session and skip the scan while
  * the message entries are unchanged (they only change on turn boundaries).
  */
-function sessionInfo(session: AgentSession): SessionInfo {
+function sessionInfo(
+  session: AgentSession,
+): Omit<SessionInfo, "lastDisplayedMessageKey" | "latestMessageKey" | "isRead"> {
   const entries = session.sessionManager.getEntries();
   let firstMessage: string | undefined;
   let messageCount = 0;
@@ -438,6 +580,10 @@ function userMessageText(
     .filter((part): part is TextContent => part.type === "text")
     .map((part) => part.text)
     .join(" ");
+}
+
+function messageEntries(entries: readonly SessionEntry[]): AgentSession["messages"] {
+  return entries.filter((entry) => entry.type === "message").map((entry) => entry.message);
 }
 
 /** True when two messages share the streaming identity `role + timestamp`. */

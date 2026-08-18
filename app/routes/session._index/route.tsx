@@ -401,6 +401,12 @@ export default function Sessions() {
                         <span className="truncate">
                           {session.firstMessage || "Untitled Session"}
                         </span>
+                        {!session.isRead && !session.isStreaming && (
+                          <span
+                            className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"
+                            title="Unread"
+                          />
+                        )}
                         {session.isStreaming && (
                           <Loader2Icon className="w-4 h-4 text-blue-500 animate-spin flex-shrink-0" />
                         )}

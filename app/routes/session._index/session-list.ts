@@ -66,7 +66,8 @@ function sameSessionList(a: readonly SessionListItem[], b: readonly SessionListI
       x.firstMessage !== y.firstMessage ||
       x.messageCount !== y.messageCount ||
       x.timestamp !== y.timestamp ||
-      x.isStreaming !== y.isStreaming
+      x.isStreaming !== y.isStreaming ||
+      x.isRead !== y.isRead
     ) {
       return false;
     }

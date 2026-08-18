@@ -2,6 +2,7 @@ import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 
 import { agentSessionContainerContext } from "~/router-contexts";
 import type { SessionInfo } from "~/session-info";
+import type { SessionReadState } from "~/session-view-state";
 
 import type { Route } from "./+types/route";
 
@@ -9,6 +10,11 @@ import type { Route } from "./+types/route";
 export type SseEvent =
   | { type: "internal:init"; sessions: SessionInfo[] }
   | { type: "internal:event"; sessionId: string; event: AgentSessionEvent; info: SessionInfo }
+  | {
+      type: "internal:view_state";
+      sessionId: string;
+      viewState: SessionReadState;
+    }
   | { type: "internal:deleted"; sessionId: string };
 
 export async function loader({ context }: Route.LoaderArgs) {
@@ -65,6 +71,11 @@ export async function loader({ context }: Route.LoaderArgs) {
           if (event.type === "session_deleted") {
             infos.delete(sessionId);
             return { type: "internal:deleted", sessionId };
+          }
+          if (event.type === "view_state") {
+            // A dedicated event: read-state changes must never reach the chat
+            // reducer as if they were agent events.
+            return { type: "internal:view_state", sessionId, viewState: event.viewState };
           }
           return (async () => {
             let info: SessionInfo | null = null;

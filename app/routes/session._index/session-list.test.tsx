@@ -46,6 +46,9 @@ function info(
     thinkingLevel: "medium",
     isStreaming: false,
     isCompacting: false,
+    lastDisplayedMessageKey: null,
+    latestMessageKey: null,
+    isRead: true,
     ...overrides,
   };
 }
@@ -164,5 +167,17 @@ describe("useSessionList", () => {
     expect(hook.result.current.map((item) => `${item.id}:${item.messageCount}`).join(",")).toBe(
       "s1:2",
     );
+
+    // A read-state change (unread dot) is a displayed field: it re-renders.
+    await hook.act(() => {
+      emit({
+        type: "internal:event",
+        sessionId: "s1",
+        event: { type: "thinking_level_changed", level: "medium" },
+        info: info("s1", "/repo", 1000, { isRead: false }),
+      });
+    });
+    expect(renders.current).toBe(baseline + 2);
+    expect(hook.result.current[0]?.isRead).toBe(false);
   });
 });

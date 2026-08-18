@@ -13,6 +13,7 @@ import {
 
 import type { SseEvent } from "~/routes/events/loader";
 import type { SessionInfo } from "~/session-info";
+import type { SessionReadState } from "~/session-view-state";
 
 interface SessionEventsContextValue {
   connected: boolean;
@@ -80,6 +81,20 @@ export function SessionEventProvider({ children }: { children: ReactNode }) {
           for (const listener of store.eventListeners.get(message.sessionId) ?? []) {
             listener(message.event);
           }
+          break;
+        }
+        case "internal:view_state": {
+          // Read-state drift from another client: patch the session's info so
+          // the store keeps a single source of truth. Never dispatched to the
+          // chat reducer.
+          const prev = store.sessions.get(message.sessionId);
+          if (!prev) break;
+          store.sessions = new Map(store.sessions).set(message.sessionId, {
+            ...prev,
+            lastDisplayedMessageKey: message.viewState.lastDisplayedMessageKey,
+            latestMessageKey: message.viewState.latestMessageKey,
+            isRead: message.viewState.isRead,
+          });
           break;
         }
         case "internal:deleted": {
@@ -177,6 +192,9 @@ function sameSessionInfo(a: SessionInfo, b: SessionInfo): boolean {
     a.thinkingLevel === b.thinkingLevel &&
     a.isStreaming === b.isStreaming &&
     a.isCompacting === b.isCompacting &&
+    a.lastDisplayedMessageKey === b.lastDisplayedMessageKey &&
+    a.latestMessageKey === b.latestMessageKey &&
+    a.isRead === b.isRead &&
     ((a.model === null && b.model === null) ||
       (a.model !== null &&
         b.model !== null &&
@@ -186,9 +204,19 @@ function sameSessionInfo(a: SessionInfo, b: SessionInfo): boolean {
   );
 }
 
+function viewStateOf(info: SessionInfo | null): SessionReadState | null {
+  if (!info) return null;
+  return {
+    lastDisplayedMessageKey: info.lastDisplayedMessageKey,
+    latestMessageKey: info.latestMessageKey,
+    isRead: info.isRead,
+  };
+}
+
 /**
  * The chat page's view of the stream for one session: its current info (only
- * re-renders when this session's info changes) and an event subscription.
+ * re-renders when this session's info changes), its read state, and an event
+ * subscription.
  */
 export function useSessionStream(sessionId: string) {
   const ctx = useSessionEventsContext();
@@ -197,9 +225,10 @@ export function useSessionStream(sessionId: string) {
     () => ctx.getInfo(sessionId),
     () => null,
   );
+  const viewState = useMemo(() => viewStateOf(info), [info]);
   const subscribe = useCallback(
     (listener: (event: AgentSessionEvent) => void) => ctx.subscribe(sessionId, listener),
     [ctx.subscribe, sessionId],
   );
-  return { info, connected: ctx.connected, subscribe };
+  return { info, viewState, connected: ctx.connected, subscribe };
 }

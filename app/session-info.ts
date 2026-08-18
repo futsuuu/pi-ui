@@ -17,4 +17,10 @@ export interface SessionInfo {
   thinkingLevel: ThinkingLevel;
   isStreaming: boolean;
   isCompacting: boolean;
+  /** Newest message key any client has displayed in a viewport, or null. */
+  lastDisplayedMessageKey: string | null;
+  /** Newest renderable message key of the current projection, or null. */
+  latestMessageKey: string | null;
+  /** True when the latest message has been displayed by at least one client. */
+  isRead: boolean;
 }

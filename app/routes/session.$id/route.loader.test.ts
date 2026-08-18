@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { RouterContextProvider } from "react-router";
 import { describe, expect, it } from "vitest";
 
@@ -83,6 +84,52 @@ describe("GET /session/:id loader", () => {
 
         const data = await callLoader(container, session.sessionId);
         expect(data.turnEvents).toEqual([]);
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("returns the shared view state as the restoration anchor", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-route-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        // A persisted session with a known message timeline.
+        const sm = SessionManager.create(cwd);
+        sm.appendMessage({ role: "user", content: "hello", timestamp: 10 });
+        sm.appendMessage({
+          role: "assistant",
+          content: [{ type: "text", text: "Hi there!" }],
+          api: "anthropic-messages",
+          provider: "anthropic",
+          model: "test-model",
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: "stop",
+          timestamp: 10,
+        });
+        const sessionId = sm.getSessionId();
+
+        const container = AgentSessionContainer.withFactory(realFactory);
+        const session = await container.get(sessionId, { cwd });
+        expect(session).not.toBeNull();
+        // The loader must hand the client the cursor BEFORE any observer
+        // reports a position, so the first render can restore the anchor.
+        await container.markMessageDisplayed(sessionId, "user:10");
+        const data = await callLoader(container, sessionId);
+        expect(data.viewState).toEqual({
+          lastDisplayedMessageKey: "user:10",
+          latestMessageKey: "assistant:10",
+          isRead: false,
+        });
       });
     } finally {
       rmSync(root, { recursive: true, force: true });

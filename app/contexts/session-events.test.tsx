@@ -48,6 +48,9 @@ function info(overrides: Partial<SessionInfo> = {}): SessionInfo {
     thinkingLevel: "medium",
     isStreaming: false,
     isCompacting: false,
+    lastDisplayedMessageKey: null,
+    latestMessageKey: null,
+    isRead: true,
     ...overrides,
   };
 }
@@ -63,11 +66,11 @@ function useStoreSessions(): Map<string, SessionInfo> {
 
 /** The stream's full observable output for one session. */
 function useStreamSnapshot(sessionId = "s1") {
-  const { info, connected, subscribe } = useSessionStream(sessionId);
+  const { info, viewState, connected, subscribe } = useSessionStream(sessionId);
   const sessions = useStoreSessions();
   const [events, setEvents] = useState<string[]>([]);
   useEffect(() => subscribe((event) => setEvents((prev) => [...prev, event.type])), [subscribe]);
-  return { connected, info, sessions, events };
+  return { connected, info, viewState, sessions, events };
 }
 
 /** Counts effect re-runs caused by `subscribe` identity changes. */
@@ -290,6 +293,102 @@ describe("SessionEventProvider", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(changes.current).toBe(2);
+  });
+
+  it("updates the read state from internal:view_state without touching the reducer", async () => {
+    const hook = await renderHook(useStreamSnapshot, {
+      initialProps: "s1",
+      wrapper: SessionEventProvider,
+    });
+    await hook.act(() => {
+      MockEventSource.instances[0].open();
+      emit({
+        type: "internal:init",
+        sessions: [
+          info({ lastDisplayedMessageKey: null, latestMessageKey: "assistant:10", isRead: false }),
+        ],
+      });
+    });
+    expect(hook.result.current.viewState).toEqual({
+      lastDisplayedMessageKey: null,
+      latestMessageKey: "assistant:10",
+      isRead: false,
+    });
+
+    await hook.act(() => {
+      emit({
+        type: "internal:view_state",
+        sessionId: "s1",
+        viewState: {
+          lastDisplayedMessageKey: "assistant:10",
+          latestMessageKey: "assistant:10",
+          isRead: true,
+        },
+      });
+    });
+
+    expect(hook.result.current.viewState).toEqual({
+      lastDisplayedMessageKey: "assistant:10",
+      latestMessageKey: "assistant:10",
+      isRead: true,
+    });
+    // The dedicated event must never reach the chat reducer's subscription.
+    expect(hook.result.current.events).toEqual([]);
+    // The info object carries the patched read fields too.
+    expect(hook.result.current.info?.isRead).toBe(true);
+  });
+
+  it("re-delivers the read state to every subscriber", async () => {
+    function DualHarness() {
+      const a = useSessionStream("s1");
+      const b = useSessionStream("s1");
+      return (
+        <p
+          data-testid="dual"
+          data-a={a.viewState?.lastDisplayedMessageKey ?? ""}
+          data-b={b.viewState?.lastDisplayedMessageKey ?? ""}
+        />
+      );
+    }
+    const screen = await render(
+      <SessionEventProvider>
+        <DualHarness />
+      </SessionEventProvider>,
+    );
+    MockEventSource.instances[0].open();
+    emit({ type: "internal:init", sessions: [info()] });
+
+    emit({
+      type: "internal:view_state",
+      sessionId: "s1",
+      viewState: {
+        lastDisplayedMessageKey: "assistant:5",
+        latestMessageKey: "assistant:5",
+        isRead: true,
+      },
+    });
+    await expect.element(screen.getByTestId("dual")).toHaveAttribute("data-a", "assistant:5");
+    await expect.element(screen.getByTestId("dual")).toHaveAttribute("data-b", "assistant:5");
+  });
+
+  it("clears the read state when the session is deleted", async () => {
+    const hook = await renderHook(useStreamSnapshot, {
+      initialProps: "s1",
+      wrapper: SessionEventProvider,
+    });
+    await hook.act(() => {
+      MockEventSource.instances[0].open();
+      emit({
+        type: "internal:init",
+        sessions: [info({ isRead: false, latestMessageKey: "assistant:10" })],
+      });
+    });
+
+    await hook.act(() => {
+      emit({ type: "internal:deleted", sessionId: "s1" });
+    });
+
+    expect(hook.result.current.viewState).toBeNull();
   });
 
   it("exposes ready only after the first internal:init and keeps it across reconnects", async () => {

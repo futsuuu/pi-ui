@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { RouterContextProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -70,6 +71,34 @@ function callLoader(container: AgentSessionContainer): Promise<Response> {
     pattern: "/events",
     context,
   });
+}
+
+function usage() {
+  return {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
+}
+
+/** A session with a known timeline: user:10, assistant:10. */
+function oneTurnSession(cwd: string): { id: string } {
+  const sm = SessionManager.create(cwd);
+  sm.appendMessage({ role: "user", content: "hello", timestamp: 10 });
+  sm.appendMessage({
+    role: "assistant",
+    content: [{ type: "text", text: "Hi there!" }],
+    api: "anthropic-messages",
+    provider: "anthropic",
+    model: "test-model",
+    usage: usage(),
+    stopReason: "stop",
+    timestamp: 10,
+  });
+  return { id: sm.getSessionId() };
 }
 
 /** SSE connection under test, canceled after each test to clear timers. */
@@ -233,6 +262,152 @@ describe("GET /events", () => {
         expect(deleted).toEqual({
           kind: "data",
           value: { type: "internal:deleted", sessionId: id },
+        });
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("includes the view/read state in internal:init", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-events-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        const { id } = oneTurnSession(cwd);
+
+        const container = AgentSessionContainer.withFactory(realFactory);
+        // Mark the user message displayed so the init carries a cursor.
+        await container.get(id, { cwd });
+        await container.markMessageDisplayed(id, "user:10");
+
+        const response = await callLoader(container);
+        const reader = new SseReader(response);
+        activeReader = reader;
+        const [init] = await reader.read(1);
+        expect(init).toEqual({
+          kind: "data",
+          value: {
+            type: "internal:init",
+            sessions: [
+              expect.objectContaining({
+                id,
+                lastDisplayedMessageKey: "user:10",
+                latestMessageKey: "assistant:10",
+                isRead: false,
+              }),
+            ],
+          },
+        });
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("forwards mark_displayed as a dedicated internal:view_state event", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-events-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        const { id } = oneTurnSession(cwd);
+
+        const container = AgentSessionContainer.withFactory(realFactory);
+        await container.get(id, { cwd });
+
+        const response = await callLoader(container);
+        const reader = new SseReader(response);
+        activeReader = reader;
+        await reader.read(1); // internal:init
+
+        await container.markMessageDisplayed(id, "user:10");
+        const [viewState] = await reader.read(1);
+        expect(viewState).toEqual({
+          kind: "data",
+          value: {
+            type: "internal:view_state",
+            sessionId: id,
+            viewState: {
+              lastDisplayedMessageKey: "user:10",
+              latestMessageKey: "assistant:10",
+              isRead: false,
+            },
+          },
+        });
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("delivers a view-state event to every connected client", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-events-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        const { id } = oneTurnSession(cwd);
+
+        const container = AgentSessionContainer.withFactory(realFactory);
+        await container.get(id, { cwd });
+
+        const first = new SseReader(await callLoader(container));
+        const second = new SseReader(await callLoader(container));
+        activeReader = null; // cleaned up manually
+        await first.read(1);
+        await second.read(1);
+
+        await container.markMessageDisplayed(id, "user:10");
+        const [a] = await first.read(1);
+        const [b] = await second.read(1);
+        expect(a).toEqual(b);
+        expect(a).toMatchObject({
+          kind: "data",
+          value: { type: "internal:view_state", sessionId: id },
+        });
+        await first.cancel();
+        await second.cancel();
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps view-state events ordered with agent events", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-events-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        const { id } = oneTurnSession(cwd);
+
+        const container = AgentSessionContainer.withFactory(realFactory);
+        const session = await container.get(id, { cwd });
+
+        const response = await callLoader(container);
+        const reader = new SseReader(response);
+        activeReader = reader;
+        await reader.read(1); // internal:init
+
+        session!.setThinkingLevel("high");
+        await container.markMessageDisplayed(id, "user:10");
+        await new Promise((resolve) => setImmediate(resolve));
+        session!.setThinkingLevel("low");
+
+        const [first, second, third] = await reader.read(3);
+        expect(first).toMatchObject({
+          kind: "data",
+          value: { type: "internal:event" },
+        });
+        expect(second).toMatchObject({
+          kind: "data",
+          value: { type: "internal:view_state", sessionId: id },
+        });
+        expect(third).toMatchObject({
+          kind: "data",
+          value: { type: "internal:event" },
         });
       });
     } finally {
