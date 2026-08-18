@@ -3,6 +3,7 @@ import type { AssistantMessage, StopReason } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 
 import type { Props as AgentMessageProps } from "./agent-message";
+import { entryKeyOf, messageKey, messageKeyOf, sameIdentity } from "./message-key";
 import { buildToolCallMap, type ToolCallMap } from "./tool-call-context";
 
 export type AgentMessagePropsWithKey = AgentMessageProps & {
@@ -121,7 +122,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         // The same start event can arrive both from the loader's turn buffer
         // (a revalidation seed) and from the live stream (when the loader
         // response races the SSE delivery): append only once by identity.
-        const identity = identityOf("user", pending?.timestamp ?? message.timestamp);
+        const identity = messageKey("user", pending?.timestamp ?? message.timestamp);
         if (state.eventMessages.some((m) => m.role === "user" && entryIdentity(m) === identity)) {
           return { ...state, pendingUserMessage: undefined };
         }
@@ -144,7 +145,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       // Same double-append guard: a duplicate placeholder would render an
       // empty assistant entry that later updates (matched by identity) never
       // see.
-      const identity = identityOf("assistant", message.timestamp);
+      const identity = messageKey("assistant", message.timestamp);
       if (
         state.eventMessages.some((m) => m.role === "assistant" && entryIdentity(m) === identity)
       ) {
@@ -396,32 +397,27 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   }
 }
 
-/**
- * The stable identity of a message across streaming and persistence:
- * `role + timestamp` (the provider creates the partial once with its
- * timestamp and mutates it in place, so every streamed copy and the persisted
- * final message carry the same value).
- */
-function identityOf(role: string, timestamp: number | undefined): string {
-  return `${role}:${timestamp ?? ""}`;
-}
-
 function entryIdentity(entry: { role: string; timestamp?: number }): string {
-  return identityOf(entry.role, entry.timestamp);
+  return messageKey(entry.role, entry.timestamp);
 }
 
 /**
- * True when a persisted message and a chat entry carry the same identity.
- * Messages use `role + timestamp`; tool results use `toolCallId` (entries in
- * `eventMessages` carry no timestamp, so the role+timestamp comparison would
- * never match a persisted `toolResult` and a finalized tool entry would be
- * kept, rendering the same result twice after a rebuild).
+ * Ordered, renderable display keys of the current chat state, mirroring the
+ * server's projection so the client can compare message positions with it.
  */
-function sameIdentity(message: AgentMessage, entry: AgentMessagePropsWithKey): boolean {
-  if (message.role === "toolResult" && entry.role === "toolResult") {
-    return message.toolCallId === entry.toolCallId;
-  }
-  return identityOf(message.role, message.timestamp) === entryIdentity(entry);
+export function chatDisplayKeys(chat: ChatState): string[] {
+  const keys: string[] = [];
+  const seen = new Set<string>();
+  const push = (key: string | null) => {
+    if (key != null && !seen.has(key)) {
+      seen.add(key);
+      keys.push(key);
+    }
+  };
+  for (const message of chat.loadedMessages) push(messageKeyOf(message));
+  for (const message of chat.eventMessages) push(entryKeyOf(message));
+  push(chat.pendingUserMessage ? entryKeyOf(chat.pendingUserMessage) : null);
+  return keys;
 }
 
 /** Find the index of a tool result message by its toolCallId */
@@ -458,7 +454,7 @@ function assistantEntry(message: AssistantMessage): {
  * real stopReason/errorMessage.
  */
 function replaceAssistantByIdentity(state: ChatState, message: AssistantMessage): ChatState {
-  const identity = identityOf("assistant", message.timestamp);
+  const identity = messageKey("assistant", message.timestamp);
   const idx = state.eventMessages.findIndex(
     (m) => m.role === "assistant" && entryIdentity(m) === identity,
   );
@@ -490,7 +486,7 @@ function replaceAssistantByIdentity(state: ChatState, message: AssistantMessage)
  * and update the test fixtures from "stop" to "pending" for partials.
  */
 function updateAssistantContent(state: ChatState, message: AssistantMessage): ChatState {
-  const identity = identityOf("assistant", message.timestamp);
+  const identity = messageKey("assistant", message.timestamp);
   const idx = state.eventMessages.findIndex(
     (m) => m.role === "assistant" && entryIdentity(m) === identity,
   );
@@ -606,8 +602,8 @@ function applySeedEvent(
     event.type === "message_update" ||
     event.type === "message_end"
   ) {
-    const identity = identityOf(event.message.role, event.message.timestamp);
-    if (state.loadedMessages.some((m) => identityOf(m.role, m.timestamp) === identity)) {
+    const identity = messageKey(event.message.role, event.message.timestamp);
+    if (state.loadedMessages.some((m) => messageKey(m.role, m.timestamp) === identity)) {
       // Already rendered from the snapshot.
       return state;
     }

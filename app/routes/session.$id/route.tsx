@@ -4,7 +4,7 @@ import type { AgentMessage as SessionMessage } from "@earendil-works/pi-agent-co
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { Layers, Moon, Plus, Sun } from "lucide-react";
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { data, Link, useFetcher, useRevalidator } from "react-router";
 
 import { ScrollArea } from "~/components/scroll-area";
@@ -15,8 +15,10 @@ import { agentSessionContainerContext } from "~/router-contexts";
 import type { Route } from "./+types/route";
 import type { ActionInput, action } from "./action";
 import { AgentMessage } from "./agent-message";
-import { createChatState, chatReducer } from "./chat-reducer";
+import { createChatState, chatReducer, chatDisplayKeys } from "./chat-reducer";
 import { useChatSync } from "./chat-sync";
+import { isForwardKey, selectReportedKey } from "./display-tracker";
+import { entryKeyOf, messageKeyOf } from "./message-key";
 import { PathDisplayProvider } from "./path-display-context";
 import { PromptForm } from "./prompt-form";
 import { agentSessionContext } from "./router-contexts";
@@ -47,7 +49,25 @@ function textLengthOf(message: SessionMessage): number {
   return length;
 }
 
+/**
+ * Renders a message with a stable `data-message-key` so the viewport
+ * observer can track it. Messages without a display key (empty user messages,
+ * finalized empty assistant messages) render without a wrapper — they must
+ * never advance the shared cursor because they render nothing.
+ */
+function TrackedMessage({
+  messageKey,
+  children,
+}: {
+  messageKey: string | null;
+  children: ReactNode;
+}) {
+  if (messageKey == null) return children;
+  return <div data-message-key={messageKey}>{children}</div>;
+}
+
 export async function loader({ context }: Route.LoaderArgs) {
+  const container = context.get(agentSessionContainerContext);
   const session = context.get(agentSessionContext);
   // Pass only the fields the Chat component uses, read directly from the
   // session, instead of the full SessionInfo.
@@ -57,7 +77,11 @@ export async function loader({ context }: Route.LoaderArgs) {
   // The in-flight turn's events, so a client that mounts mid-turn can render
   // the streaming partial and tool executions without having seen their first
   // event (closes the [loader read -> subscription] loss window).
-  const turnEvents = context.get(agentSessionContainerContext).getTurnEvents(session.sessionId);
+  const turnEvents = container.getTurnEvents(session.sessionId);
+  // The initial read state: the shared display cursor plus the latest
+  // renderable message key. The first render restores this anchor before any
+  // display observer reports a position.
+  const viewState = await container.getSessionReadState(session.sessionId);
   return {
     cwd: session.sessionManager.getCwd(),
     home: homedir(),
@@ -75,6 +99,7 @@ export async function loader({ context }: Route.LoaderArgs) {
     messages,
     turnEvents,
     models,
+    viewState,
   };
 }
 
@@ -86,7 +111,15 @@ export default function SessionRoute(props: Route.ServerComponentProps) {
 
 function Chat({
   params: { id: sessionId },
-  loaderData: { cwd, home, state: loadedState, messages: loadedMessages, turnEvents, models },
+  loaderData: {
+    cwd,
+    home,
+    state: loadedState,
+    messages: loadedMessages,
+    turnEvents,
+    models,
+    viewState: loadedViewState,
+  },
 }: Route.ServerComponentProps) {
   const { theme, toggleTheme } = useTheme();
 
@@ -118,9 +151,10 @@ function Chat({
   const revalidator = useRevalidator();
 
   // The global /events stream: current info for this session (model,
-  // thinking level, streaming flag) plus its events. The provider only
-  // delivers events for the subscribed session, so no filtering is needed.
-  const { info, connected, subscribe } = useSessionStream(sessionId);
+  // thinking level, streaming flag), its read state, and its events. The
+  // provider only delivers events for the subscribed session, so no
+  // filtering is needed.
+  const { info, viewState, connected, subscribe } = useSessionStream(sessionId);
 
   // Close the [loader read -> subscription] window and [disconnect ->
   // reconnect] outages with one revalidation per session, guarded against a
@@ -194,6 +228,152 @@ function Chat({
       });
     }
   }, [info]);
+
+  // --- Shared display cursor (the server-side read state) ---
+  //
+  // While messages are visible in the viewport, the newest visible message is
+  // reported to the server, which keeps one forward-only cursor per session.
+  const messagesViewportRef = useRef<HTMLDivElement | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+  const chatRef = useRef(chat);
+  chatRef.current = chat;
+  // The server cursor this client knows about. It is the floor for reports:
+  // older messages are never submitted again, and a stale report can never
+  // regress it.
+  const cursorRef = useRef<string | null>(loadedViewState?.lastDisplayedMessageKey ?? null);
+  // Restore to the shared cursor's message; when it is the latest message
+  // the scroll clamps to the bottom naturally (no read-state branch needed).
+  const restoreTarget = loadedViewState?.lastDisplayedMessageKey ?? null;
+  // The observer must not report anything until the shared anchor has been
+  // restored: before that, the initial render position (top or bottom) is not
+  // a faithful view of the conversation.
+  const restorePendingRef = useRef(restoreTarget != null);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const handleRestoreComplete = useCallback(() => {
+    restorePendingRef.current = false;
+    // Initial intersection notifications delivered while the restore was
+    // pending were dropped. IntersectionObserver only fires again on state
+    // changes, so a short conversation that fits the viewport would never be
+    // reported; re-observing forces fresh initial notifications for every
+    // tracked element.
+    const observer = observerRef.current;
+    if (!observer) return;
+    for (const el of observedElementsRef.current) {
+      observer.unobserve(el);
+      observer.observe(el);
+    }
+  }, []);
+  const pendingReportRef = useRef<string | null>(null);
+  const reportTimerRef = useRef<number | null>(null);
+  const observedElementsRef = useRef<Set<Element>>(new Set());
+  const fetcherRef = useRef(fetcher);
+  fetcherRef.current = fetcher;
+
+  const bumpCursor = useCallback((candidate: string) => {
+    // Only forward progress, in the client's own display order; the server
+    // enforces the same rule, so this only avoids redundant submissions.
+    if (isForwardKey(candidate, chatDisplayKeys(chatRef.current), cursorRef.current)) {
+      cursorRef.current = candidate;
+    }
+  }, []);
+
+  const flushReport = useCallback(() => {
+    if (reportTimerRef.current != null) {
+      clearTimeout(reportTimerRef.current);
+      reportTimerRef.current = null;
+    }
+    const key = pendingReportRef.current;
+    pendingReportRef.current = null;
+    if (key == null) return;
+    // Re-check forward progress at flush time: a stale report that arrived
+    // after the cursor advanced (e.g. an SSE update from another client) is
+    // dropped instead of being submitted redundantly.
+    const keys = chatDisplayKeys(chatRef.current);
+    if (!isForwardKey(key, keys, cursorRef.current)) return;
+    void fetcherRef.current.submit(
+      { type: "mark_displayed", messageKey: key } satisfies ActionInput,
+      { method: "post", encType: "application/json" },
+    );
+  }, []);
+
+  const scheduleReport = useCallback(
+    (key: string) => {
+      // Debounce: normal scrolling must not create one request per
+      // intersection event; the newest candidate wins within a window.
+      pendingReportRef.current = key;
+      if (reportTimerRef.current == null) {
+        reportTimerRef.current = window.setTimeout(flushReport, 150);
+      }
+    },
+    [flushReport],
+  );
+
+  // Observe the message elements intersecting the viewport and report the
+  // newest one. The observer is re-attached per session (Chat remounts), and
+  // newly mounted messages are picked up via a MutationObserver.
+  useEffect(() => {
+    const viewport = messagesViewportRef.current;
+    const container = messagesContainerRef.current;
+    if (!viewport || !container) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (restorePendingRef.current) return;
+        // When multiple messages are visible, report the one with the
+        // greatest position in the current rendered message order.
+        const keys = chatDisplayKeys(chatRef.current);
+        const observations = entries.map((entry) => ({
+          key: (entry.target as HTMLElement).dataset.messageKey ?? null,
+          intersecting: entry.isIntersecting,
+        }));
+        const best = selectReportedKey(observations, keys, cursorRef.current);
+        if (best != null) scheduleReport(best);
+      },
+      { root: viewport },
+    );
+    observerRef.current = observer;
+    const observeElements = () => {
+      for (const el of container.querySelectorAll<HTMLElement>("[data-message-key]")) {
+        if (!observedElementsRef.current.has(el)) {
+          observedElementsRef.current.add(el);
+          observer.observe(el);
+        }
+      }
+    };
+    observeElements();
+    const mutationObserver = new MutationObserver(observeElements);
+    mutationObserver.observe(container, { childList: true, subtree: true });
+    return () => {
+      observerRef.current = null;
+      observer.disconnect();
+      mutationObserver.disconnect();
+      observedElementsRef.current.clear();
+      if (reportTimerRef.current != null) {
+        clearTimeout(reportTimerRef.current);
+        reportTimerRef.current = null;
+      }
+      pendingReportRef.current = null;
+    };
+  }, [scheduleReport]);
+
+  // Advance the local cursor from SSE read-state updates (another client
+  // displayed a newer message) and from mark_displayed action responses.
+  useEffect(() => {
+    if (viewState?.lastDisplayedMessageKey) {
+      bumpCursor(viewState.lastDisplayedMessageKey);
+    }
+  }, [viewState, bumpCursor]);
+
+  useEffect(() => {
+    const data = fetcher.data;
+    if (
+      data &&
+      typeof data === "object" &&
+      "lastDisplayedMessageKey" in data &&
+      typeof data.lastDisplayedMessageKey === "string"
+    ) {
+      bumpCursor(data.lastDisplayedMessageKey);
+    }
+  }, [fetcher.data, bumpCursor]);
 
   const sendMessage = useCallback(
     (
@@ -276,8 +456,18 @@ function Chat({
       </div>
 
       {/* Messages */}
-      <ScrollArea key={`messages-${sessionId}`} autoScroll viewportClassName="pb-36">
-        <div className="max-w-5xl max-lg:max-w-[100vw] w-full mx-auto px-4 py-4 space-y-4 min-h-full min-w-0">
+      <ScrollArea
+        key={`messages-${sessionId}`}
+        ref={messagesViewportRef}
+        autoScroll
+        restoreTarget={restoreTarget}
+        onRestoreComplete={handleRestoreComplete}
+        viewportClassName="pb-36"
+      >
+        <div
+          ref={messagesContainerRef}
+          className="max-w-5xl max-lg:max-w-[100vw] w-full mx-auto px-4 py-4 space-y-4 min-h-full min-w-0"
+        >
           {state.model == null && (
             <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
               No model configured. Set an API key environment variable (e.g. ANTHROPIC_API_KEY), or
@@ -287,13 +477,22 @@ function Chat({
           <PathDisplayProvider value={{ cwd, home }}>
             <ToolCallContext value={chat.toolCallMap}>
               {chat.loadedMessages.map((msg, index) => (
-                <AgentMessage key={index} {...msg} />
+                <TrackedMessage key={index} messageKey={messageKeyOf(msg)}>
+                  <AgentMessage {...msg} />
+                </TrackedMessage>
               ))}
               {chat.eventMessages.map((msg) => (
-                <AgentMessage key={msg._key} {...msg} />
+                <TrackedMessage key={msg._key} messageKey={entryKeyOf(msg)}>
+                  <AgentMessage {...msg} />
+                </TrackedMessage>
               ))}
               {chat.pendingUserMessage && (
-                <AgentMessage key={chat.pendingUserMessage._key} {...chat.pendingUserMessage} />
+                <TrackedMessage
+                  key={chat.pendingUserMessage._key}
+                  messageKey={entryKeyOf(chat.pendingUserMessage)}
+                >
+                  <AgentMessage {...chat.pendingUserMessage} />
+                </TrackedMessage>
               )}
             </ToolCallContext>
           </PathDisplayProvider>

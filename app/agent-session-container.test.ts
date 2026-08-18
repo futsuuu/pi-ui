@@ -10,6 +10,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { AgentSessionContainer, applyTurnEvent } from "./agent-session-container";
+import { SessionViewStateRepository } from "./session-view-state";
 import { createSession, realFactory, withAgentDir } from "./test-helpers";
 
 /** A runtime factory that is never invoked by the tested paths. */
@@ -512,6 +513,428 @@ describe("AgentSessionContainer.delete", () => {
         await expect(container.delete("missing-id", { cwd, sessionDir })).rejects.toThrow(
           'Session "missing-id" not found',
         );
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("shared display cursor (view state)", () => {
+  /** A session with two turns at fixed timestamps: keys user:0, assistant:0, user:1, assistant:1. */
+  function twoTurnSession(cwd: string): SessionManager {
+    const sm = SessionManager.create(cwd);
+    appendUser(sm, "hello", 0);
+    appendAssistant(sm, "reply 1", 0);
+    appendUser(sm, "second", 1);
+    appendAssistant(sm, "reply 2", 1);
+    return sm;
+  }
+
+  it("computes the latest message key from persisted messages and derives isRead", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        const sm = twoTurnSession(cwd);
+
+        const container = AgentSessionContainer.withFactory(realFactory);
+        await container.get(sm.getSessionId(), { cwd });
+
+        // No stored cursor (nobody displayed anything): the session is
+        // treated as fully read.
+        const state = await container.getSessionReadState(sm.getSessionId());
+        expect(state).toEqual({
+          lastDisplayedMessageKey: null,
+          latestMessageKey: "assistant:1",
+          isRead: true,
+        });
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("computes the latest key from persisted entries when the runtime is not loaded", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        const sm = twoTurnSession(cwd);
+
+        const container = AgentSessionContainer.withFactory(noopFactory);
+        const state = await container.getSessionReadState(sm.getSessionId(), { cwd });
+        expect(state).not.toBeNull();
+        expect(state!.latestMessageKey).toBe("assistant:1");
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not count an in-flight assistant partial as the latest read target", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        const sm = twoTurnSession(cwd);
+        const id = sm.getSessionId();
+
+        const container = AgentSessionContainer.withFactory(realFactory);
+        const session = await container.get(id, { cwd });
+        expect(session).not.toBeNull();
+        const handle = container as unknown as {
+          handleSessionEvent(sessionId: string, event: AgentSessionEvent): void;
+        };
+        handle.handleSessionEvent(id, { type: "turn_start" });
+        handle.handleSessionEvent(id, {
+          type: "message_start",
+          message: {
+            role: "assistant",
+            content: [],
+            api: "anthropic-messages",
+            provider: "anthropic",
+            model: "test-model",
+            usage: usage(),
+            stopReason: "stop",
+            timestamp: 9999,
+          },
+        });
+
+        // The streaming partial is rendered but not yet final: it must not
+        // become the latest read target (or be markable as displayed).
+        const state = await container.getSessionReadState(id);
+        expect(state!.latestMessageKey).toBe("assistant:1");
+        const rejected = await container.markMessageDisplayed(id, "assistant:9999");
+        expect(rejected.lastDisplayedMessageKey).toBeNull();
+
+        // message_end settles it: it becomes the latest and can be marked.
+        handle.handleSessionEvent(id, {
+          type: "message_end",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "final" }],
+            api: "anthropic-messages",
+            provider: "anthropic",
+            model: "test-model",
+            usage: usage(),
+            stopReason: "stop",
+            timestamp: 9999,
+          },
+        });
+        const settled = await container.getSessionReadState(id);
+        expect(settled!.latestMessageKey).toBe("assistant:9999");
+        const accepted = await container.markMessageDisplayed(id, "assistant:9999");
+        expect(accepted.lastDisplayedMessageKey).toBe("assistant:9999");
+        expect(accepted.isRead).toBe(true);
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("advances the cursor through markMessageDisplayed and broadcasts view_state", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        const sm = twoTurnSession(cwd);
+        const id = sm.getSessionId();
+
+        const container = AgentSessionContainer.withFactory(realFactory);
+        const events: Array<{ sessionId: string; event: unknown }> = [];
+        container.subscribe((sessionId, event) => events.push({ sessionId, event }));
+        await container.get(id, { cwd });
+
+        const afterUser = await container.markMessageDisplayed(id, "user:0");
+        expect(afterUser.isRead).toBe(false);
+        expect(events).toEqual([
+          { sessionId: id, event: { type: "view_state", viewState: afterUser } },
+        ]);
+
+        const afterAssistant = await container.markMessageDisplayed(id, "assistant:1");
+        expect(afterAssistant.isRead).toBe(true);
+        expect(events).toHaveLength(2);
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects unknown message keys without advancing or broadcasting", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        const sm = twoTurnSession(cwd);
+        const id = sm.getSessionId();
+
+        const container = AgentSessionContainer.withFactory(realFactory);
+        const events: unknown[] = [];
+        container.subscribe((_sid, event) => events.push(event));
+        await container.get(id, { cwd });
+
+        const state = await container.markMessageDisplayed(id, "assistant:missing");
+        expect(state.lastDisplayedMessageKey).toBeNull();
+        expect(events).toEqual([]);
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("never moves the cursor backwards for a stale client", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        const sm = twoTurnSession(cwd);
+        const id = sm.getSessionId();
+
+        const container = AgentSessionContainer.withFactory(realFactory);
+        await container.get(id, { cwd });
+        await container.markMessageDisplayed(id, "assistant:1");
+
+        // A stale client reports an earlier message: ignored, and no broadcast.
+        const events: unknown[] = [];
+        container.subscribe((_sid, event) => events.push(event));
+        const state = await container.markMessageDisplayed(id, "user:0");
+        expect(state.lastDisplayedMessageKey).toBe("assistant:1");
+        expect(state.isRead).toBe(true);
+        expect(events).toEqual([]);
+
+        // A repeated key is an idempotent no-op.
+        const again = await container.markMessageDisplayed(id, "assistant:1");
+        expect(again.lastDisplayedMessageKey).toBe("assistant:1");
+        expect(events).toEqual([]);
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the saved cursor when the projection compacted it away", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        const sm = compactedSession(cwd);
+        const id = sm.getSessionId();
+
+        const repo = new SessionViewStateRepository();
+        // A cursor from before the compaction: not present in the projection.
+        repo.set(id, "assistant:1000");
+        const container = AgentSessionContainer.withFactory(realFactory, repo);
+
+        const state = await container.getSessionReadState(id, { cwd });
+        expect(state!.lastDisplayedMessageKey).toBe("assistant:1000");
+        // The cursor points at a compacted message: no valid restoration
+        // target, so the session is conservatively unread until a client
+        // observes a current message.
+        expect(state!.isRead).toBe(false);
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not mark a running tool result as displayed until tool_execution_end", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        const sm = twoTurnSession(cwd);
+        const id = sm.getSessionId();
+
+        const container = AgentSessionContainer.withFactory(realFactory);
+        const session = await container.get(id, { cwd });
+        expect(session).not.toBeNull();
+        const handle = container as unknown as {
+          handleSessionEvent(sessionId: string, event: AgentSessionEvent): void;
+        };
+        handle.handleSessionEvent(id, { type: "turn_start" });
+        handle.handleSessionEvent(id, {
+          type: "tool_execution_start",
+          toolCallId: "call-1",
+          toolName: "bash",
+          args: { command: "ls" },
+        });
+
+        // The running tool shows a placeholder, but its result is not final:
+        // it must not become the latest read target or be markable.
+        const running = await container.getSessionReadState(id);
+        expect(running!.latestMessageKey).toBe("assistant:1");
+        const rejected = await container.markMessageDisplayed(id, "toolResult:call-1");
+        expect(rejected.lastDisplayedMessageKey).toBeNull();
+
+        // tool_execution_end settles it.
+        handle.handleSessionEvent(id, {
+          type: "tool_execution_end",
+          toolCallId: "call-1",
+          toolName: "bash",
+          result: { content: [{ type: "text", text: "done" }] },
+          isError: false,
+        });
+        const settled = await container.getSessionReadState(id);
+        expect(settled!.latestMessageKey).toBe("toolResult:call-1");
+        const accepted = await container.markMessageDisplayed(id, "toolResult:call-1");
+        expect(accepted.lastDisplayedMessageKey).toBe("toolResult:call-1");
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("marks a session unread when a message settles without any client viewing it", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        const sm = twoTurnSession(cwd);
+        const id = sm.getSessionId();
+
+        const container = AgentSessionContainer.withFactory(realFactory);
+        const session = await container.get(id, { cwd });
+        expect(session).not.toBeNull();
+        const handle = container as unknown as {
+          handleSessionEvent(sessionId: string, event: AgentSessionEvent): void;
+        };
+
+        // A message settles while the session was never opened as a page (no
+        // view-state record yet, e.g. a prompt sent through a fetcher): the
+        // session must become unread.
+        handle.handleSessionEvent(id, { type: "turn_start" });
+        handle.handleSessionEvent(id, {
+          type: "message_end",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "new answer" }],
+            api: "anthropic-messages",
+            provider: "anthropic",
+            model: "test-model",
+            usage: usage(),
+            stopReason: "stop",
+            timestamp: 9999,
+          },
+        });
+
+        const state = await container.getSessionReadState(id);
+        expect(state).toEqual({
+          lastDisplayedMessageKey: null,
+          latestMessageKey: "assistant:9999",
+          isRead: false,
+        });
+
+        // Once a client displays the new message it becomes read.
+        const marked = await container.markMessageDisplayed(id, "assistant:9999");
+        expect(marked.isRead).toBe(true);
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("removes the view state when the session is deleted", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        const sm = SessionManager.create(cwd);
+        appendUser(sm, "hello", 0);
+        appendAssistant(sm, "reply", 0);
+        const id = sm.getSessionId();
+
+        const repo = new SessionViewStateRepository();
+        const container = AgentSessionContainer.withFactory(realFactory, repo);
+        await container.get(id, { cwd });
+        await container.markMessageDisplayed(id, "user:0");
+        expect(repo.get(id)).not.toBeNull();
+
+        await container.delete(id, { cwd });
+        expect(repo.get(id)).toBeNull();
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("retains the view state when deletion fails", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        const sm = SessionManager.create(cwd);
+        appendUser(sm, "hello", 0);
+        appendAssistant(sm, "reply", 0);
+        const id = sm.getSessionId();
+
+        const repo = new SessionViewStateRepository();
+        const container = AgentSessionContainer.withFactory(realFactory, repo);
+        await container.get(id, { cwd });
+        await container.markMessageDisplayed(id, "user:0");
+
+        await expect(container.delete("missing-id", { cwd })).rejects.toThrow();
+        expect(repo.get(id)).not.toBeNull();
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("treats sessions without a stored cursor as read via currentInfoList", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        const sm = twoTurnSession(cwd);
+
+        const container = AgentSessionContainer.withFactory(noopFactory);
+        const sessions = await container.currentInfoList();
+        expect(sessions[0]).toMatchObject({
+          id: sm.getSessionId(),
+          lastDisplayedMessageKey: null,
+          latestMessageKey: "assistant:1",
+          isRead: true,
+        });
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports read state through currentInfoList once the cursor reached the latest", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        const sm = twoTurnSession(cwd);
+        const id = sm.getSessionId();
+
+        const repo = new SessionViewStateRepository();
+        const container = AgentSessionContainer.withFactory(realFactory, repo);
+        await container.get(id, { cwd });
+        await container.markMessageDisplayed(id, "assistant:1");
+
+        const sessions = await container.currentInfoList();
+        expect(sessions[0]).toMatchObject({
+          id,
+          lastDisplayedMessageKey: "assistant:1",
+          latestMessageKey: "assistant:1",
+          isRead: true,
+        });
       });
     } finally {
       rmSync(root, { recursive: true, force: true });

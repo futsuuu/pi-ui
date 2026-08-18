@@ -1,15 +1,10 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
 
 import { ScrollArea } from "./scroll-area";
 
 const LINE_HEIGHT = 40;
-
-/** A fixed-height line so content height is predictable and measurable. */
-function Line({ index }: { index: number }) {
-  return <div style={{ height: LINE_HEIGHT }}>line {index}</div>;
-}
 
 interface HarnessApi {
   /** The scrollable viewport element (exposed through the forwarded ref). */
@@ -24,6 +19,8 @@ interface HarnessApi {
   dispatchScroll: () => void;
   /** Distance in px between the current scroll position and the bottom. */
   distanceFromBottom: () => number;
+  /** Number of times onRestoreComplete fired. */
+  restoreCount: () => number;
 }
 
 function Harness({
@@ -33,6 +30,7 @@ function Harness({
   initialLines = 20,
   startHeight = 300,
   mountKey,
+  restoreTarget,
 }: {
   api: HarnessApi;
   /** `undefined`/`false` disables auto-scroll. */
@@ -42,10 +40,13 @@ function Harness({
   startHeight?: number;
   /** Changing this remounts the ScrollArea (used to simulate session switches). */
   mountKey?: string;
+  /** Shared display anchor to restore on mount. */
+  restoreTarget?: string | null;
 }) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [lines, setLines] = useState(initialLines);
   const [containerHeight, setContainerHeight] = useState(startHeight);
+  const [restoreCount, setRestoreCount] = useState(0);
 
   useLayoutEffect(() => {
     api.viewport = () => viewportRef.current;
@@ -69,6 +70,7 @@ function Harness({
       if (!vp) return Infinity;
       return vp.scrollHeight - vp.scrollTop - vp.clientHeight;
     };
+    api.restoreCount = () => restoreCount;
   });
 
   return (
@@ -78,10 +80,14 @@ function Harness({
         key={mountKey}
         autoScroll={autoScroll}
         autoScrollOffset={autoScrollOffset}
+        restoreTarget={restoreTarget}
+        onRestoreComplete={() => setRestoreCount((count) => count + 1)}
       >
         <div data-testid="content">
           {Array.from({ length: lines }, (_, index) => (
-            <Line key={index} index={index} />
+            <div key={index} data-message-key={`user:${index}`} style={{ height: LINE_HEIGHT }}>
+              line {index}
+            </div>
           ))}
         </div>
       </ScrollArea>
@@ -190,5 +196,114 @@ describe("ScrollArea auto-scroll", () => {
 
     api.addLines(10);
     await expectPinned(api);
+  });
+});
+
+describe("ScrollArea anchor restoration", () => {
+  // 20 lines x 40px = 800px of content in a 300px viewport.
+  const CONTENT_HEIGHT = 800;
+  const VIEWPORT_HEIGHT = 300;
+  const MAX_SCROLL = CONTENT_HEIGHT - VIEWPORT_HEIGHT; // 500
+  const LINE = 40;
+
+  it("restores an existing anchor with its bottom edge visible at the top", async () => {
+    const api = {} as HarnessApi;
+    await render(<Harness api={api} autoScroll restoreTarget="user:10" />);
+
+    // The saved (read) message's bottom edge sits just inside the top of the
+    // viewport (10 lines x 40px + 40px height - 48px margin), so the unread
+    // content reads from the top with a sliver of the anchor above it.
+    await expect
+      .poll(() => api.viewport()?.scrollTop, { timeout: 2000 })
+      .toBe(10 * LINE + LINE - 48);
+    await expect.poll(() => api.restoreCount(), { timeout: 2000 }).toBe(1);
+  });
+
+  it("does not jump to the bottom after restoration while content grows", async () => {
+    const api = {} as HarnessApi;
+    await render(<Harness api={api} autoScroll restoreTarget="user:10" />);
+    await expect.poll(() => api.viewport()?.scrollTop, { timeout: 2000 }).toBe(392);
+
+    // The anchor sits in the middle of the conversation: growing content may
+    // not yank the viewport to the bottom (not following).
+    api.addLines(10);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(api.viewport()?.scrollTop).toBe(392);
+  });
+
+  it("falls back to the bottom when the saved anchor is missing", async () => {
+    const api = {} as HarnessApi;
+    await render(<Harness api={api} autoScroll restoreTarget="user:999" />);
+
+    // The anchor never renders: after the polling grace period the viewport
+    // falls back to the newest content.
+    await expectPinned(api, 4000);
+    await expect.poll(() => api.restoreCount(), { timeout: 6000 }).toBe(1);
+  });
+
+  it("restores against the scroll area's own top, not the page top", async () => {
+    const api = {} as HarnessApi;
+    // A fixed header above the scroll area: restoration must anchor to the
+    // scroll area's top edge, so the read message's bottom edge ends up
+    // 48px below THAT edge — not 48px below the page top (which would hide
+    // the message behind the header).
+    await render(
+      <div>
+        <div style={{ height: 100 }}>header</div>
+        <Harness api={api} autoScroll restoreTarget="user:10" />
+      </div>,
+    );
+    // The content-relative scroll position is unaffected by the header.
+    await expect.poll(() => api.viewport()?.scrollTop, { timeout: 2000 }).toBe(392);
+    await expect
+      .poll(
+        () => {
+          const vp = api.viewport();
+          const target = vp?.querySelector('[data-message-key="user:10"]');
+          if (!vp || !target) return -1;
+          // Distance of the anchor's bottom edge below the scroll area's top.
+          return Math.round(target.getBoundingClientRect().bottom - vp.getBoundingClientRect().top);
+        },
+        { timeout: 2000 },
+      )
+      .toBe(48);
+  });
+
+  it("clamps to the bottom when the anchor is the newest message", async () => {
+    const api = {} as HarnessApi;
+    await render(<Harness api={api} autoScroll restoreTarget="user:19" />);
+
+    // The last line's bottom edge cannot be placed 48px above the bottom of
+    // the content, so the viewport clamps to the bottom. This is what makes
+    // a fully-read session (whose cursor is the latest message) restore to
+    // the bottom without an explicit read-state branch.
+    await expectPinned(api);
+    await expect.poll(() => api.viewport()?.scrollTop, { timeout: 2000 }).toBe(MAX_SCROLL);
+
+    // At the bottom, following resumes for streamed content.
+    api.addLines(10);
+    await expectPinned(api);
+  });
+
+  it("restoring a target is a one-shot per mount (revalidation does not re-pin)", async () => {
+    const api = {} as HarnessApi;
+    function RevalidatingHarness() {
+      const [target, setTarget] = useState<string | null>("user:10");
+      useEffect(() => {
+        // Simulate a revalidation delivering a newer cursor value.
+        const timer = setTimeout(() => setTarget("user:12"), 200);
+        return () => clearTimeout(timer);
+      }, []);
+      return <Harness api={api} autoScroll restoreTarget={target} />;
+    }
+    await render(<RevalidatingHarness />);
+
+    // The mount restored user:10 (392px) and completed exactly once.
+    await expect.poll(() => api.viewport()?.scrollTop, { timeout: 2000 }).toBe(392);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(api.restoreCount()).toBe(1);
+    // The cursor change after revalidation must not re-scroll over the
+    // user's restored position.
+    expect(api.viewport()?.scrollTop).toBe(392);
   });
 });

@@ -1,12 +1,25 @@
 import { ScrollArea as Primitive } from "radix-ui";
 import { useCallback, useEffect, useRef, type UIEvent } from "react";
 
+const RESTORE_MARGIN = 48;
+const RESTORE_POLL_MS = 50;
+const MAX_RESTORE_ATTEMPTS = 40;
+
+function findMessageElement(root: HTMLElement, key: string): HTMLElement | null {
+  for (const el of root.querySelectorAll<HTMLElement>("[data-message-key]")) {
+    if (el.dataset.messageKey === key) return el;
+  }
+  return null;
+}
+
 export function ScrollArea({
   autoScroll,
   autoScrollOffset = 50,
   className,
   viewportClassName,
   onScroll,
+  restoreTarget,
+  onRestoreComplete,
   ref: forwardedRef,
   ...viewportProps
 }: Primitive.ScrollAreaViewportProps &
@@ -26,11 +39,27 @@ export function ScrollArea({
      * the bottom". Used when re-enabling following. Defaults to `50`.
      */
     autoScrollOffset?: number;
+    /**
+     * Message key to restore when the viewport mounts (a shared display
+     * anchor, not a pixel offset). While a target is present, the mount does
+     * not pin to the bottom; once the target element has rendered and been
+     * measured, the viewport scrolls it into view at the top with a small
+     * margin and `onRestoreComplete` fires. When the target never appears
+     * (compacted away, removed), it falls back to the bottom. `null`
+     * preserves the current initial bottom-pinning behavior.
+     */
+    restoreTarget?: string | null;
+    /** Called once per mount after restoration finished (or fell back). */
+    onRestoreComplete?: () => void;
   }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   // Whether we are currently following the bottom of the content.
   const followingRef = useRef(!!autoScroll);
+  // Whether restoration has finished on this mount: the initial bottom pin is
+  // skipped while the anchor is pending, and later effect re-runs (a changed
+  // cursor after revalidation) never re-pin over a restored position.
+  const restoredOnceRef = useRef(false);
   // Set on a user scroll input (wheel / touch / keyboard / scrollbar drag) so
   // that the following `scroll` event is attributed to the user rather than to
   // layout changes (async content growth or a viewport resize) that the browser
@@ -138,20 +167,79 @@ export function ScrollArea({
     if (!vp) {
       return;
     }
-    // Pin to the bottom immediately; content that has not been laid out yet
-    // (async markdown, fonts, images) re-pins via the ResizeObserver below,
-    // so the initial load always ends at the bottom.
-    scrollToBottom();
-    // Record the pinned position right away: the browser's own scroll event
-    // for the pin may be delayed or coalesced, and direction detection below
-    // needs an accurate previous position to tell "scrolled up" from a stale
-    // first event.
-    prevScrollTopRef.current = vp.scrollTop;
 
+    // "Restore" means the shared anchor message must be scrolled into view
+    // before normal auto-scroll behavior resumes; it only applies while the
+    // mount has not restored anything yet (a re-run with a changed cursor
+    // after revalidation must not re-pin over the user's position).
+    const restoring = restoreTarget != null && !restoredOnceRef.current;
+
+    const recordPosition = () => {
+      // Record the pinned position right away: the browser's own scroll event
+      // for the pin may be delayed or coalesced, and direction detection needs
+      // an accurate previous position to tell "scrolled up" from a stale first
+      // event.
+      prevScrollTopRef.current = vp.scrollTop;
+      followingRef.current = atBottom(vp);
+    };
+
+    const finish = (pinned: boolean) => {
+      restoredOnceRef.current = true;
+      if (pinned) {
+        // Pin to the bottom immediately; content that has not been laid out
+        // yet (async markdown, fonts, images) re-pins via the ResizeObserver
+        // below, so the initial load always ends at the bottom.
+        scrollToBottom();
+      }
+      recordPosition();
+      onRestoreComplete?.();
+    };
+
+    const restore = (): boolean => {
+      const target = restoreTarget != null ? findMessageElement(vp, restoreTarget) : null;
+      if (!target) return false;
+      // Scroll so the last read message's bottom edge stays visible just
+      // inside the top of the viewport: the unread content reads from the
+      // top, with a sliver of the read anchor above it for context. A restore
+      // target is an anchor, not an exact pixel location: the local client
+      // may pick this offset, but it must never be persisted. When the target
+      // is the newest message (the session is fully read), its bottom edge
+      // cannot fit above the bottom of the content, so the scroll clamps to
+      // the bottom naturally — no explicit branch is needed.
+      const top =
+        target.getBoundingClientRect().bottom -
+        vp.getBoundingClientRect().top +
+        vp.scrollTop -
+        RESTORE_MARGIN;
+      vp.scrollTo({ top: Math.max(0, top) });
+      finish(false);
+      return true;
+    };
+
+    if (!restoring) {
+      // First run without a saved anchor: pin to the bottom as before. Later
+      // re-runs (a changed cursor after revalidation) must never re-pin over
+      // the user's restored position.
+      if (!restoredOnceRef.current) finish(true);
+    }
+
+    // Content can render asynchronously (markdown, images, fonts), so poll
+    // for the anchor until it exists; fall back to the bottom when the saved
+    // key is absent (compacted away or removed) after a grace period.
+    let attempts = 0;
+    const restoreTimer = restoring
+      ? window.setInterval(() => {
+          if (restore() || ++attempts > MAX_RESTORE_ATTEMPTS) {
+            clearInterval(restoreTimer);
+            if (!restoredOnceRef.current) finish(true);
+          }
+        }, RESTORE_POLL_MS)
+      : undefined;
+
+    // Re-pin whenever content or the viewport itself resizes, but only once
+    // restoration has finished and while the user is still following.
     const resizeObserver = new ResizeObserver(() => {
-      // Re-pin whenever content or the viewport itself resizes, but only while
-      // the user is still following.
-      if (followingRef.current) {
+      if (restoredOnceRef.current && followingRef.current) {
         scrollToBottom();
       }
     });
@@ -163,8 +251,11 @@ export function ScrollArea({
       resizeObserver.observe(content);
     }
 
-    return () => resizeObserver.disconnect();
-  }, [autoScroll, scrollToBottom]);
+    return () => {
+      if (restoreTimer != null) clearInterval(restoreTimer);
+      resizeObserver.disconnect();
+    };
+  }, [autoScroll, restoreTarget, scrollToBottom, atBottom, onRestoreComplete]);
 
   return (
     <Primitive.Root

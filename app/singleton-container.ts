@@ -1,5 +1,6 @@
 import { AgentSessionContainer } from "./agent-session-container";
 import { ProjectRepository } from "./project-repository";
+import { SessionViewStateRepository } from "./session-view-state";
 import { WorktreeRepository } from "./worktree-repository";
 
 interface SingletonContainer {
@@ -9,8 +10,9 @@ interface SingletonContainer {
 }
 
 async function createContainer(): Promise<SingletonContainer> {
+  const sessionViewStateRepository = new SessionViewStateRepository();
   return {
-    agentSessionContainer: await AgentSessionContainer.create(),
+    agentSessionContainer: await AgentSessionContainer.create(sessionViewStateRepository),
     projectRepository: new ProjectRepository(),
     worktreeRepository: new WorktreeRepository(),
   };
