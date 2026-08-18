@@ -64,6 +64,8 @@ describe("GET /session/:id loader", () => {
           { type: "turn_start" },
           expect.objectContaining({ type: "message_start" }),
         ]);
+        expect(data.cwd).toBe(cwd);
+        expect(data.home).toBe(os.homedir());
       });
     } finally {
       rmSync(root, { recursive: true, force: true });

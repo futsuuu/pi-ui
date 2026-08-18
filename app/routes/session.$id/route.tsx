@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+
 import type { AgentMessage as SessionMessage } from "@earendil-works/pi-agent-core";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
@@ -15,6 +17,7 @@ import type { ActionInput, action } from "./action";
 import { AgentMessage } from "./agent-message";
 import { createChatState, chatReducer } from "./chat-reducer";
 import { useChatSync } from "./chat-sync";
+import { PathDisplayProvider } from "./path-display-context";
 import { PromptForm } from "./prompt-form";
 import { agentSessionContext } from "./router-contexts";
 import { ToolCallContext } from "./tool-call-context";
@@ -57,6 +60,7 @@ export async function loader({ context }: Route.LoaderArgs) {
   const turnEvents = context.get(agentSessionContainerContext).getTurnEvents(session.sessionId);
   return {
     cwd: session.sessionManager.getCwd(),
+    home: homedir(),
     state: {
       model: session.model
         ? {
@@ -82,7 +86,7 @@ export default function SessionRoute(props: Route.ServerComponentProps) {
 
 function Chat({
   params: { id: sessionId },
-  loaderData: { cwd, state: loadedState, messages: loadedMessages, turnEvents, models },
+  loaderData: { cwd, home, state: loadedState, messages: loadedMessages, turnEvents, models },
 }: Route.ServerComponentProps) {
   const { theme, toggleTheme } = useTheme();
 
@@ -280,17 +284,19 @@ function Chat({
               select a model from the dropdown below.
             </p>
           )}
-          <ToolCallContext value={chat.toolCallMap}>
-            {chat.loadedMessages.map((msg, index) => (
-              <AgentMessage key={index} {...msg} />
-            ))}
-            {chat.eventMessages.map((msg) => (
-              <AgentMessage key={msg._key} {...msg} />
-            ))}
-            {chat.pendingUserMessage && (
-              <AgentMessage key={chat.pendingUserMessage._key} {...chat.pendingUserMessage} />
-            )}
-          </ToolCallContext>
+          <PathDisplayProvider value={{ cwd, home }}>
+            <ToolCallContext value={chat.toolCallMap}>
+              {chat.loadedMessages.map((msg, index) => (
+                <AgentMessage key={index} {...msg} />
+              ))}
+              {chat.eventMessages.map((msg) => (
+                <AgentMessage key={msg._key} {...msg} />
+              ))}
+              {chat.pendingUserMessage && (
+                <AgentMessage key={chat.pendingUserMessage._key} {...chat.pendingUserMessage} />
+              )}
+            </ToolCallContext>
+          </PathDisplayProvider>
         </div>
       </ScrollArea>
 

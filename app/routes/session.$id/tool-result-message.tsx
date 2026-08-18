@@ -3,8 +3,10 @@ import type { EditToolDetails } from "@earendil-works/pi-coding-agent";
 import { CheckIcon, Loader2Icon, WrenchIcon, XIcon } from "lucide-react";
 
 import { ScrollArea } from "~/components/scroll-area";
+import { displayBashCommand, displayPath, displayToolArgs } from "~/path-display";
 
 import { DiffView } from "./diff-view";
+import { usePathDisplay } from "./path-display-context";
 import { useToolCall } from "./tool-call-context";
 
 export type Props = Pick<Data, "role" | "content" | "toolName" | "toolCallId" | "isError"> & {
@@ -22,6 +24,7 @@ export function ToolResultMessage({
   details,
 }: Props) {
   const toolCall = useToolCall(toolCallId ?? "");
+  const { cwd, home } = usePathDisplay();
 
   const text = content
     .filter((b): b is TextContent => b.type === "text")
@@ -29,20 +32,31 @@ export function ToolResultMessage({
     .join("\n");
 
   let summary: string | undefined;
-  const toolArgs = toolCall?.args;
-  if (toolArgs != null && typeof toolArgs === "object") {
-    const record = toolArgs as Record<string, unknown>;
+  // Raw values behind a shortened summary, kept for the hover title so the
+  // full path/command stays reachable when the display form is shortened.
+  let summaryFull: string | undefined;
+  const record =
+    toolCall?.args != null && typeof toolCall.args === "object"
+      ? (toolCall.args as Record<string, unknown>)
+      : undefined;
+  if (record) {
     switch (toolName) {
       case "read":
       case "write":
       case "edit": {
         const path = record.path;
-        if (typeof path === "string") summary = path;
+        if (typeof path === "string") {
+          summary = displayPath(path, cwd, home);
+          summaryFull = path;
+        }
         break;
       }
       case "bash": {
         const command = record.command;
-        if (typeof command === "string") summary = command;
+        if (typeof command === "string") {
+          summary = displayBashCommand(command, cwd, home);
+          summaryFull = command;
+        }
         break;
       }
       case "rg":
@@ -69,7 +83,7 @@ export function ToolResultMessage({
               {summary ? (
                 <span
                   className="font-mono truncate text-gray-600 dark:text-gray-300"
-                  title={summary}
+                  title={summaryFull ?? summary}
                 >
                   {summary}
                 </span>
@@ -89,12 +103,12 @@ export function ToolResultMessage({
                 <DiffView path={summary} diff={diff} />
               ) : (
                 <>
-                  {toolArgs != null && (
+                  {record && (
                     <ScrollArea
                       className="p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs text-gray-500 dark:text-gray-200"
                       viewportClassName="font-mono whitespace-pre"
                     >
-                      {JSON.stringify(toolArgs, null, 2)}
+                      {JSON.stringify(displayToolArgs(record, cwd, home), null, 2)}
                     </ScrollArea>
                   )}
                   <ScrollArea viewportClassName="font-mono whitespace-pre">{text}</ScrollArea>
