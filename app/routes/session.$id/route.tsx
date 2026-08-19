@@ -148,6 +148,9 @@ function Chat({
     }
   }
   const fetcher = useFetcher<typeof action>();
+  // Dedicated fetcher for display reports: a `mark_displayed` response (the
+  // read state) must never overwrite prompt/abort data on the shared fetcher.
+  const displayFetcher = useFetcher<typeof action>();
   const revalidator = useRevalidator();
 
   // The global /events stream: current info for this session (model,
@@ -236,7 +239,11 @@ function Chat({
   const messagesViewportRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const chatRef = useRef(chat);
-  chatRef.current = chat;
+  // Keep the observer callbacks reading the committed chat state, not a value
+  // from a discarded render.
+  useEffect(() => {
+    chatRef.current = chat;
+  }, [chat]);
   // The server cursor this client knows about. It is the floor for reports:
   // older messages are never submitted again, and a stale report can never
   // regress it.
@@ -266,8 +273,10 @@ function Chat({
   const pendingReportRef = useRef<string | null>(null);
   const reportTimerRef = useRef<number | null>(null);
   const observedElementsRef = useRef<Set<Element>>(new Set());
-  const fetcherRef = useRef(fetcher);
-  fetcherRef.current = fetcher;
+  const displayFetcherRef = useRef(displayFetcher);
+  useEffect(() => {
+    displayFetcherRef.current = displayFetcher;
+  }, [displayFetcher]);
 
   const bumpCursor = useCallback((candidate: string) => {
     // Only forward progress, in the client's own display order; the server
@@ -290,7 +299,7 @@ function Chat({
     // dropped instead of being submitted redundantly.
     const keys = chatDisplayKeys(chatRef.current);
     if (!isForwardKey(key, keys, cursorRef.current)) return;
-    void fetcherRef.current.submit(
+    void displayFetcherRef.current.submit(
       { type: "mark_displayed", messageKey: key } satisfies ActionInput,
       { method: "post", encType: "application/json" },
     );
@@ -331,16 +340,30 @@ function Chat({
       { root: viewport },
     );
     observerRef.current = observer;
-    const observeElements = () => {
-      for (const el of container.querySelectorAll<HTMLElement>("[data-message-key]")) {
+    const observeIn = (root: ParentNode) => {
+      for (const el of root.querySelectorAll<HTMLElement>("[data-message-key]")) {
         if (!observedElementsRef.current.has(el)) {
           observedElementsRef.current.add(el);
           observer.observe(el);
         }
       }
     };
-    observeElements();
-    const mutationObserver = new MutationObserver(observeElements);
+    observeIn(container);
+    // Only added nodes carry new message elements; scanning their subtrees
+    // avoids re-querying every rendered message on each streamed-token
+    // mutation (markdown re-renders mutate text deep inside the tree).
+    const mutationObserver = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof HTMLElement)) continue;
+          if (node.dataset.messageKey != null && !observedElementsRef.current.has(node)) {
+            observedElementsRef.current.add(node);
+            observer.observe(node);
+          }
+          observeIn(node);
+        }
+      }
+    });
     mutationObserver.observe(container, { childList: true, subtree: true });
     return () => {
       observerRef.current = null;
@@ -364,7 +387,7 @@ function Chat({
   }, [viewState, bumpCursor]);
 
   useEffect(() => {
-    const data = fetcher.data;
+    const data = displayFetcher.data;
     if (
       data &&
       typeof data === "object" &&
@@ -373,7 +396,7 @@ function Chat({
     ) {
       bumpCursor(data.lastDisplayedMessageKey);
     }
-  }, [fetcher.data, bumpCursor]);
+  }, [displayFetcher.data, bumpCursor]);
 
   const sendMessage = useCallback(
     (

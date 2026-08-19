@@ -41,7 +41,9 @@ export function ScrollArea({
     autoScrollOffset?: number;
     /**
      * Message key to restore when the viewport mounts (a shared display
-     * anchor, not a pixel offset). While a target is present, the mount does
+     * anchor, not a pixel offset). Requires `autoScroll`; without it no
+     * restoration runs and `onRestoreComplete` never fires. While a target
+     * is present, the mount does
      * not pin to the bottom; once the target element has rendered and been
      * measured, the viewport scrolls it into view at the top with a small
      * margin and `onRestoreComplete` fires. When the target never appears
@@ -60,6 +62,9 @@ export function ScrollArea({
   // skipped while the anchor is pending, and later effect re-runs (a changed
   // cursor after revalidation) never re-pin over a restored position.
   const restoredOnceRef = useRef(false);
+  // Poll attempts spent waiting for the restore anchor; kept outside the
+  // effect so a re-run (changed restoreTarget) does not reset the budget.
+  const restoreAttemptsRef = useRef(0);
   // Set on a user scroll input (wheel / touch / keyboard / scrollbar drag) so
   // that the following `scroll` event is attributed to the user rather than to
   // layout changes (async content growth or a viewport resize) that the browser
@@ -185,6 +190,7 @@ export function ScrollArea({
 
     const finish = (pinned: boolean) => {
       restoredOnceRef.current = true;
+      restoreAttemptsRef.current = 0;
       if (pinned) {
         // Pin to the bottom immediately; content that has not been laid out
         // yet (async markdown, fonts, images) re-pins via the ResizeObserver
@@ -226,10 +232,9 @@ export function ScrollArea({
     // Content can render asynchronously (markdown, images, fonts), so poll
     // for the anchor until it exists; fall back to the bottom when the saved
     // key is absent (compacted away or removed) after a grace period.
-    let attempts = 0;
     const restoreTimer = restoring
       ? window.setInterval(() => {
-          if (restore() || ++attempts > MAX_RESTORE_ATTEMPTS) {
+          if (restore() || ++restoreAttemptsRef.current > MAX_RESTORE_ATTEMPTS) {
             clearInterval(restoreTimer);
             if (!restoredOnceRef.current) finish(true);
           }
