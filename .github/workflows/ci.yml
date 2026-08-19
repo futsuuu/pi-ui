@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: read
+  # cache-nix-action needs it to purge old caches
+  actions: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -31,18 +33,29 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25
+      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c
         with:
-          # keep-derivations/keep-outputs let magic-nix-cache reuse
+          # keep-derivations/keep-outputs let cache-nix-action reuse
           # intermediate derivations, improving cache hit ratio.
-          extra-conf: |
-            accept-flake-config = true
+          nix_conf: |
             keep-derivations = true
             keep-outputs = true
-      - uses: DeterminateSystems/magic-nix-cache-action@908b263ff629f4cc17666315b7fd3ec127c6244d
+      - name: Restore and save Nix store
+        uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569
         with:
-          use-gha-cache: true
-          diagnostic-endpoint: ""
+          # matrix.system keeps caches separate per architecture/OS
+          primary-key: nix-${{ matrix.system }}-${{ hashFiles('**/*.nix', '**/flake.lock', '**/pnpm-lock.yaml', '**/package.json') }}
+          # fall back to the most recent cache of this system on key changes
+          restore-prefixes-first-match: nix-${{ matrix.system }}-
+          # let PRs reuse caches from the base/default branch
+          restore-prefixes-all-matches: nix-${{ matrix.system }}-
+          # collect garbage down to 1G before saving to keep the cache bounded
+          gc-max-store-size-linux: 1G
+          # purge old cache versions, keeping only the primary-key one
+          purge: true
+          purge-prefixes: nix-${{ matrix.system }}-
+          purge-created: 0
+          purge-primary-key: never
       - name: nix flake check
         run: nix flake check --keep-going
 
