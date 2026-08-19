@@ -43,7 +43,7 @@ export async function withAgentDir(agentDir: string, fn: () => Promise<void>): P
   }
 }
 
-function usage() {
+export function usage() {
   return {
     input: 0,
     output: 0,
@@ -76,4 +76,21 @@ export function createSession(cwd: string, sessionDir?: string): { id: string; f
     timestamp,
   });
   return { id: sm.getSessionId(), file: sm.getSessionFile()! };
+}
+
+/** A session with a fixed timeline (keys user:10, assistant:10); returns its id. */
+export function oneTurnSession(cwd: string): { id: string } {
+  const sm = SessionManager.create(cwd);
+  sm.appendMessage({ role: "user", content: "hello", timestamp: 10 });
+  sm.appendMessage({
+    role: "assistant",
+    content: [{ type: "text", text: "Hi there!" }],
+    api: "anthropic-messages",
+    provider: "anthropic",
+    model: "test-model",
+    usage: usage(),
+    stopReason: "stop",
+    timestamp: 10,
+  });
+  return { id: sm.getSessionId() };
 }
