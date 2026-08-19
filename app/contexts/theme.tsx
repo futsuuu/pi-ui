@@ -34,9 +34,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // On mount, read the saved preference and subscribe to the OS color scheme
   // so a "system" theme tracks changes while the app is open.
   useLayoutEffect(() => {
-    // Only explicit light/dark choices are honored; anything else (saved
-    // "system", no value, or an unknown value) stays on the "system" default.
-    const stored = localStorage.getItem("theme") as Theme | null;
+    // Storage access is best effort: some environments (e.g. private browsing)
+    // throw on access, so fall back to the system default when it fails.
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem("theme");
+    } catch {
+      // No stored preference; stay on the "system" default.
+    }
+    // Only explicit light/dark choices are honored; anything else (a saved
+    // "system" or an unknown value) stays on the "system" default.
     if (stored === "light" || stored === "dark") {
       setThemeState(stored);
     }
@@ -59,7 +66,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setTheme = useCallback((t: Theme) => {
     setThemeState(t);
-    localStorage.setItem("theme", t);
+    try {
+      localStorage.setItem("theme", t);
+    } catch {
+      // Persistence is best effort; the in-memory selection still applies.
+    }
   }, []);
 
   return <ThemeContext value={{ theme, resolvedTheme, setTheme }}>{children}</ThemeContext>;

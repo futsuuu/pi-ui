@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
-import { ThemeProvider, useTheme } from "./theme";
+import { ThemeProvider, ThemeScript, useTheme } from "./theme";
 
 /** Stubs matchMedia and exposes a hook to flip the OS preference. */
 function installSystemDark(initialMatches: boolean) {
@@ -139,5 +139,55 @@ describe("ThemeProvider", () => {
     await screen.getByRole("button", { name: "set system" }).click();
     expect(localStorage.getItem("theme")).toBe("system");
     await expect.element(screen.getByTestId("resolved")).toHaveTextContent("dark");
+  });
+});
+
+describe("ThemeScript", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    document.documentElement.className = "";
+    vi.unstubAllGlobals();
+    document.body.innerHTML = "";
+  });
+
+  /** Renders ThemeScript and returns a runner for its generated script. */
+  async function renderScript() {
+    const screen = await render(<ThemeScript />);
+    // Restrict to the render container: the page carries vitest's own scripts.
+    const script = screen.container.querySelector("script");
+    expect(script).not.toBeNull();
+    return () => {
+      const runner = document.createElement("script");
+      runner.textContent = script!.textContent ?? "";
+      document.body.appendChild(runner);
+    };
+  }
+
+  it("treats unknown saved values as system", async () => {
+    const system = installSystemDark(false);
+    localStorage.setItem("theme", "blue");
+    const run = await renderScript();
+
+    run();
+    expect(document.documentElement.className).toBe("");
+
+    document.documentElement.className = "";
+    system.setMatches(true);
+    run();
+    expect(document.documentElement.className).toBe("dark");
+  });
+
+  it("honors explicit light/dark over the OS preference", async () => {
+    installSystemDark(true);
+    localStorage.setItem("theme", "light");
+    const run = await renderScript();
+
+    run();
+    expect(document.documentElement.className).toBe("");
+
+    localStorage.setItem("theme", "dark");
+    document.documentElement.className = "";
+    run();
+    expect(document.documentElement.className).toBe("dark");
   });
 });
