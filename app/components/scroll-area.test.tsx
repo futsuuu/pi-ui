@@ -47,12 +47,14 @@ function Harness({
   const [lines, setLines] = useState(initialLines);
   const [containerHeight, setContainerHeight] = useState(startHeight);
   const [restoreCount, setRestoreCount] = useState(0);
+  const apiRef = useRef(api);
 
   useLayoutEffect(() => {
-    api.viewport = () => viewportRef.current;
-    api.addLines = (count) => setLines((current) => current + count);
-    api.setContainerHeight = setContainerHeight;
-    api.scrollTo = (top) => {
+    const target = apiRef.current;
+    target.viewport = () => viewportRef.current;
+    target.addLines = (count) => setLines((current) => current + count);
+    target.setContainerHeight = setContainerHeight;
+    target.scrollTo = (top) => {
       const vp = viewportRef.current;
       if (!vp) return;
       // Wheel is the first event of a user scroll gesture (before the scroll
@@ -62,16 +64,16 @@ function Harness({
       vp.dispatchEvent(new WheelEvent("wheel", { deltaY, bubbles: true }));
       vp.scrollTop = top;
     };
-    api.dispatchScroll = () => {
+    target.dispatchScroll = () => {
       viewportRef.current?.dispatchEvent(new Event("scroll", { bubbles: true }));
     };
-    api.distanceFromBottom = () => {
+    target.distanceFromBottom = () => {
       const vp = viewportRef.current;
       if (!vp) return Infinity;
       return vp.scrollHeight - vp.scrollTop - vp.clientHeight;
     };
-    api.restoreCount = () => restoreCount;
-  });
+    target.restoreCount = () => restoreCount;
+  }, [restoreCount]);
 
   return (
     <div style={{ height: containerHeight }}>
