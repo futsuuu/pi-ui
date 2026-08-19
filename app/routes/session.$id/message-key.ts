@@ -37,13 +37,19 @@ function userDisplayText(content: UserMessage["content"]): string {
     .join("\n");
 }
 
-function assistantRenderable(message: AssistantMessage): boolean {
-  const text = message.content
+/** True when an assistant message renders any content (text, thinking, or an error). */
+function assistantContentPresent(message: {
+  content: unknown;
+  stopReason?: AssistantMessage["stopReason"];
+  errorMessage?: string;
+}): boolean {
+  const content = (message.content ?? []) as AssistantMessage["content"];
+  const text = content
     .filter((block): block is Extract<typeof block, { type: "text" }> => block.type === "text")
     .map((block) => block.text)
     .join("")
     .trim();
-  const thinking = message.content
+  const thinking = content
     .filter(
       (block): block is Extract<typeof block, { type: "thinking" }> => block.type === "thinking",
     )
@@ -52,7 +58,11 @@ function assistantRenderable(message: AssistantMessage): boolean {
     .trim();
   const isError =
     message.stopReason === "error" || message.stopReason === "aborted" || !!message.errorMessage;
-  return !!text || !!thinking || isError || message.stopReason === undefined;
+  return !!text || !!thinking || isError;
+}
+
+function assistantRenderable(message: AssistantMessage): boolean {
+  return assistantContentPresent(message) || message.stopReason === undefined;
 }
 
 /**
@@ -110,22 +120,13 @@ export function entryKeyOf(entry: DisplayEntry): string | null {
   // become a read anchor until message_end settles it.
   const stopReason = entry.stopReason as AssistantMessage["stopReason"] | undefined;
   if (stopReason === undefined) return null;
-  const content = (entry.content ?? []) as AssistantMessage["content"];
-  const text = content
-    .filter((block): block is Extract<typeof block, { type: "text" }> => block.type === "text")
-    .map((block) => block.text)
-    .join("")
-    .trim();
-  const thinking = content
-    .filter(
-      (block): block is Extract<typeof block, { type: "thinking" }> => block.type === "thinking",
-    )
-    .map((block) => block.thinking)
-    .join("")
-    .trim();
-  const isError = stopReason === "error" || stopReason === "aborted" || !!entry.errorMessage;
-  if (!text && !thinking && !isError) return null;
-  return messageKey("assistant", entry.timestamp);
+  return assistantContentPresent({
+    content: entry.content,
+    stopReason,
+    errorMessage: entry.errorMessage,
+  })
+    ? messageKey("assistant", entry.timestamp)
+    : null;
 }
 
 export function sameIdentity(
