@@ -34,8 +34,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // On mount, read the saved preference and subscribe to the OS color scheme
   // so a "system" theme tracks changes while the app is open.
   useLayoutEffect(() => {
+    // Only explicit light/dark choices are honored; anything else (saved
+    // "system", no value, or an unknown value) stays on the "system" default.
     const stored = localStorage.getItem("theme") as Theme | null;
-    if (stored === "light" || stored === "dark" || stored === "system") {
+    if (stored === "light" || stored === "dark") {
       setThemeState(stored);
     }
     const mql = window.matchMedia("(prefers-color-scheme: dark)");
@@ -67,7 +69,7 @@ export function ThemeScript() {
   return (
     <script
       dangerouslySetInnerHTML={{
-        __html: `(function(){try{var t=localStorage.getItem('theme');var dark=t==='dark'||((t==='system'||t===null)&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.className=dark?'dark':''}catch(e){}})()`,
+        __html: `(function(){try{var t=localStorage.getItem('theme');var dark=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.className=dark?'dark':''}catch(e){}})()`,
       }}
     />
   );
