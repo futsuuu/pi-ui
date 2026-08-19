@@ -95,6 +95,17 @@ describe("ThemeProvider", () => {
     expect(document.documentElement.className).toBe("");
   });
 
+  it("treats unknown saved values as system", async () => {
+    localStorage.setItem("theme", "blue");
+    const { screen, system } = await renderProvider(false);
+    await expect.element(screen.getByTestId("theme")).toHaveTextContent("system");
+    await expect.element(screen.getByTestId("resolved")).toHaveTextContent("light");
+
+    // Still follows the OS, proving it resolved as system rather than light.
+    system.setMatches(true);
+    await expect.element(screen.getByTestId("resolved")).toHaveTextContent("dark");
+  });
+
   it("restores a saved theme on mount", async () => {
     localStorage.setItem("theme", "dark");
     const { screen } = await renderProvider(false);
