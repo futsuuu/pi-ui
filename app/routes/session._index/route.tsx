@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import {
+  Dot,
   GitBranch,
   Layers,
   Loader2Icon,
@@ -402,13 +403,13 @@ export default function Sessions() {
                           {session.firstMessage || "Untitled Session"}
                         </span>
                         {!session.isRead && !session.isStreaming && (
-                          <span
-                            className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"
-                            title="Unread"
+                          <Dot
+                            aria-label="Unread"
+                            className="w-5 h-5 fill-current text-blue-500 flex-shrink-0"
                           />
                         )}
                         {session.isStreaming && (
-                          <Loader2Icon className="w-4 h-4 text-blue-500 animate-spin flex-shrink-0" />
+                          <Loader2Icon className="w-5 h-5 text-blue-500 animate-spin flex-shrink-0" />
                         )}
                       </p>
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1.5 flex-wrap">
