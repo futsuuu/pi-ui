@@ -327,19 +327,24 @@ describe("GET /events", () => {
         const first = new SseReader(await callLoader(container));
         const second = new SseReader(await callLoader(container));
         activeReader = null; // cleaned up manually
-        await first.read(1);
-        await second.read(1);
+        try {
+          await first.read(1);
+          await second.read(1);
 
-        await container.markMessageDisplayed(id, "user:10");
-        const [a] = await first.read(1);
-        const [b] = await second.read(1);
-        expect(a).toEqual(b);
-        expect(a).toMatchObject({
-          kind: "data",
-          value: { type: "internal:view_state", sessionId: id },
-        });
-        await first.cancel();
-        await second.cancel();
+          await container.markMessageDisplayed(id, "user:10");
+          const [a] = await first.read(1);
+          const [b] = await second.read(1);
+          expect(a).toEqual(b);
+          expect(a).toMatchObject({
+            kind: "data",
+            value: { type: "internal:view_state", sessionId: id },
+          });
+        } finally {
+          // Cancel both readers even when an assertion fails so the keep-alive
+          // timers cannot leak into later tests.
+          await first.cancel();
+          await second.cancel();
+        }
       });
     } finally {
       rmSync(root, { recursive: true, force: true });
