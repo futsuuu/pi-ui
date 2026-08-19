@@ -354,6 +354,16 @@ function Chat({
     // mutation (markdown re-renders mutate text deep inside the tree).
     const mutationObserver = new MutationObserver((records) => {
       for (const record of records) {
+        for (const node of record.removedNodes) {
+          if (!(node instanceof HTMLElement)) continue;
+          // A removed element may be a message wrapper itself or contain
+          // tracked descendants (a loader reset replaces the whole list):
+          // unobserve each and drop it from the tracked set so stale elements
+          // are neither retained by the observer nor re-observed later.
+          for (const el of [node, ...node.querySelectorAll<HTMLElement>("[data-message-key]")]) {
+            if (observedElementsRef.current.delete(el)) observer.unobserve(el);
+          }
+        }
         for (const node of record.addedNodes) {
           if (!(node instanceof HTMLElement)) continue;
           if (node.dataset.messageKey != null && !observedElementsRef.current.has(node)) {
