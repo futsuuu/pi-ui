@@ -1,16 +1,25 @@
-import { createContext, useContext, useState, useLayoutEffect, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useState,
+  type ReactNode,
+} from "react";
 
-type Theme = "light" | "dark";
+export type Theme = "light" | "dark" | "system";
+export type ResolvedTheme = "light" | "dark";
 
 interface ThemeContextType {
   theme: Theme;
-  toggleTheme: () => void;
+  /** The effective theme after resolving "system" against the OS preference. */
+  resolvedTheme: ResolvedTheme;
   setTheme: (theme: Theme) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType>({
-  theme: "dark",
-  toggleTheme: () => {},
+  theme: "system",
+  resolvedTheme: "dark",
   setTheme: () => {},
 });
 
@@ -19,41 +28,46 @@ export function useTheme() {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("dark");
+  const [theme, setThemeState] = useState<Theme>("system");
+  const [systemDark, setSystemDark] = useState(false);
 
-  // On mount, read saved preference and apply it
+  // On mount, read the saved preference and subscribe to the OS color scheme
+  // so a "system" theme tracks changes while the app is open.
   useLayoutEffect(() => {
     const stored = localStorage.getItem("theme") as Theme | null;
-    const resolved: Theme = stored === "light" || stored === "dark" ? stored : "dark";
-    setThemeState(resolved);
-    applyTheme(resolved);
+    if (stored === "light" || stored === "dark" || stored === "system") {
+      setThemeState(stored);
+    }
+    const mql = window.matchMedia("(prefers-color-scheme: dark)");
+    const onSystemChange = () => setSystemDark(mql.matches);
+    onSystemChange();
+    mql.addEventListener("change", onSystemChange);
+    return () => mql.removeEventListener("change", onSystemChange);
   }, []);
 
-  function applyTheme(t: Theme) {
-    // Overwrite the class list instead of toggling, so no other code
-    // can interfere.  The inline <script> in root.tsx sets the initial
-    // class before React hydrates; this keeps it in sync afterwards.
-    document.documentElement.className = t === "dark" ? "dark" : "";
-  }
+  const resolvedTheme: ResolvedTheme = theme === "system" ? (systemDark ? "dark" : "light") : theme;
 
-  const setTheme = (t: Theme) => {
+  // Apply the resolved theme to the document. Overwrite the class list
+  // instead of toggling, so no other code can interfere. The inline <script>
+  // in root.tsx sets the initial class before React hydrates; this keeps it
+  // in sync afterwards.
+  useLayoutEffect(() => {
+    document.documentElement.className = resolvedTheme === "dark" ? "dark" : "";
+  }, [resolvedTheme]);
+
+  const setTheme = useCallback((t: Theme) => {
     setThemeState(t);
     localStorage.setItem("theme", t);
-    applyTheme(t);
-  };
+  }, []);
 
-  const toggleTheme = () => {
-    setTheme(theme === "dark" ? "light" : "dark");
-  };
-
-  return <ThemeContext value={{ theme, toggleTheme, setTheme }}>{children}</ThemeContext>;
+  return <ThemeContext value={{ theme, resolvedTheme, setTheme }}>{children}</ThemeContext>;
 }
 
 export function ThemeScript() {
   return (
     <script
       dangerouslySetInnerHTML={{
-        __html: `(function(){try{var t=localStorage.getItem('theme');document.documentElement.className=t==='light'?'':'dark'}catch(e){}})()`,
+        __html: `(function(){try{var t=localStorage.getItem('theme');var dark=t==='dark'||((t==='system'||t===null)&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.className=dark?'dark':''}catch(e){}})()`,
       }}
     />
   );

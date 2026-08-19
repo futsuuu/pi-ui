@@ -6,10 +6,9 @@ import {
   Layers,
   Loader2Icon,
   MessageCirclePlus,
-  Moon,
   MoreVertical,
   Plus,
-  Sun,
+  Settings,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { data, Link, redirect, useFetcher, useLoaderData } from "react-router";
@@ -17,7 +16,6 @@ import * as v from "valibot";
 
 import { ActionsMenu, DeleteMenuItem } from "~/components/actions-menu";
 import { useSessionEventsContext } from "~/contexts/session-events";
-import { useTheme } from "~/contexts/theme";
 import {
   agentSessionContainerContext,
   projectRepositoryContext,
@@ -186,7 +184,6 @@ export async function loader({ request, context }: Route.LoaderArgs) {
  * Renders the session selection page with worktree management and session actions.
  */
 export default function Sessions() {
-  const { theme, toggleTheme } = useTheme();
   const { worktrees, cwd } = useLoaderData<typeof loader>();
   const { ready } = useSessionEventsContext();
   const fetcher = useFetcher<typeof action>();
@@ -292,12 +289,13 @@ export default function Sessions() {
           <Layers className="w-5 h-5 text-blue-500" />
           <span className="font-semibold text-gray-900 dark:text-gray-100">Select Session</span>
           <div className="ml-auto flex items-center gap-2">
-            <button
-              onClick={toggleTheme}
+            <Link
+              to="/settings"
+              aria-label="Settings"
               className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-500 dark:text-gray-400"
             >
-              {theme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-            </button>
+              <Settings className="w-5 h-5" />
+            </Link>
           </div>
         </div>
       </div>
