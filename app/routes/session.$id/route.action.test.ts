@@ -128,6 +128,10 @@ describe("POST /session/:id mark_displayed", () => {
         await expect(
           callAction(context, { type: "mark_displayed", messageKey: "" }),
         ).rejects.toThrow();
+        // A trailing suffix must not match the anchored alternation.
+        await expect(
+          callAction(context, { type: "mark_displayed", messageKey: "user:10x" }),
+        ).rejects.toThrow();
       });
     } finally {
       rmSync(root, { recursive: true, force: true });

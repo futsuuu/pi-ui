@@ -15,7 +15,7 @@ const ActionSchema = v.variant("type", [
     messageKey: v.pipe(
       v.string(),
       v.minLength(1),
-      v.regex(/^(?:user|assistant):\d+|^toolResult:.+$/),
+      v.regex(/^(?:(?:user|assistant):\d+|toolResult:.+)$/),
     ),
   }),
   v.object({
