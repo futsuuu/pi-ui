@@ -27,7 +27,12 @@ export const realFactory: CreateAgentSessionRuntimeFactory = async ({
   return { ...result, services, diagnostics: services.diagnostics };
 };
 
-/** Redirect the session storage dir so tests never touch the real ~/.pi/agent. */
+/**
+ * Runs an asynchronous callback with the agent directory temporarily configured.
+ *
+ * @param agentDir - The directory to use for agent session storage.
+ * @param fn - The callback to run while the directory is configured.
+ */
 export async function withAgentDir(agentDir: string, fn: () => Promise<void>): Promise<void> {
   const previous = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -43,6 +48,11 @@ export async function withAgentDir(agentDir: string, fn: () => Promise<void>): P
   }
 }
 
+/**
+ * Creates an empty token usage and cost summary.
+ *
+ * @returns A token usage and cost object with all values set to `0`
+ */
 export function usage() {
   return {
     input: 0,
@@ -78,7 +88,12 @@ export function createSession(cwd: string, sessionDir?: string): { id: string; f
   return { id: sm.getSessionId(), file: sm.getSessionFile()! };
 }
 
-/** A session with a fixed timeline (keys user:10, assistant:10); returns its id. */
+/**
+ * Creates a persisted session containing one user message and one assistant response.
+ *
+ * @param cwd - The working directory associated with the session
+ * @returns An object containing the session ID
+ */
 export function oneTurnSession(cwd: string): { id: string } {
   const sm = SessionManager.create(cwd);
   sm.appendMessage({ role: "user", content: "hello", timestamp: 10 });

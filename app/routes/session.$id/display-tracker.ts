@@ -11,10 +11,12 @@ export interface DisplayObservation {
 }
 
 /**
- * The key to report from one IntersectionObserver callback: the greatest
- * currently-intersecting key in the rendered message order that is forward
- * of the local cursor. Returns null when nothing visible is worth reporting
- * (nothing intersected, or everything visible is at or behind the cursor).
+ * Selects the newest visible message key that advances the reporting cursor.
+ *
+ * @param observations - Message visibility observations from the display.
+ * @param keys - Message keys in rendered order.
+ * @param cursor - Previously reported message key, if available.
+ * @returns The newest eligible message key, or `null` when no valid visible key advances the cursor.
  */
 export function selectReportedKey(
   observations: readonly DisplayObservation[],
@@ -42,9 +44,12 @@ export function selectReportedKey(
 }
 
 /**
- * True when `candidate` is newer than `cursor` in the current message order.
- * Used at flush time so a report that became stale while the debounce timer
- * was pending is dropped instead of submitted redundantly.
+ * Determines whether a candidate message key advances the reporting cursor.
+ *
+ * @param candidate - The message key to evaluate.
+ * @param keys - Message keys in rendered order.
+ * @param cursor - The previously reported message key.
+ * @returns `true` if the candidate is known and follows the cursor, or if the cursor is missing or unknown; `false` otherwise.
  */
 export function isForwardKey(
   candidate: string | null,

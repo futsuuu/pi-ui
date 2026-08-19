@@ -54,7 +54,11 @@ export function useSessionList(worktrees: readonly Worktree[], cwd: string): Ses
   return useSyncExternalStore(subscribeStore, getSnapshot, () => EMPTY_SESSION_LIST);
 }
 
-/** True when two lists render identically (same order and displayed fields). */
+/**
+ * Determines whether two session lists have the same order and displayed session fields.
+ *
+ * @returns `true` if both lists render identically, `false` otherwise.
+ */
 function sameSessionList(a: readonly SessionListItem[], b: readonly SessionListItem[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {

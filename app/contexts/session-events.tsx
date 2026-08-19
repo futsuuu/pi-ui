@@ -41,9 +41,10 @@ interface SessionEventStore {
 }
 
 /**
- * Single multiplexed `/events` SSE connection carrying events and current
- * info for all sessions. Reconnects after 3s on error; on reconnect the
- * server re-sends `internal:init`, which resets the store.
+ * Provides session event data and subscriptions through a shared `/events` SSE connection.
+ *
+ * The connection reconnects after errors, and each reconnect reinitializes the session store
+ * when the server sends `internal:init`.
  */
 export function SessionEventProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false);
@@ -181,7 +182,13 @@ export function useSessionEventsContext(): SessionEventsContextValue {
   return ctx;
 }
 
-/** True when two infos carry identical user-visible state. */
+/**
+ * Determines whether two session info objects have identical user-visible state.
+ *
+ * @param a - The first session info object
+ * @param b - The second session info object
+ * @returns `true` if both objects have identical user-visible state, `false` otherwise.
+ */
 function sameSessionInfo(a: SessionInfo, b: SessionInfo): boolean {
   return (
     a.cwd === b.cwd &&
@@ -204,6 +211,12 @@ function sameSessionInfo(a: SessionInfo, b: SessionInfo): boolean {
   );
 }
 
+/**
+ * Extracts the read state from session information.
+ *
+ * @param info - The session information, or `null` when no session exists
+ * @returns The session's read state, or `null` when session information is unavailable
+ */
 function viewStateOf(info: SessionInfo | null): SessionReadState | null {
   if (!info) return null;
   return {
@@ -214,9 +227,10 @@ function viewStateOf(info: SessionInfo | null): SessionReadState | null {
 }
 
 /**
- * The chat page's view of the stream for one session: its current info (only
- * re-renders when this session's info changes), its read state, and an event
- * subscription.
+ * Provides the current session information, read state, connection status, and event subscription for a session.
+ *
+ * @param sessionId - The session identifier
+ * @returns The session information, read state, connection status, and session event subscription
  */
 export function useSessionStream(sessionId: string) {
   const ctx = useSessionEventsContext();
