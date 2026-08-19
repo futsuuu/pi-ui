@@ -17,6 +17,11 @@ export type SseEvent =
     }
   | { type: "internal:deleted"; sessionId: string };
 
+/**
+ * Creates an SSE response that streams agent-session events, view-state updates, and session deletions.
+ *
+ * @returns A response containing the global event stream.
+ */
 export async function loader({ context }: Route.LoaderArgs) {
   const container = context.get(agentSessionContainerContext);
 

@@ -182,6 +182,9 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   };
 }
 
+/**
+ * Renders the session selection page with worktree management and session actions.
+ */
 export default function Sessions() {
   const { theme, toggleTheme } = useTheme();
   const { worktrees, cwd } = useLoaderData<typeof loader>();

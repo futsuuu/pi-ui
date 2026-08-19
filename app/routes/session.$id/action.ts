@@ -39,6 +39,11 @@ const ActionSchema = v.variant("type", [
 
 export type ActionInput = v.InferInput<typeof ActionSchema>;
 
+/**
+ * Processes an abort, message-display, prompt, steering, or follow-up action for a session.
+ *
+ * @returns The updated message read state for a `mark_displayed` action; otherwise `undefined`.
+ */
 export async function action({ request, context }: Route.ActionArgs) {
   const body = await request.json();
   const action = v.parse(ActionSchema, body);

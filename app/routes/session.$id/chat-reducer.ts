@@ -69,42 +69,15 @@ export type ChatAction =
     };
 
 /**
- * Reducer for the session chat UI, compatible with `React.useReducer`.
+ * Reduces chat actions into immutable session state for the chat UI.
  *
- * It folds `ChatAction`s into the chat state that the Chat route renders on
- * top of the loader data:
+ * Handles streamed assistant and tool messages, optimistic user messages,
+ * lifecycle events, session resets, and aborted runs. Unchanged or unsupported
+ * actions return the existing state reference.
  *
- * ```ts
- * const [chat, dispatch] = useReducer(chatReducer, loadedMessages, createChatState);
- * dispatch(event); // per SSE event
- * ```
- *
- * Event ordering (see the agent loop in `@earendil-works/pi-agent-core`):
- * - A run starts with `agent_start` → `turn_start`, then `message_start` /
- *   `message_end` for the user prompt, then for each assistant message
- *   `message_start` (empty partial) → `message_update` (delta snapshots) →
- *   `message_end` (final message with content + stopReason + errorMessage).
- * - Tool calls stream as `tool_execution_start` → `tool_execution_update*` →
- *   `tool_execution_end`, followed by `message_start`/`message_end` for the
- *   toolResult message, then `turn_end`. The loop repeats with `turn_start`
- *   for further turns and finally emits `agent_end` (with the run's messages)
- *   and, once everything has settled, `agent_settled`.
- *
- * Design notes:
- * - The user's own message is held optimistically in `pendingUserMessage`;
- *   the SSE `message_start` (user) event promotes it into `eventMessages`, and
- *   every connected clients can see the same conversation.
- * - Tool result entries are created at `tool_execution_start` (so the running
- *   tool is visible immediately); the later `message_start`/`message_end` for
- *   the toolResult message must therefore not append anything.
- * - Every `message_update` carries the authoritative accumulated partial
- *   message, so the last assistant entry's content is replaced wholesale
- *   instead of appending deltas. Providers put a placeholder
- *   `stopReason: "stop"` on in-flight partials, so updates only touch the
- *   content and the entry keeps streaming (`stopReason === undefined`) until
- *   `message_end` applies the final content, stopReason and errorMessage.
- * - The reducer is pure and immutable: unhandled events return the same state
- *   reference, which lets `useReducer` bail out of re-rendering.
+ * @param state - The current chat session state
+ * @param action - The chat event or state-management action to apply
+ * @returns The updated chat session state
  */
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
@@ -397,13 +370,21 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   }
 }
 
+/**
+ * Creates a stable identity key for a message entry.
+ *
+ * @param entry - The message entry whose role and timestamp define its identity
+ * @returns The entry's identity key
+ */
 function entryIdentity(entry: { role: string; timestamp?: number }): string {
   return messageKey(entry.role, entry.timestamp);
 }
 
 /**
- * Ordered, renderable display keys of the current chat state, mirroring the
- * server's projection so the client can compare message positions with it.
+ * Builds the ordered, deduplicated display keys for the current chat state.
+ *
+ * @param chat - The chat state whose loaded, live, and pending messages are projected
+ * @returns The display keys in render order
  */
 export function chatDisplayKeys(chat: ChatState): string[] {
   const keys: string[] = [];
@@ -448,10 +429,10 @@ function assistantEntry(message: AssistantMessage): {
 }
 
 /**
- * Apply the final/partial assistant message to the entry with the same
- * identity; creates the entry when its `message_start` was lost (e.g. emitted
- * inside a loss window). `message_end` is the only event that applies the
- * real stopReason/errorMessage.
+ * Applies an assistant message to its matching entry or appends it when no matching entry exists.
+ *
+ * @param message - The assistant message to apply.
+ * @returns The chat state containing the updated assistant entry.
  */
 function replaceAssistantByIdentity(state: ChatState, message: AssistantMessage): ChatState {
   const identity = messageKey("assistant", message.timestamp);
@@ -473,17 +454,11 @@ function replaceAssistantByIdentity(state: ChatState, message: AssistantMessage)
 }
 
 /**
- * Apply the accumulated partial content to the streaming assistant message
- * with the same identity; creates the entry when its `message_start` was
- * lost. The stopReason is not touched, so the entry keeps streaming until
- * `message_end`.
+ * Updates the content of a streaming assistant message and adds it when its start event is missing.
  *
- * TODO: the installed @earendil-works/pi-* packages (0.81.1) put a
- * placeholder `stopReason: "stop"` on in-flight partials, so only the content
- * is applied here. If a newer version uses `"pending"` as the in-flight
- * sentinel instead, re-add the `"pending"` → `undefined` normalization in
- * `assistantEntry` (message_update can then replace the whole entry again)
- * and update the test fixtures from "stop" to "pending" for partials.
+ * @param state - The current chat state
+ * @param message - The assistant message containing the accumulated content
+ * @returns The updated chat state with the assistant content applied
  */
 function updateAssistantContent(state: ChatState, message: AssistantMessage): ChatState {
   const identity = messageKey("assistant", message.timestamp);
@@ -591,6 +566,15 @@ function seedTurnEvents(state: ChatState, turnEvents: readonly AgentSessionEvent
   return next;
 }
 
+/**
+ * Applies a buffered agent event during chat-state restoration.
+ *
+ * @param state - The current chat state
+ * @param event - The buffered event to replay
+ * @param keptIdentities - Message identities retained from the live state
+ * @param keptTools - Tool call IDs retained from the live state
+ * @returns The updated chat state
+ */
 function applySeedEvent(
   state: ChatState,
   event: AgentSessionEvent,

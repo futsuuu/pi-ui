@@ -5,6 +5,13 @@ const RESTORE_MARGIN = 48;
 const RESTORE_POLL_MS = 50;
 const MAX_RESTORE_ATTEMPTS = 40;
 
+/**
+ * Finds a descendant element identified by a message key.
+ *
+ * @param root - The element whose descendants to search
+ * @param key - The message key to match
+ * @returns The matching element, or `null` if no descendant has the key
+ */
 function findMessageElement(root: HTMLElement, key: string): HTMLElement | null {
   for (const el of root.querySelectorAll<HTMLElement>("[data-message-key]")) {
     if (el.dataset.messageKey === key) return el;
@@ -12,6 +19,15 @@ function findMessageElement(root: HTMLElement, key: string): HTMLElement | null 
   return null;
 }
 
+/**
+ * Renders a scrollable viewport with optional bottom-following and position restoration.
+ *
+ * @param autoScroll - Enables automatic following of newly added content.
+ * @param autoScrollOffset - Distance from the bottom that re-enables automatic following.
+ * @param restoreTarget - Message key used to restore the initial viewport position.
+ * @param onRestoreComplete - Called after restoration completes or falls back to the bottom.
+ * @returns A configured scroll area with vertical and horizontal scrollbars.
+ */
 export function ScrollArea({
   autoScroll,
   autoScrollOffset = 50,
