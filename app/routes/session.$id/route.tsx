@@ -3,13 +3,12 @@ import { homedir } from "node:os";
 import type { AgentMessage as SessionMessage } from "@earendil-works/pi-agent-core";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
-import { Layers, Moon, Plus, Sun } from "lucide-react";
+import { Layers, Plus, Settings } from "lucide-react";
 import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { data, Link, useFetcher, useRevalidator } from "react-router";
 
 import { ScrollArea } from "~/components/scroll-area";
 import { useSessionStream } from "~/contexts/session-events";
-import { useTheme } from "~/contexts/theme";
 import { agentSessionContainerContext } from "~/router-contexts";
 
 import type { Route } from "./+types/route";
@@ -137,8 +136,6 @@ function Chat({
     viewState: loadedViewState,
   },
 }: Route.ServerComponentProps) {
-  const { theme, toggleTheme } = useTheme();
-
   const [state, setState] = useState(loadedState);
   const [chat, dispatch] = useReducer(chatReducer, null, () =>
     // Seed the loader's turn events on the first render: the in-flight
@@ -473,13 +470,14 @@ function Chat({
               {connected ? "Connected" : "Disconnected"}
             </span>
           </div>
-          <div className="ml-auto">
-            <button
-              onClick={toggleTheme}
+          <div className="ml-auto flex items-center gap-2">
+            <Link
+              to="/settings"
+              aria-label="Settings"
               className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-500 dark:text-gray-400"
             >
-              {theme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-            </button>
+              <Settings className="w-5 h-5" />
+            </Link>
           </div>
         </div>
         {/* Secondary toolbar */}

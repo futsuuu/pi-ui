@@ -2,10 +2,9 @@ import { readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
-import { Folder, ArrowLeft, File, Layers, Sun, Moon, ArrowRight } from "lucide-react";
+import { Folder, ArrowLeft, File, Layers, Settings, ArrowRight } from "lucide-react";
 import { Link, useLoaderData } from "react-router";
 
-import { useTheme } from "~/contexts/theme";
 import { projectRepositoryContext } from "~/router-contexts";
 
 import type { Route } from "./+types/route";
@@ -56,7 +55,6 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 }
 
 export default function Home() {
-  const { theme, toggleTheme } = useTheme();
   const { homeDir, recentDirs, currentDir, entries, breadcrumbs } = useLoaderData<typeof loader>();
 
   const parentDir = currentDir.substring(0, currentDir.lastIndexOf("/")) || "/";
@@ -71,12 +69,13 @@ export default function Home() {
             Select Working Directory
           </span>
           <div className="ml-auto flex items-center gap-2">
-            <button
-              onClick={toggleTheme}
+            <Link
+              to="/settings"
+              aria-label="Settings"
               className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-500 dark:text-gray-400"
             >
-              {theme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-            </button>
+              <Settings className="w-5 h-5" />
+            </Link>
           </div>
         </div>
       </div>
