@@ -2,44 +2,15 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { RouterContextProvider } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import { AgentSessionContainer } from "~/agent-session-container";
 import { agentSessionContainerContext } from "~/router-contexts";
-import { realFactory, withAgentDir } from "~/test-helpers";
+import { oneTurnSession, realFactory, withAgentDir } from "~/test-helpers";
 
 import { action } from "./action";
 import { agentSessionContext } from "./router-contexts";
-
-function usage() {
-  return {
-    input: 0,
-    output: 0,
-    cacheRead: 0,
-    cacheWrite: 0,
-    totalTokens: 0,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-  };
-}
-
-/** A session with a known timeline: user:10, assistant:10. */
-function oneTurnSession(cwd: string): SessionManager {
-  const sm = SessionManager.create(cwd);
-  sm.appendMessage({ role: "user", content: "hello", timestamp: 10 });
-  sm.appendMessage({
-    role: "assistant",
-    content: [{ type: "text", text: "Hi there!" }],
-    api: "anthropic-messages",
-    provider: "anthropic",
-    model: "test-model",
-    usage: usage(),
-    stopReason: "stop",
-    timestamp: 10,
-  });
-  return sm;
-}
 
 function callAction(context: RouterContextProvider, body: unknown): Promise<unknown> {
   return action({
@@ -62,10 +33,10 @@ describe("POST /session/:id mark_displayed", () => {
       await withAgentDir(root, async () => {
         const cwd = path.join(root, "cwd");
         mkdirSync(cwd, { recursive: true });
-        const sm = oneTurnSession(cwd);
+        const { id } = oneTurnSession(cwd);
 
         const container = AgentSessionContainer.withFactory(realFactory);
-        const session = await container.get(sm.getSessionId(), { cwd });
+        const session = await container.get(id, { cwd });
         expect(session).not.toBeNull();
 
         const context = new RouterContextProvider();
@@ -103,16 +74,16 @@ describe("POST /session/:id mark_displayed", () => {
       await withAgentDir(root, async () => {
         const cwd = path.join(root, "cwd");
         mkdirSync(cwd, { recursive: true });
-        const sm = oneTurnSession(cwd);
+        const { id } = oneTurnSession(cwd);
 
         const container = AgentSessionContainer.withFactory(realFactory);
-        const session = await container.get(sm.getSessionId(), { cwd });
+        const session = await container.get(id, { cwd });
         expect(session).not.toBeNull();
         const context = new RouterContextProvider();
         context.set(agentSessionContext, session!);
         context.set(agentSessionContainerContext, container);
 
-        await container.markMessageDisplayed(sm.getSessionId(), "assistant:10");
+        await container.markMessageDisplayed(id, "assistant:10");
         // A stale report for the older user message must not regress.
         const stale = await callAction(context, {
           type: "mark_displayed",
@@ -141,10 +112,10 @@ describe("POST /session/:id mark_displayed", () => {
       await withAgentDir(root, async () => {
         const cwd = path.join(root, "cwd");
         mkdirSync(cwd, { recursive: true });
-        const sm = oneTurnSession(cwd);
+        const { id } = oneTurnSession(cwd);
 
         const container = AgentSessionContainer.withFactory(realFactory);
-        const session = await container.get(sm.getSessionId(), { cwd });
+        const session = await container.get(id, { cwd });
         expect(session).not.toBeNull();
         const context = new RouterContextProvider();
         context.set(agentSessionContext, session!);

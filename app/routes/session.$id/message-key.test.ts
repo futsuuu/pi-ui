@@ -3,6 +3,8 @@ import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
 
+import { usage } from "~/test-helpers";
+
 import {
   entryKeyOf,
   foldTurnEvents,
@@ -12,17 +14,6 @@ import {
   sameIdentity,
   toolResultKey,
 } from "./message-key";
-
-function usage() {
-  return {
-    input: 0,
-    output: 0,
-    cacheRead: 0,
-    cacheWrite: 0,
-    totalTokens: 0,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-  };
-}
 
 function user(text: string, timestamp = 1): UserMessage {
   return { role: "user", content: text, timestamp };

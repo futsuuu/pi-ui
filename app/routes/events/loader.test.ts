@@ -2,14 +2,13 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { RouterContextProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AgentSessionContainer } from "~/agent-session-container";
 import { agentSessionContainerContext } from "~/router-contexts";
 import type { SessionInfo } from "~/session-info";
-import { createSession, realFactory, withAgentDir } from "~/test-helpers";
+import { createSession, oneTurnSession, realFactory, withAgentDir } from "~/test-helpers";
 
 import { loader, type SseEvent } from "./loader";
 
@@ -71,34 +70,6 @@ function callLoader(container: AgentSessionContainer): Promise<Response> {
     pattern: "/events",
     context,
   });
-}
-
-function usage() {
-  return {
-    input: 0,
-    output: 0,
-    cacheRead: 0,
-    cacheWrite: 0,
-    totalTokens: 0,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-  };
-}
-
-/** A session with a known timeline: user:10, assistant:10. */
-function oneTurnSession(cwd: string): { id: string } {
-  const sm = SessionManager.create(cwd);
-  sm.appendMessage({ role: "user", content: "hello", timestamp: 10 });
-  sm.appendMessage({
-    role: "assistant",
-    content: [{ type: "text", text: "Hi there!" }],
-    api: "anthropic-messages",
-    provider: "anthropic",
-    model: "test-model",
-    usage: usage(),
-    stopReason: "stop",
-    timestamp: 10,
-  });
-  return { id: sm.getSessionId() };
 }
 
 /** SSE connection under test, canceled after each test to clear timers. */
