@@ -392,6 +392,9 @@ function Chat({
       observerRef.current = null;
       observer.disconnect();
       mutationObserver.disconnect();
+      // Mutating the tracked set and clearing the latest timer/pending report on
+      // unmount is intentional; the refs are mutable state, not rendered nodes.
+      // oxlint-disable-next-line react-hooks/exhaustive-deps
       observedElementsRef.current.clear();
       if (reportTimerRef.current != null) {
         clearTimeout(reportTimerRef.current);
@@ -443,10 +446,9 @@ function Chat({
         },
       );
     },
-    // `fetcher.submit` is stable: depending on the whole `fetcher` object
-    // would re-create this callback on every fetcher state transition and
-    // defeat PromptForm's memoization during submissions.
-    [fetcher.submit],
+    // Depend on the whole fetcher: ignoring state transitions would capture a
+    // stale submit when the form is used before a pending navigation settles.
+    [fetcher],
   );
 
   function abortMessage() {
