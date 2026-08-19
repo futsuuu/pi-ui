@@ -20,14 +20,21 @@ export function messageKey(role: string, timestamp: number | undefined): string 
   return `${role}:${timestamp ?? ""}`;
 }
 
+/**
+ * Creates a stable display key for a tool result.
+ *
+ * @param toolCallId - The identifier of the tool call associated with the result
+ * @returns A display key derived from the tool call identifier
+ */
 export function toolResultKey(toolCallId: string): string {
   return `toolResult:${toolCallId}`;
 }
 
 /**
- * Text of a user message the way UserMessage renders it: the string form or
- * text parts joined with a newline. Empty text renders nothing, so empty
- * user messages are not display items.
+ * Converts user message content to the text displayed in the conversation.
+ *
+ * @param content - The user message content.
+ * @returns The text content, with separate text blocks joined by newlines.
  */
 function userDisplayText(content: UserMessage["content"]): string {
   if (typeof content === "string") return content;
@@ -37,7 +44,11 @@ function userDisplayText(content: UserMessage["content"]): string {
     .join("\n");
 }
 
-/** True when an assistant message renders any content (text, thinking, or an error). */
+/**
+ * Determines whether an assistant message has displayable text, thinking content, or an error state.
+ *
+ * @returns `true` if the message contains trimmed text or thinking content, or represents an error or abort; `false` otherwise.
+ */
 function assistantContentPresent(message: {
   content: unknown;
   stopReason?: AssistantMessage["stopReason"];
@@ -61,15 +72,19 @@ function assistantContentPresent(message: {
   return !!text || !!thinking || isError;
 }
 
+/**
+ * Determines whether an assistant message should be rendered.
+ *
+ * @returns `true` if the message has content or no stop reason, `false` otherwise.
+ */
 function assistantRenderable(message: AssistantMessage): boolean {
   return assistantContentPresent(message) || message.stopReason === undefined;
 }
 
 /**
- * The display key of a persisted message, or null when the message cannot
- * become a read anchor: it renders nothing (empty user messages, empty
- * finalized assistant messages) or is still streaming (no `message_end` yet,
- * so its content is not final).
+ * Determines the display key for a persisted user, assistant, or tool-result message.
+ *
+ * @returns The message key when the message has displayable finalized content, or `null` otherwise.
  */
 export function messageKeyOf(message: AgentMessage): string | null {
   switch (message.role) {
@@ -97,10 +112,10 @@ export type DisplayEntry = {
 };
 
 /**
- * The display key of a chat entry, or null when it renders nothing or its
- * identity is not (yet) stable. Entries without a timestamp get no key: the
- * optimistic pending user message is one example — its timestamp only exists
- * once the session assigns one, so tracking it would flip the key.
+ * Determines the stable display key for a chat entry.
+ *
+ * @param entry - The chat entry whose display identity is evaluated
+ * @returns The entry's display key, or `null` when it has no stable display identity
  */
 export function entryKeyOf(entry: DisplayEntry): string | null {
   if (entry.role === "toolResult") {
@@ -129,6 +144,13 @@ export function entryKeyOf(entry: DisplayEntry): string | null {
     : null;
 }
 
+/**
+ * Determines whether a message and display entry represent the same message identity.
+ *
+ * @param message - The message to compare.
+ * @param entry - The display entry to compare.
+ * @returns `true` if both values identify the same tool result or share the same role and timestamp, `false` otherwise.
+ */
 export function sameIdentity(
   message: AgentMessage,
   entry: { role: string; timestamp?: number; toolCallId?: string },
@@ -148,10 +170,12 @@ export interface TurnDisplayEntry {
 }
 
 /**
- * Fold the current turn's events into ordered display entries, coalescing by
- * identity exactly like the chat reducer: message updates replace the newest
- * entry per `role + timestamp`, tool updates per `toolCallId`. The order is
- * the event order, which matches the rendered conversation order.
+ * Folds current-turn events into ordered display entries grouped by message or tool identity.
+ *
+ * In-flight assistant messages and running tools have a `null` display key until finalized.
+ *
+ * @param events - The current turn's session events in conversation order
+ * @returns Coalesced display entries in event order
  */
 export function foldTurnEvents(events: readonly AgentSessionEvent[]): TurnDisplayEntry[] {
   const entries: TurnDisplayEntry[] = [];
@@ -196,6 +220,13 @@ export function foldTurnEvents(events: readonly AgentSessionEvent[]): TurnDispla
   return entries;
 }
 
+/**
+ * Inserts a display entry or replaces the existing entry with the same identity.
+ *
+ * @param entries - The display entries to update
+ * @param identity - The stable identity of the entry
+ * @param key - The display key, or `null` when the entry is not yet settled
+ */
 function upsertDisplayEntry(
   entries: TurnDisplayEntry[],
   identity: string,
@@ -207,9 +238,9 @@ function upsertDisplayEntry(
 }
 
 /**
- * The ordered, renderable display keys of a conversation: persisted messages
- * first, then settled messages from the turn buffer (deduplicated by
- * identity). Mirrors the client's rendered message order.
+ * Produces deduplicated display keys in conversation order, combining persisted messages with settled turn entries.
+ *
+ * @returns The ordered display keys for renderable messages and turn entries.
  */
 export function orderedDisplayKeys(
   messages: readonly AgentMessage[],

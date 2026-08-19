@@ -9,6 +9,11 @@ interface SingletonContainer {
   worktreeRepository: WorktreeRepository;
 }
 
+/**
+ * Creates the application container and initializes its repositories.
+ *
+ * @returns The initialized singleton container
+ */
 async function createContainer(): Promise<SingletonContainer> {
   const sessionViewStateRepository = new SessionViewStateRepository();
   return {

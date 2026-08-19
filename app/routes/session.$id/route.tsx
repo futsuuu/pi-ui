@@ -39,7 +39,12 @@ export const middleware: Route.MiddlewareFunction[] = [
   },
 ];
 
-/** Length of the streamed text in the newest partial message. */
+/**
+ * Measures the text content of an assistant message.
+ *
+ * @param message - The session message whose text content is measured
+ * @returns The combined length of all text blocks, or `0` for non-assistant messages
+ */
 function textLengthOf(message: SessionMessage): number {
   if (message.role !== "assistant") return 0;
   let length = 0;
@@ -66,6 +71,11 @@ function TrackedMessage({
   return <div data-message-key={messageKey}>{children}</div>;
 }
 
+/**
+ * Loads the session data required to render the chat interface.
+ *
+ * @returns The session messages, in-flight turn events, model options, session state, directories, and shared display state.
+ */
 export async function loader({ context }: Route.LoaderArgs) {
   const container = context.get(agentSessionContainerContext);
   const session = context.get(agentSessionContext);
@@ -109,6 +119,12 @@ export default function SessionRoute(props: Route.ServerComponentProps) {
   return <Chat key={props.params.id} {...props} />;
 }
 
+/**
+ * Renders the chat session interface, including messages, connection status, session controls, and prompt submission.
+ *
+ * @param params - Route parameters containing the session identifier.
+ * @param loaderData - Initial session data, including messages, model state, available models, turn events, and display state.
+ */
 function Chat({
   params: { id: sessionId },
   loaderData: {

@@ -65,6 +65,13 @@ async function deleteSessionFile(sessionPath: string): Promise<void> {
   }
 }
 
+/**
+ * Finds persisted session information by session ID.
+ *
+ * @param sessionId - The ID of the session to find
+ * @param hints - The working directory and optional session directory used to locate sessions
+ * @returns The matching persisted session information, or `null` if no session matches
+ */
 async function findSessionInfo(
   sessionId: string,
   hints: { cwd: string; sessionDir?: string },
@@ -468,10 +475,11 @@ export class AgentSessionContainer {
 }
 
 /**
- * A session with no view-state record (e.g. after a server restart) is
- * treated as read; otherwise it is read only when the cursor reached the
- * latest message. A record with a null cursor is an unread marker created
- * when a new message settled without any client having displayed it.
+ * Determines whether a session has been read through its latest message.
+ *
+ * @param stored - The persisted view state, or `null` when no state exists
+ * @param latest - The latest message key, or `null` when the session has no messages
+ * @returns `true` if no view state exists or the displayed cursor matches the latest message, `false` otherwise
  */
 function isReadState(stored: SessionViewState | null, latest: string | null): boolean {
   if (!stored) return true;
@@ -479,19 +487,10 @@ function isReadState(stored: SessionViewState | null, latest: string | null): bo
 }
 
 /**
- * Info for a loaded session. `firstMessage`, `messageCount`, and `timestamp`
- * are always derived from the persisted session entries, never from the live
- * context: compaction and branch switches replace `agent.state.messages` with
- * the compacted/branch context, but the persisted file keeps the full
- * history. The same entries drive the unloaded path (`SessionManager.list`),
- * so loaded and unloaded sessions agree. The runtime is used only for fields
- * that are inherently live (model, thinking level, flags, name).
+ * Builds session metadata from persisted entries and live runtime state.
  *
- * `currentInfo` runs per event and must stay cheap: the persisted file is not
- * read here (`getEntries()` is an in-memory filter), but the full scan makes
- * this O(n) in the entry count, where the previous live-context version was
- * O(1). TODO: cache the derived fields per session and skip the scan while
- * the message entries are unchanged (they only change on turn boundaries).
+ * @param session - The loaded agent session
+ * @returns Session metadata excluding read-state and message-key fields
  */
 function sessionInfo(
   session: AgentSession,
@@ -582,6 +581,12 @@ function userMessageText(
     .join(" ");
 }
 
+/**
+ * Extracts message objects from session entries.
+ *
+ * @param entries - The session entries to filter
+ * @returns The messages contained in the entries
+ */
 function messageEntries(entries: readonly SessionEntry[]): AgentSession["messages"] {
   return entries.filter((entry) => entry.type === "message").map((entry) => entry.message);
 }
