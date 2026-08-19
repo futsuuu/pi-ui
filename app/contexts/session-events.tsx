@@ -239,10 +239,14 @@ export function useSessionStream(sessionId: string) {
     () => ctx.getInfo(sessionId),
     () => null,
   );
-  const viewState = useMemo(() => viewStateOf(info), [info]);
-  const subscribe = useCallback(
-    (listener: (event: AgentSessionEvent) => void) => ctx.subscribe(sessionId, listener),
-    [ctx.subscribe, sessionId],
-  );
-  return { info, viewState, connected: ctx.connected, subscribe };
+  const { subscribe, connected } = ctx;
+  return {
+    info,
+    connected,
+    viewState: useMemo(() => viewStateOf(info), [info]),
+    subscribe: useCallback(
+      (listener: (event: AgentSessionEvent) => void) => subscribe(sessionId, listener),
+      [subscribe, sessionId],
+    ),
+  };
 }
