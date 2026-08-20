@@ -2,10 +2,10 @@ import type { ToolResultMessage as Data, TextContent } from "@earendil-works/pi-
 import type { EditToolDetails } from "@earendil-works/pi-coding-agent";
 import { CheckIcon, Loader2Icon, WrenchIcon, XIcon } from "lucide-react";
 
+import { DiffView } from "~/components/diff-view";
 import { ScrollArea } from "~/components/scroll-area";
 import { displayBashCommand, displayPath, displayToolArgs } from "~/path-display";
 
-import { DiffView } from "./diff-view";
 import { usePathDisplay } from "./path-display-context";
 import { useToolCall } from "./tool-call-context";
 
