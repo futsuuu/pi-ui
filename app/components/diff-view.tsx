@@ -3,41 +3,74 @@ import type { BundledLanguage, ThemedToken } from "shiki";
 import { codeToTokens } from "shiki";
 
 /**
- * One parsed line of the edit tool's display-oriented diff, i.e. the format
- * produced by `generateDiffString` in @earendil-works/pi-coding-agent
- * (`details.diff` of the edit tool result). Every line is
- * `sign + padded line number + " " + content` where the number is the new
- * line number for additions, the old one for removals and context, and absent
- * on the "..." rows used to skip unchanged ranges.
+ * One parsed line of a diff. In the `numbered` format (the edit tool's
+ * `details.diff`) add/remove/context rows carry their line numbers; in the
+ * `unified` format (```diff somelang fences) they do not. Which format a
+ * string is in is known statically by the caller (`format` on parseDiff), so
+ * the optional fields here only reflect the two layouts sharing one type.
  */
 export type DiffLine =
-  | { kind: "add"; newLine: number; content: string }
-  | { kind: "remove"; oldLine: number; content: string }
-  | { kind: "context"; oldLine: number; newLine: number; content: string }
+  | { kind: "add"; newLine?: number; content: string }
+  | { kind: "remove"; oldLine?: number; content: string }
+  | { kind: "context"; oldLine?: number; newLine?: number; content: string }
   | { kind: "ellipsis" }
   | { kind: "plain"; content: string };
 
-const DIFF_LINE_RE = /^([+-\s])(\s*\d*)\s(.*)$/;
+const DIFF_LINE_RE = /^([+-\s])(\s*\d+)\s(.*)$/;
+const ELLIPSIS_RE = /^\s*\.\.\.\s*$/;
+const DIFF_SIGN_RE = /^([+-])(?!\1)(.*)$/;
+const CONTEXT_RE = /^( )(.*)$/;
 
-/** Split a display-oriented diff into typed rows with resolved line numbers. */
-export function parseDiff(diff: string): DiffLine[] {
+/** Which diff layout a string is in; the caller knows this statically. */
+export type DiffFormat = "numbered" | "unified";
+
+/**
+ * Split a diff into typed rows. `numbered` is the display-oriented format of
+ * the edit tool (`generateDiffString`), `unified` the plain diff of a
+ * ```diff somelang fence; the two only differ in whether rows carry line
+ * numbers, so the format is passed in instead of guessed from the content (a
+ * unified `+2 x` would otherwise be ambiguous with a numbered row). Defaults
+ * to `unified`, matching DiffView.
+ */
+export function parseDiff(diff: string, format: DiffFormat = "unified"): DiffLine[] {
   const rows: DiffLine[] = [];
   for (const raw of diff.split("\n")) {
-    const match = DIFF_LINE_RE.exec(raw);
-    if (!match) {
+    if (format === "unified") {
+      // Sign directly attached to the content. A doubled sign (`---`/`+++`)
+      // is a file header, not a changed line.
+      const signed = DIFF_SIGN_RE.exec(raw);
+      if (signed) {
+        rows.push(
+          signed[1] === "+"
+            ? { kind: "add", content: signed[2] }
+            : { kind: "remove", content: signed[2] },
+        );
+        continue;
+      }
+      const context = CONTEXT_RE.exec(raw);
+      if (context) {
+        rows.push({ kind: "context", content: context[2] });
+        continue;
+      }
       rows.push({ kind: "plain", content: raw });
       continue;
     }
-    const lineNumField = match[2].trim();
-    if (lineNumField === "") {
+    // `+2 content` is an addition at new line 2; rows without a number
+    // (ellipsis, headers) fall through to plain.
+    const numbered = DIFF_LINE_RE.exec(raw);
+    if (numbered) {
+      const lineNum = Number(numbered[2].trim());
+      const content = numbered[3];
+      if (numbered[1] === "+") rows.push({ kind: "add", newLine: lineNum, content });
+      else if (numbered[1] === "-") rows.push({ kind: "remove", oldLine: lineNum, content });
+      else rows.push({ kind: "context", oldLine: lineNum, newLine: lineNum, content });
+      continue;
+    }
+    if (ELLIPSIS_RE.test(raw)) {
       rows.push({ kind: "ellipsis" });
       continue;
     }
-    const lineNum = Number(lineNumField);
-    const content = match[3];
-    if (match[1] === "+") rows.push({ kind: "add", newLine: lineNum, content });
-    else if (match[1] === "-") rows.push({ kind: "remove", oldLine: lineNum, content });
-    else rows.push({ kind: "context", oldLine: lineNum, newLine: lineNum, content });
+    rows.push({ kind: "plain", content: raw });
   }
   return rows;
 }
@@ -118,33 +151,46 @@ export function langForPath(path?: string): string | undefined {
 }
 
 /**
- * Tokenize a single diff line with the file's language, using the same dual
- * theme setup as the Markdown renderer: tokens carry `--shiki-light` /
- * `--shiki-dark` CSS variables and the `.diff-token` rule in app.css picks
- * the active theme. Results are memoized per (language, content) so repeated
- * lines in a diff only tokenize once.
+ * Tokenize each run of consecutive code rows separately. The grammar state
+ * flows across diff rows within a run, so multi-line constructs (block
+ * comments, template literals, ...) spanning diff rows keep their syntax;
+ * it resets at omissions (ellipsis, headers), because the skipped lines'
+ * content is unknown — a run after an omission starts fresh instead of
+ * misreading code as comment content. Results are cached per (language,
+ * stream) so unchanged runs only tokenize once.
  */
-const tokenCache = new Map<string, ThemedToken[]>();
+const tokenCache = new Map<string, ThemedToken[][]>();
 
-async function highlightLine(content: string, lang: string): Promise<ThemedToken[]> {
-  const key = `${lang}\n${content}`;
-  const cached = tokenCache.get(key);
-  if (cached) return cached;
-  try {
-    const { tokens } = await codeToTokens(content, {
-      // EXTENSION_TO_LANG only contains bundled language ids; the cast keeps
-      // the call typed while the try/catch falls back to plain text if a
-      // grammar is ever missing at runtime.
-      lang: lang as BundledLanguage,
-      themes: { light: "github-light", dark: "github-dark" },
-      defaultColor: false,
-    });
-    const tokensForLine = tokens[0] ?? [];
-    tokenCache.set(key, tokensForLine);
-    return tokensForLine;
-  } catch {
-    return [];
+async function highlightSegments(
+  segments: { index: number; content: string }[][],
+  lang: string,
+): Promise<Map<number, ThemedToken[]>> {
+  const byIndex = new Map<number, ThemedToken[]>();
+  for (const segment of segments) {
+    const code = segment.map((row) => row.content).join("\n");
+    const key = `${lang}\n${code}`;
+    let tokens = tokenCache.get(key);
+    if (!tokens) {
+      try {
+        tokens = (
+          await codeToTokens(code, {
+            // EXTENSION_TO_LANG only contains bundled language ids; the cast
+            // keeps the call typed while the try/catch falls back to plain text
+            // if a grammar is ever missing at runtime.
+            lang: lang as BundledLanguage,
+            themes: { light: "github-light", dark: "github-dark" },
+            defaultColor: false,
+          })
+        ).tokens;
+        tokenCache.set(key, tokens);
+      } catch {
+        continue;
+      }
+    }
+    // Line i of the stream belongs to the i-th row of the segment.
+    segment.forEach((row, i) => byIndex.set(row.index, tokens[i] ?? []));
   }
+  return byIndex;
 }
 
 /**
@@ -180,21 +226,30 @@ async function getThemeBgVars(): Promise<Record<string, string> | undefined> {
 export interface DiffViewProps {
   /** File path used to pick the highlighting language (optional). */
   path?: string;
-  /** Display-oriented diff text (the edit tool's `details.diff`). */
+  /** Explicit highlighting language, overriding `path` (a ```diff somelang``` fence). */
+  lang?: string;
+  /**
+   * Diff layout. Defaults to `unified` (the ```diff somelang fence format,
+   * which is the common case); the edit tool's `details.diff` passes
+   * `numbered`.
+   */
+  format?: DiffFormat;
+  /** Diff text in the given format (fence body / edit tool `details.diff`). */
   diff: string;
 }
 
 /**
- * Render a display-oriented diff (edit tool `details.diff`) as a GitHub-style
- * table: old/new line-number gutters, colored add/remove rows, and per-line
- * syntax highlighting via Shiki. Highlighting is applied client-side after
- * mount so the server render stays plain (no hydration mismatch).
+ * Render a diff (edit tool `details.diff` or a ```diff somelang``` fence) as
+ * a GitHub-style table: old/new line-number gutters, colored add/remove rows,
+ * and whole-block syntax highlighting via Shiki so multi-line constructs
+ * tokenize correctly. Highlighting is applied client-side after mount so the
+ * server render stays plain (no hydration mismatch).
  */
-export function DiffView({ path, diff }: DiffViewProps) {
-  const lines = useMemo(() => parseDiff(diff), [diff]);
-  const lang = useMemo(() => langForPath(path), [path]);
+export function DiffView({ path, diff, lang: langOverride, format = "unified" }: DiffViewProps) {
+  const lines = useMemo(() => parseDiff(diff, format), [diff, format]);
+  const lang = useMemo(() => langOverride ?? langForPath(path), [langOverride, path]);
   const [bgVars, setBgVars] = useState<Record<string, string> | undefined>(undefined);
-  const [tokenLines, setTokenLines] = useState<Map<string, ThemedToken[]>>(new Map());
+  const [tokenLines, setTokenLines] = useState<Map<number, ThemedToken[]>>(new Map());
 
   useEffect(() => {
     let cancelled = false;
@@ -204,17 +259,21 @@ export function DiffView({ path, diff }: DiffViewProps) {
       if (!cancelled) setBgVars(vars);
     });
     if (lang) {
-      const unique = new Set(
-        lines
-          .filter(
-            (line) => line.kind === "add" || line.kind === "remove" || line.kind === "context",
-          )
-          .map((line) => line.content),
-      );
-      void Promise.all(
-        [...unique].map(async (content) => [content, await highlightLine(content, lang)] as const),
-      ).then((entries) => {
-        if (!cancelled) setTokenLines(new Map(entries));
+      // Runs of consecutive code rows; anything else (ellipsis, headers)
+      // splits the stream so the grammar restarts after an omission.
+      const segments: { index: number; content: string }[][] = [];
+      let segment: { index: number; content: string }[] = [];
+      lines.forEach((line, index) => {
+        if (line.kind === "add" || line.kind === "remove" || line.kind === "context") {
+          segment.push({ index, content: line.content });
+        } else if (segment.length > 0) {
+          segments.push(segment);
+          segment = [];
+        }
+      });
+      if (segment.length > 0) segments.push(segment);
+      void highlightSegments(segments, lang).then((tokens) => {
+        if (!cancelled) setTokenLines(tokens);
       });
     }
     return () => {
@@ -230,11 +289,7 @@ export function DiffView({ path, diff }: DiffViewProps) {
       <table className="w-full border-collapse font-mono text-xs leading-5 tabular-nums">
         <tbody>
           {lines.map((line, i) => (
-            <DiffRow
-              key={i}
-              line={line}
-              tokens={"content" in line ? tokenLines.get(line.content) : undefined}
-            />
+            <DiffRow key={i} line={line} tokens={tokenLines.get(i)} />
           ))}
         </tbody>
       </table>

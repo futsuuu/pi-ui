@@ -46,7 +46,7 @@ pre.shiki span {
   text-decoration: var(--shiki-dark-text-decoration);
 }
 
-/* DiffView (edit tool preview) token spans: each token carries the
+/* DiffView token spans: each token carries the
    --shiki-light/--shiki-dark CSS variables inline (from codeToTokens with
    defaultColor: false), so these rules pick the active theme just like
    pre.shiki above. No background-color here: the theme bg is set on the
