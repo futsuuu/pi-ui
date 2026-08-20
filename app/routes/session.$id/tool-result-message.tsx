@@ -100,7 +100,7 @@ export function ToolResultMessage({
             </summary>
             <div className="mt-2 space-y-2">
               {diff ? (
-                <DiffView path={summary} diff={diff} />
+                <DiffView path={summary} diff={diff} format="numbered" />
               ) : (
                 <>
                   {record && (

@@ -154,6 +154,51 @@ describe("Markdown", () => {
     expect(screen.container.querySelector("pre.shiki code")?.textContent).toBe("hello");
   });
 
+  it("renders ```diff somelang``` fences as a syntax-highlighted diff", async () => {
+    const screen = await render(
+      <Markdown>{"```diff ts\n-const a = 1;\n+const a = 2;\n```"}</Markdown>,
+    );
+
+    // The fence is rewritten into a DiffView (not a plain pre.shiki block).
+    await expect.poll(() => screen.container.querySelector(".diff-view")).not.toBeNull();
+    const view = screen.container.querySelector(".diff-view")!;
+    expect(screen.container.querySelector("pre.shiki")).toBeNull();
+    // Unified-format rows: no numbers, but the fence body is kept.
+    expect(view.textContent).toContain("const a = 2;");
+    // The inner language's grammar (typescript) tokenized the content.
+    await expect.poll(() => view.querySelector("span.diff-token")).not.toBeNull();
+    expect(view.querySelector("span.diff-token")?.getAttribute("style")).toMatch(/--shiki-light/);
+  });
+
+  it("interprets fence rows as unified, without gutter line numbers", async () => {
+    // ```diff somelang fences carry no line numbers, so a numbered-looking
+    // row like `+2 ...` is an addition whose content starts with a digit;
+    // the leading number stays in the content cell, not in the gutter.
+    const screen = await render(
+      <Markdown>{"```diff ts\n 1 const a = 1;\n+2 const a = 2;\n```"}</Markdown>,
+    );
+
+    await expect.poll(() => screen.container.querySelector(".diff-view")).not.toBeNull();
+    const rows = screen.container.querySelectorAll(".diff-view tbody tr");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].querySelector("td:nth-child(1)")?.textContent).toBe("");
+    expect(rows[0].textContent).toContain("1 const a = 1;");
+    expect(rows[1].querySelector("td:nth-child(2)")?.textContent).toBe("");
+    expect(rows[1].textContent).toContain("+2 const a = 2;");
+    expect(rows[1].className).toContain("bg-green-50");
+  });
+
+  it("renders a bare ```diff``` fence via Shiki's diff grammar", async () => {
+    const screen = await render(
+      <Markdown>{"```diff\n-const a = 1;\n+const a = 2;\n```"}</Markdown>,
+    );
+
+    // No language after `diff`: the block is left to rehype-shiki (diff grammar).
+    await expect.poll(() => screen.container.querySelector("pre.shiki")).not.toBeNull();
+    expect(screen.container.querySelector("pre.shiki code")?.textContent).toContain("const a = 1;");
+    expect(screen.container.querySelector(".diff-view")).toBeNull();
+  });
+
   it("renders code fences without a language via Shiki for a consistent background", async () => {
     const screen = await render(<Markdown>{"```\nplain\n```"}</Markdown>);
 
