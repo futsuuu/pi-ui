@@ -31,7 +31,6 @@ function cls(...parts: Array<string | undefined>): Array<string> {
   return parts.filter((part): part is string => part !== undefined && part !== "");
 }
 
-/** The inner language and body of a ```diff lang``` fence. */
 function diffFence(pre: Element): { lang: string; code: string } | undefined {
   const code = pre.children[0];
   if (code?.type !== "element" || code.tagName !== "code") return undefined;
@@ -47,7 +46,6 @@ function diffFence(pre: Element): { lang: string; code: string } | undefined {
   return { lang, code: toString(code).replace(/\n$/, "") };
 }
 
-/** Serialize a style map (`--shiki-light:#…`) into a CSS declaration string. */
 function styleString(style: Record<string, string | undefined> | undefined): string | undefined {
   if (!style) return undefined;
   const declarations = Object.entries(style)
@@ -70,8 +68,6 @@ function rowElement(line: DiffLine, tokens: ThemedToken[] | undefined): Element 
     el("span", { className: cls("select-none", signClass) }, [text(sign)]),
   ];
   if (hasTokens) {
-    // Dual-theme CSS variables are serialized inline on each token span, the
-    // same colors the DiffView component spreads onto its React spans.
     for (const token of tokens) {
       const props: Properties = { className: ["diff-token"] };
       const style = styleString(token.htmlStyle);
@@ -97,10 +93,8 @@ function rowElement(line: DiffLine, tokens: ThemedToken[] | undefined): Element 
 
 /**
  * Build the full diff-table HAST for a ```diff lang``` fence, mirroring the
- * DiffView component used for the edit tool's `details.diff` (same row
- * classes, gutters, signs, and per-segment Shiki tokenization via the shared
- * helpers in diff-view.tsx). Running at rehype time means the fence never
- * needs a custom element: react-markdown renders plain table/div/span nodes.
+ * DiffView React component (same row classes, gutters, signs, and per-segment
+ * tokenization).
  */
 async function diffTableElement(lang: string, code: string): Promise<Element> {
   const lines = parseDiff(code);
@@ -133,12 +127,11 @@ async function diffTableElement(lang: string, code: string): Promise<Element> {
 
 /**
  * A ```diff somelang``` fence cannot be expressed through Shiki: its `diff`
- * grammar only colors the +/− markers and Shiki core has no `diff + lang`
- * meta handling. This plugin runs before rehype-shiki and renders such fences
- * as a syntax-highlighted diff table. Fences without a second word (plain
- * ```diff```) are left untouched for rehype-shiki's diff grammar. The
- * transformer is async like rehype-shiki's lazy mode, so the pipeline (and
- * MarkdownHooks' client-side processing) awaits it.
+ * grammar only colors the +/− markers, and Shiki core has no `diff + lang`
+ * meta handling. This plugin runs before rehype-shiki and renders such
+ * fences as a syntax-highlighted diff table; plain ```diff``` stays on the
+ * rehype-shiki diff grammar. Its transformer is async like rehype-shiki's
+ * lazy mode.
  */
 export function rehypeDiffFence() {
   return async (tree: Root) => {
