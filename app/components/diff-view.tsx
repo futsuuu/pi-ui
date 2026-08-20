@@ -150,19 +150,42 @@ export function langForPath(path?: string): string | undefined {
   return ext ? EXTENSION_TO_LANG[ext] : undefined;
 }
 
+/** A code row within a diff, positioned by its index in the parsed row list. */
+export type DiffRowSegment = { index: number; content: string };
+
+/**
+ * Split a parsed diff into runs of consecutive code rows. Anything else
+ * (ellipsis, headers) splits the stream so the grammar restarts after an
+ * omission: a run after a skip starts fresh instead of misreading code as
+ * comment content from the skipped (unknown) lines.
+ */
+export function consecutiveCodeSegments(lines: DiffLine[]): DiffRowSegment[][] {
+  const segments: DiffRowSegment[][] = [];
+  let segment: DiffRowSegment[] = [];
+  for (const [index, line] of lines.entries()) {
+    if (line.kind === "add" || line.kind === "remove" || line.kind === "context") {
+      segment.push({ index, content: line.content });
+    } else if (segment.length > 0) {
+      segments.push(segment);
+      segment = [];
+    }
+  }
+  if (segment.length > 0) segments.push(segment);
+  return segments;
+}
+
 /**
  * Tokenize each run of consecutive code rows separately. The grammar state
  * flows across diff rows within a run, so multi-line constructs (block
  * comments, template literals, ...) spanning diff rows keep their syntax;
- * it resets at omissions (ellipsis, headers), because the skipped lines'
- * content is unknown — a run after an omission starts fresh instead of
- * misreading code as comment content. Results are cached per (language,
- * stream) so unchanged runs only tokenize once.
+ * it resets at segments split by omissions (see consecutiveCodeSegments).
+ * Results are cached per (language, stream) so unchanged runs only
+ * tokenize once.
  */
 const tokenCache = new Map<string, ThemedToken[][]>();
 
-async function highlightSegments(
-  segments: { index: number; content: string }[][],
+export async function highlightSegments(
+  segments: DiffRowSegment[][],
   lang: string,
 ): Promise<Map<number, ThemedToken[]>> {
   const byIndex = new Map<number, ThemedToken[]>();
@@ -201,7 +224,7 @@ async function highlightSegments(
  */
 let themeBgVarsCache: Record<string, string> | undefined;
 
-async function getThemeBgVars(): Promise<Record<string, string> | undefined> {
+export async function getThemeBgVars(): Promise<Record<string, string> | undefined> {
   if (themeBgVarsCache) return themeBgVarsCache;
   try {
     const { bg } = await codeToTokens("", {
@@ -259,20 +282,7 @@ export function DiffView({ path, diff, lang: langOverride, format = "unified" }:
       if (!cancelled) setBgVars(vars);
     });
     if (lang) {
-      // Runs of consecutive code rows; anything else (ellipsis, headers)
-      // splits the stream so the grammar restarts after an omission.
-      const segments: { index: number; content: string }[][] = [];
-      let segment: { index: number; content: string }[] = [];
-      lines.forEach((line, index) => {
-        if (line.kind === "add" || line.kind === "remove" || line.kind === "context") {
-          segment.push({ index, content: line.content });
-        } else if (segment.length > 0) {
-          segments.push(segment);
-          segment = [];
-        }
-      });
-      if (segment.length > 0) segments.push(segment);
-      void highlightSegments(segments, lang).then((tokens) => {
+      void highlightSegments(consecutiveCodeSegments(lines), lang).then((tokens) => {
         if (!cancelled) setTokenLines(tokens);
       });
     }
@@ -297,6 +307,44 @@ export function DiffView({ path, diff, lang: langOverride, format = "unified" }:
   );
 }
 
+/**
+ * The row-level styling a diff row needs: the row background, the leading
+ * sign and its color, the fallback content color (when no tokens are
+ * available), and the old/new gutter numbers. Shared by the React DiffRow
+ * and the rehype plugin's HAST builder so both render the same table.
+ */
+export function diffRowStyle(line: DiffLine): {
+  rowClass: string;
+  sign: string;
+  signClass: string;
+  plainClass: string;
+  oldLine: number | undefined;
+  newLine: number | undefined;
+} {
+  const isAdd = line.kind === "add";
+  const isRemove = line.kind === "remove";
+  return {
+    rowClass: isAdd
+      ? "bg-green-50 dark:bg-green-950/40"
+      : isRemove
+        ? "bg-red-50 dark:bg-red-950/40"
+        : "",
+    sign: isAdd ? "+" : isRemove ? "-" : " ",
+    signClass: isAdd
+      ? "text-green-600 dark:text-green-400"
+      : isRemove
+        ? "text-red-600 dark:text-red-400"
+        : "text-gray-400 dark:text-gray-500",
+    plainClass: isAdd
+      ? "text-green-800 dark:text-green-300"
+      : isRemove
+        ? "text-red-800 dark:text-red-300"
+        : "",
+    oldLine: line.kind === "remove" || line.kind === "context" ? line.oldLine : undefined,
+    newLine: line.kind === "add" || line.kind === "context" ? line.newLine : undefined,
+  };
+}
+
 function DiffRow({ line, tokens }: { line: DiffLine; tokens?: ThemedToken[] }) {
   if (line.kind === "ellipsis") {
     return (
@@ -308,21 +356,7 @@ function DiffRow({ line, tokens }: { line: DiffLine; tokens?: ThemedToken[] }) {
     );
   }
 
-  const isAdd = line.kind === "add";
-  const isRemove = line.kind === "remove";
-  const rowClass = isAdd
-    ? "bg-green-50 dark:bg-green-950/40"
-    : isRemove
-      ? "bg-red-50 dark:bg-red-950/40"
-      : "";
-  const sign = isAdd ? "+" : isRemove ? "-" : " ";
-  const signClass = isAdd
-    ? "text-green-600 dark:text-green-400"
-    : isRemove
-      ? "text-red-600 dark:text-red-400"
-      : "text-gray-400 dark:text-gray-500";
-  const oldLine = line.kind === "remove" || line.kind === "context" ? line.oldLine : undefined;
-  const newLine = line.kind === "add" || line.kind === "context" ? line.newLine : undefined;
+  const { rowClass, sign, signClass, plainClass, oldLine, newLine } = diffRowStyle(line);
   const hasTokens = tokens !== undefined && tokens.length > 0;
 
   return (
@@ -338,17 +372,7 @@ function DiffRow({ line, tokens }: { line: DiffLine; tokens?: ThemedToken[] }) {
             </span>
           ))
         ) : (
-          <span
-            className={
-              isAdd
-                ? "text-green-800 dark:text-green-300"
-                : isRemove
-                  ? "text-red-800 dark:text-red-300"
-                  : ""
-            }
-          >
-            {line.content}
-          </span>
+          <span className={plainClass}>{line.content}</span>
         )}
       </td>
     </tr>
