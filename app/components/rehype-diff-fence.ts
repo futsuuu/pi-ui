@@ -1,4 +1,7 @@
+import type { Element, ElementContent, Properties, Root, Text } from "hast";
+import { toString } from "hast-util-to-string";
 import type { ThemedToken } from "shiki";
+import { visit } from "unist-util-visit";
 
 import {
   type DiffLine,
@@ -10,67 +13,38 @@ import {
 } from "./diff-view";
 
 /**
- * Minimal HAST shapes used by the diff-fence rewrite below (the project has no
- * direct unist/hast dependency, so the tree is typed structurally).
+ * A `<code>` element carrying mdast-util-to-hast's fence info string (the
+ * `meta` field is not part of hast's core types).
  */
-interface HText {
-  type: "text";
-  value: string;
-}
-interface HElement {
-  type: "element";
-  tagName: string;
-  properties?: Record<string, unknown>;
-  data?: { meta?: unknown };
-  children: HNode[];
-}
-interface HRoot {
-  type: "root";
-  children: HNode[];
-}
-type HNode = HText | HElement | HRoot;
+type FenceCode = Element & { data?: { meta?: unknown } };
 
-function el(
-  tagName: string,
-  properties: Record<string, unknown>,
-  children: HNode[] = [],
-): HElement {
+function el(tagName: string, properties: Properties, children: ElementContent[] = []): Element {
   return { type: "element", tagName, properties, children };
 }
 
-function text(value: string): HText {
+function text(value: string): Text {
   return { type: "text", value };
 }
 
-function isElement(node: HNode): node is HElement {
-  return node.type === "element";
-}
-
-function hasLanguageClass(code: HElement, lang: string): boolean {
-  const className = code.properties?.className;
-  return Array.isArray(className) && className.includes(`language-${lang}`);
-}
-
-function codeText(code: HElement): string {
-  return code.children
-    .filter((child): child is HText => child.type === "text")
-    .map((child) => child.value)
-    .join("");
+/** Build a `className` property from non-empty parts (hast class names are arrays). */
+function cls(...parts: Array<string | undefined>): Array<string> {
+  return parts.filter((part): part is string => part !== undefined && part !== "");
 }
 
 /** The inner language and body of a ```diff lang``` fence. */
-function diffFence(pre: HElement): { lang: string; code: string } | undefined {
+function diffFence(pre: Element): { lang: string; code: string } | undefined {
   const code = pre.children[0];
-  if (!isElement(code) || code.tagName !== "code") return undefined;
-  if (!hasLanguageClass(code, "diff")) return undefined;
-  const meta = code.data?.meta;
+  if (code?.type !== "element" || code.tagName !== "code") return undefined;
+  const className = code.properties?.className;
+  if (!(Array.isArray(className) && className.includes("language-diff"))) return undefined;
+  const meta = (code as FenceCode).data?.meta;
   if (typeof meta !== "string" || meta.trim() === "") return undefined;
   // The first word of the info string after `diff` is the language (Shiki
   // resolves aliases like `ts` → typescript at tokenization time).
   const lang = meta.trim().split(/\s+/)[0] ?? "";
   // mdast-util-to-hast appends a trailing newline to fence bodies; drop it so
   // parseDiff does not see an empty trailing row.
-  return { lang, code: codeText(code).replace(/\n$/, "") };
+  return { lang, code: toString(code).replace(/\n$/, "") };
 }
 
 /** Serialize a style map (`--shiki-light:#…`) into a CSS declaration string. */
@@ -82,36 +56,42 @@ function styleString(style: Record<string, string | undefined> | undefined): str
   return declarations.length > 0 ? declarations.join(";") : undefined;
 }
 
-function rowElement(line: DiffLine, tokens: ThemedToken[] | undefined): HElement {
+function rowElement(line: DiffLine, tokens: ThemedToken[] | undefined): Element {
   if (line.kind === "ellipsis") {
-    return el("tr", { className: "text-gray-400 dark:text-gray-600" }, [
-      el("td", { colSpan: 3, className: "px-2 select-none" }, [text("\u2026")]),
+    return el("tr", { className: ["text-gray-400", "dark:text-gray-600"] }, [
+      el("td", { colSpan: 3, className: ["px-2", "select-none"] }, [text("\u2026")]),
     ]);
   }
 
   const { rowClass, sign, signClass, plainClass, oldLine, newLine } = diffRowStyle(line);
   const hasTokens = tokens !== undefined && tokens.length > 0;
 
-  const content: HNode[] = [el("span", { className: `select-none ${signClass}` }, [text(sign)])];
+  const content: ElementContent[] = [
+    el("span", { className: cls("select-none", signClass) }, [text(sign)]),
+  ];
   if (hasTokens) {
+    // Dual-theme CSS variables are serialized inline on each token span, the
+    // same colors the DiffView component spreads onto its React spans.
     for (const token of tokens) {
-      const props: Record<string, unknown> = { className: "diff-token" };
+      const props: Properties = { className: ["diff-token"] };
       const style = styleString(token.htmlStyle);
       if (style) props.style = style;
       content.push(el("span", props, [text(token.content)]));
     }
   } else {
-    content.push(el("span", plainClass ? { className: plainClass } : {}, [text(line.content)]));
+    content.push(
+      el("span", plainClass ? { className: cls(plainClass) } : {}, [text(line.content)]),
+    );
   }
 
-  return el("tr", rowClass ? { className: rowClass } : {}, [
-    el("td", { className: `w-9 px-2 text-right select-none ${signClass}` }, [
+  return el("tr", rowClass ? { className: cls(rowClass) } : {}, [
+    el("td", { className: cls("w-9", "px-2", "text-right", "select-none", signClass) }, [
       text(String(oldLine ?? "")),
     ]),
-    el("td", { className: `w-9 px-2 text-right select-none ${signClass}` }, [
+    el("td", { className: cls("w-9", "px-2", "text-right", "select-none", signClass) }, [
       text(String(newLine ?? "")),
     ]),
-    el("td", { className: "pr-2 whitespace-pre" }, content),
+    el("td", { className: ["pr-2", "whitespace-pre"] }, content),
   ]);
 }
 
@@ -122,7 +102,7 @@ function rowElement(line: DiffLine, tokens: ThemedToken[] | undefined): HElement
  * helpers in diff-view.tsx). Running at rehype time means the fence never
  * needs a custom element: react-markdown renders plain table/div/span nodes.
  */
-async function diffTableElement(lang: string, code: string): Promise<HElement> {
+async function diffTableElement(lang: string, code: string): Promise<Element> {
   const lines = parseDiff(code);
   const [tokenLines, bgVars] = await Promise.all([
     highlightSegments(consecutiveCodeSegments(lines), lang),
@@ -130,7 +110,9 @@ async function diffTableElement(lang: string, code: string): Promise<HElement> {
   ]);
   const table = el(
     "table",
-    { className: "w-full border-collapse font-mono text-xs leading-5 tabular-nums" },
+    {
+      className: ["w-full", "border-collapse", "font-mono", "text-xs", "leading-5", "tabular-nums"],
+    },
     [
       el(
         "tbody",
@@ -141,27 +123,12 @@ async function diffTableElement(lang: string, code: string): Promise<HElement> {
   );
   // not-prose: the GitHub-style table is styled by DiffView/.diff-view itself
   // and must not pick up @tailwindcss/typography table rules.
-  const props: Record<string, unknown> = {
-    className: "diff-view not-prose rounded-lg overflow-auto max-h-80",
+  const props: Properties = {
+    className: cls("diff-view", "not-prose", "rounded-lg", "overflow-auto", "max-h-80"),
   };
   const style = styleString(bgVars);
   if (style) props.style = style;
   return el("div", props, [table]);
-}
-
-async function transform(node: HNode): Promise<void> {
-  if (node.type !== "element" && node.type !== "root") return;
-  for (let i = 0; i < node.children.length; i++) {
-    const child = node.children[i];
-    if (!isElement(child)) continue;
-    const fence = child.tagName === "pre" ? diffFence(child) : undefined;
-    if (fence) {
-      // The fence is terminal: replaced entirely, no recursion into it.
-      node.children[i] = await diffTableElement(fence.lang, fence.code);
-    } else {
-      await transform(child);
-    }
-  }
 }
 
 /**
@@ -174,5 +141,21 @@ async function transform(node: HNode): Promise<void> {
  * MarkdownHooks' client-side processing) awaits it.
  */
 export function rehypeDiffFence() {
-  return (tree: unknown) => transform(tree as HNode);
+  return async (tree: Root) => {
+    const queue: Array<Promise<void>> = [];
+    visit(tree, "element", (node, index, parent) => {
+      if (node.tagName !== "pre" || index === undefined || parent === undefined) return;
+      const fence = diffFence(node);
+      if (!fence) return;
+      // Replace the fence after its table is built; the visits are collected
+      // first so the replacement output is never re-walked.
+      const { lang, code } = fence;
+      queue.push(
+        diffTableElement(lang, code).then((replacement) => {
+          parent.children[index] = replacement;
+        }),
+      );
+    });
+    await Promise.all(queue);
+  };
 }

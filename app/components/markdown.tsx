@@ -29,7 +29,7 @@ const shikiOptions: RehypeShikiOptions = {
  * second word (plain ```diff```) stay on rehype-shiki's diff grammar.
  */
 const rehypePlugins: NonNullable<Options["rehypePlugins"]> = [
-  rehypeDiffFence as unknown as NonNullable<Options["rehypePlugins"]>[number],
+  rehypeDiffFence,
   [rehypeShiki, shikiOptions],
 ];
 
