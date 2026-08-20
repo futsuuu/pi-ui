@@ -6,7 +6,7 @@ import remarkGfm from "remark-gfm";
 import { rehypeDiffFence } from "./rehype-diff-fence";
 
 const shikiOptions: RehypeShikiOptions = {
-  // Dual themes via CSS variables (--shiki-light / --shiki-dark), toggled by `.dark` in app.css.
+  // Dual themes via CSS variables (--shiki-light / --shiki-dark), toggled by the `.dark` class.
   themes: { light: "github-light", dark: "github-dark" },
   defaultColor: false,
   addLanguageClass: true,
@@ -21,13 +21,8 @@ const shikiOptions: RehypeShikiOptions = {
   fallbackLanguage: "text",
 };
 
-/**
- * A ```diff somelang``` fence cannot be expressed through Shiki: its `diff`
- * grammar only colors the +/− markers and Shiki core has no `diff + lang`
- * meta handling. rehypeDiffFence (./rehype-diff-fence) renders such fences
- * as the full diff-table HAST before rehype-shiki runs; fences without a
- * second word (plain ```diff```) stay on rehype-shiki's diff grammar.
- */
+// rehypeDiffFence renders ```diff somelang``` fences (the diff grammar cannot
+// express a second language); fences without one stay on rehype-shiki.
 const rehypePlugins: NonNullable<Options["rehypePlugins"]> = [
   rehypeDiffFence,
   [rehypeShiki, shikiOptions],

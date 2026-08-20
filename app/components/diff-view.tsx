@@ -3,11 +3,9 @@ import type { BundledLanguage, ThemedToken } from "shiki";
 import { codeToTokens } from "shiki";
 
 /**
- * One parsed line of a diff. In the `numbered` format (the edit tool's
- * `details.diff`) add/remove/context rows carry their line numbers; in the
- * `unified` format (```diff somelang fences) they do not. Which format a
- * string is in is known statically by the caller (`format` on parseDiff), so
- * the optional fields here only reflect the two layouts sharing one type.
+ * One parsed line of a diff. `numbered` rows (the edit tool's `details.diff`)
+ * carry line numbers, `unified` rows (```diff somelang fences) do not; the
+ * optional fields reflect the two layouts sharing one type.
  */
 export type DiffLine =
   | { kind: "add"; newLine?: number; content: string }
@@ -21,16 +19,12 @@ const ELLIPSIS_RE = /^\s*\.\.\.\s*$/;
 const DIFF_SIGN_RE = /^([+-])(?!\1)(.*)$/;
 const CONTEXT_RE = /^( )(.*)$/;
 
-/** Which diff layout a string is in; the caller knows this statically. */
 export type DiffFormat = "numbered" | "unified";
 
 /**
- * Split a diff into typed rows. `numbered` is the display-oriented format of
- * the edit tool (`generateDiffString`), `unified` the plain diff of a
- * ```diff somelang fence; the two only differ in whether rows carry line
- * numbers, so the format is passed in instead of guessed from the content (a
- * unified `+2 x` would otherwise be ambiguous with a numbered row). Defaults
- * to `unified`, matching DiffView.
+ * Split a diff into typed rows. The layout is passed in, not guessed from
+ * the content: a unified `+2 x` would otherwise be ambiguous with a numbered
+ * row. Defaults to `unified`, matching DiffView.
  */
 export function parseDiff(diff: string, format: DiffFormat = "unified"): DiffLine[] {
   const rows: DiffLine[] = [];
@@ -55,8 +49,6 @@ export function parseDiff(diff: string, format: DiffFormat = "unified"): DiffLin
       rows.push({ kind: "plain", content: raw });
       continue;
     }
-    // `+2 content` is an addition at new line 2; rows without a number
-    // (ellipsis, headers) fall through to plain.
     const numbered = DIFF_LINE_RE.exec(raw);
     if (numbered) {
       const lineNum = Number(numbered[2].trim());
@@ -76,9 +68,9 @@ export function parseDiff(diff: string, format: DiffFormat = "unified"): DiffLin
 }
 
 /**
- * Extension → Shiki language map. Mirrors `getLanguageFromPath` in
- * @earendil-works/pi-coding-agent (which is not browser-safe: it pulls in
- * node:fs / pi-tui). Unknown extensions return `undefined` and render plain.
+ * Extension → Shiki language map, mirroring the agent's own helper which
+ * cannot be reused here (it pulls in Node-only modules, so it is not
+ * browser-safe). Unknown extensions return `undefined` and render plain.
  */
 const EXTENSION_TO_LANG: Record<string, string> = {
   ts: "typescript",
@@ -143,7 +135,6 @@ const EXTENSION_TO_LANG: Record<string, string> = {
   hcl: "hcl",
 };
 
-/** Resolve the Shiki language for a file path (or `undefined` for plain text). */
 export function langForPath(path?: string): string | undefined {
   if (!path) return undefined;
   const ext = path.split(".").pop()?.toLowerCase();
@@ -155,9 +146,8 @@ export type DiffRowSegment = { index: number; content: string };
 
 /**
  * Split a parsed diff into runs of consecutive code rows. Anything else
- * (ellipsis, headers) splits the stream so the grammar restarts after an
- * omission: a run after a skip starts fresh instead of misreading code as
- * comment content from the skipped (unknown) lines.
+ * (ellipsis, headers) splits the stream, so the grammar restarts after an
+ * omission instead of inheriting state from the skipped (unknown) lines.
  */
 export function consecutiveCodeSegments(lines: DiffLine[]): DiffRowSegment[][] {
   const segments: DiffRowSegment[][] = [];
@@ -175,12 +165,9 @@ export function consecutiveCodeSegments(lines: DiffLine[]): DiffRowSegment[][] {
 }
 
 /**
- * Tokenize each run of consecutive code rows separately. The grammar state
- * flows across diff rows within a run, so multi-line constructs (block
- * comments, template literals, ...) spanning diff rows keep their syntax;
- * it resets at segments split by omissions (see consecutiveCodeSegments).
- * Results are cached per (language, stream) so unchanged runs only
- * tokenize once.
+ * Tokenize each run of code rows as one stream (see consecutiveCodeSegments)
+ * so multi-line constructs spanning diff rows keep their syntax; a segment's
+ * i-th token line belongs to its i-th row.
  */
 const tokenCache = new Map<string, ThemedToken[][]>();
 
@@ -197,9 +184,8 @@ export async function highlightSegments(
       try {
         tokens = (
           await codeToTokens(code, {
-            // EXTENSION_TO_LANG only contains bundled language ids; the cast
-            // keeps the call typed while the try/catch falls back to plain text
-            // if a grammar is ever missing at runtime.
+            // The cast is safe for bundled language ids; unknown langs fall
+            // back to plain rows via the catch below.
             lang: lang as BundledLanguage,
             themes: { light: "github-light", dark: "github-dark" },
             defaultColor: false,
@@ -210,17 +196,15 @@ export async function highlightSegments(
         continue;
       }
     }
-    // Line i of the stream belongs to the i-th row of the segment.
     segment.forEach((row, i) => byIndex.set(row.index, tokens[i] ?? []));
   }
   return byIndex;
 }
 
 /**
- * The dual-theme background CSS variables from the Shiki themes
- * (`--shiki-light-bg` / `--shiki-dark-bg`), so the diff container matches the
- * code-block background of the Markdown renderer. Theme-level, so it is
- * fetched once and cached (the "text" language needs no grammar).
+ * The dual-theme background CSS variables (`--shiki-light-bg` /
+ * `--shiki-dark-bg`), so the diff container matches code-block backgrounds.
+ * Theme-level, so it is fetched once and cached.
  */
 let themeBgVarsCache: Record<string, string> | undefined;
 
@@ -232,7 +216,6 @@ export async function getThemeBgVars(): Promise<Record<string, string> | undefin
       themes: { light: "github-light", dark: "github-dark" },
       defaultColor: false,
     });
-    // bg: "--shiki-light-bg:#fff;--shiki-dark-bg:#24292e"
     if (!bg) return undefined;
     const vars: Record<string, string> = {};
     for (const part of bg.split(";")) {
@@ -247,26 +230,20 @@ export async function getThemeBgVars(): Promise<Record<string, string> | undefin
 }
 
 export interface DiffViewProps {
-  /** File path used to pick the highlighting language (optional). */
+  /** File path used to pick the highlighting language. */
   path?: string;
-  /** Explicit highlighting language, overriding `path` (a ```diff somelang``` fence). */
+  /** Explicit highlighting language, overriding `path`. */
   lang?: string;
-  /**
-   * Diff layout. Defaults to `unified` (the ```diff somelang fence format,
-   * which is the common case); the edit tool's `details.diff` passes
-   * `numbered`.
-   */
+  /** Diff layout; the edit tool's `details.diff` passes `numbered`. */
   format?: DiffFormat;
-  /** Diff text in the given format (fence body / edit tool `details.diff`). */
   diff: string;
 }
 
 /**
- * Render a diff (edit tool `details.diff` or a ```diff somelang``` fence) as
- * a GitHub-style table: old/new line-number gutters, colored add/remove rows,
- * and whole-block syntax highlighting via Shiki so multi-line constructs
- * tokenize correctly. Highlighting is applied client-side after mount so the
- * server render stays plain (no hydration mismatch).
+ * Render a diff as a GitHub-style table: old/new line-number gutters, colored
+ * add/remove rows, and whole-block Shiki highlighting. Highlighting runs
+ * client-side after mount so the server render stays plain (no hydration
+ * mismatch).
  */
 export function DiffView({ path, diff, lang: langOverride, format = "unified" }: DiffViewProps) {
   const lines = useMemo(() => parseDiff(diff, format), [diff, format]);
@@ -292,9 +269,8 @@ export function DiffView({ path, diff, lang: langOverride, format = "unified" }:
   }, [lines, lang]);
 
   return (
-    // Background matches the Shiki theme (via .diff-view in app.css + the
-    // inline --shiki-*-bg vars); max-h-80 limits tall diffs to a scrollable
-    // panel instead of expanding the whole message.
+    // max-h-80 keeps tall diffs in a scrollable panel instead of expanding
+    // the whole message; the .diff-view style paints the Shiki theme bg.
     <div className="diff-view rounded-lg overflow-auto max-h-80" style={bgVars}>
       <table className="w-full border-collapse font-mono text-xs leading-5 tabular-nums">
         <tbody>
