@@ -1,0 +1,11 @@
+{
+  "onboarding": false,
+  "requireConfig": "optional",
+  "enabledManagers": ["github-actions", "nix", "npm"],
+  "allowedCommands": ["^nix run \\.#"],
+  "postUpgradeTasks": {
+    "commands": ["nix run .#update-pnpm-hash"],
+    "fileFilters": ["flake.lock", "flake.nix", "package.json", "pnpm-lock.yaml"],
+    "executionMode": "branch"
+  }
+}
