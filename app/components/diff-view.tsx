@@ -196,16 +196,13 @@ function rowElement(line: DiffLine, highlighted: HighlightedLine | undefined): E
     ]);
   }
 
-  const { rowClass, sign, signClass, plainClass, oldLine, newLine } = diffRowStyle(line);
+  const { rowClass, sign, signClass, oldLine, newLine } = diffRowStyle(line);
   const hasHighlight = highlighted !== undefined && highlighted.length > 0;
   const content: ElementContent[] = [
     element("span", { className: classNames("select-none", signClass) }, [text(sign)]),
   ];
   if (hasHighlight) content.push(...highlighted);
-  else
-    content.push(
-      element("span", plainClass ? { className: [plainClass] } : {}, [text(line.content)]),
-    );
+  else content.push(element("span", {}, [text(line.content)]));
 
   return element("tr", rowClass ? { className: [rowClass] } : {}, [
     element(
@@ -275,7 +272,6 @@ export function diffRowStyle(line: DiffLine): {
   rowClass: string;
   sign: string;
   signClass: string;
-  plainClass: string;
   oldLine: number | undefined;
   newLine: number | undefined;
 } {
@@ -293,11 +289,6 @@ export function diffRowStyle(line: DiffLine): {
       : isRemove
         ? "text-red-600 dark:text-red-400"
         : "text-gray-400 dark:text-gray-500",
-    plainClass: isAdd
-      ? "text-green-800 dark:text-green-300"
-      : isRemove
-        ? "text-red-800 dark:text-red-300"
-        : "",
     oldLine: line.kind === "remove" || line.kind === "context" ? line.oldLine : undefined,
     newLine: line.kind === "add" || line.kind === "context" ? line.newLine : undefined,
   };
