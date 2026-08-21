@@ -24,7 +24,8 @@ export type DiffFormat = "numbered" | "unified";
 
 export function parseDiff(diff: string, format: DiffFormat = "unified"): DiffLine[] {
   const rows: DiffLine[] = [];
-  for (const raw of diff.split("\n")) {
+  const normalized = diff.replace(/(?:\r?\n)+$/, "");
+  for (const raw of normalized === "" ? [] : normalized.split(/\r?\n/)) {
     if (format === "unified") {
       if (DIFF_HEADER_RE.test(raw)) {
         rows.push({ kind: "plain", content: raw });

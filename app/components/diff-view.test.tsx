@@ -34,6 +34,13 @@ describe("parseDiff", () => {
     ]);
   });
 
+  it("ignores terminal newlines without dropping meaningful rows", () => {
+    expect(parseDiff("-const a = 1;\n+const a = 2;\n", "unified")).toEqual([
+      { kind: "remove", content: "const a = 1;" },
+      { kind: "add", content: "const a = 2;" },
+    ]);
+  });
+
   it("keeps unified-format headers as plain rows", () => {
     expect(
       parseDiff("--- a/foo.ts\n+++ b/foo.ts\n@@ -1,2 +1,2 @@\n-const a = 1;", "unified"),
