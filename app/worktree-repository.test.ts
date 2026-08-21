@@ -70,6 +70,31 @@ describe("hashProjectPath", () => {
 });
 
 describe("makeWritable", () => {
+  it("does not follow a symbolic-link root", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-writable-"));
+    const outside = mkdtempSync(path.join(os.tmpdir(), "pi-ui-outside-"));
+    try {
+      const outsideFile = path.join(outside, "outside.txt");
+      writeFileSync(outsideFile, "outside\n");
+      chmodSync(outside, 0o555);
+      chmodSync(outsideFile, 0o444);
+      const link = path.join(root, "link");
+      try {
+        symlinkSync(outside, link);
+      } catch {
+        return;
+      }
+      await makeWritable(link);
+      expect(statSync(outside).mode & 0o200).toBe(0);
+      expect(statSync(outsideFile).mode & 0o200).toBe(0);
+    } finally {
+      chmodSync(outside, 0o755);
+      chmodSync(path.join(outside, "outside.txt"), 0o644);
+      rmSync(root, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
   it("adds the owner-write bit recursively without following symlinks", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-writable-"));
     const outside = mkdtempSync(path.join(os.tmpdir(), "pi-ui-outside-"));
