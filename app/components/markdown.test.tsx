@@ -187,7 +187,7 @@ describe("Markdown", () => {
     expect(rows[0].textContent).toContain("1 const a = 1;");
     expect(rows[1].querySelector("td:nth-child(2)")?.textContent).toBe("");
     expect(rows[1].textContent).toContain("+2 const a = 2;");
-    expect(rows[1].className).toContain("bg-green-50");
+    expect(rows[1].className).toContain("bg-green-500/10");
   });
 
   it("renders a bare ```diff``` fence via Shiki's diff grammar", async () => {
