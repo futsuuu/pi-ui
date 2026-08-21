@@ -45,6 +45,13 @@ describe("parseDiff", () => {
     ]);
   });
 
+  it("parses changed lines whose content starts with a sign", () => {
+    expect(parseDiff("++foo\n--bar", "unified")).toEqual([
+      { kind: "add", content: "+foo" },
+      { kind: "remove", content: "-bar" },
+    ]);
+  });
+
   it("parses a numbered row with its line number", () => {
     expect(parseDiff("+2 x", "numbered")).toEqual([{ kind: "add", newLine: 2, content: "x" }]);
   });

@@ -16,7 +16,8 @@ export type DiffLine =
 
 const DIFF_LINE_RE = /^([+-\s])(\s*\d+)\s(.*)$/;
 const ELLIPSIS_RE = /^\s*\.\.\.\s*$/;
-const DIFF_SIGN_RE = /^([+-])(?!\1)(.*)$/;
+const DIFF_HEADER_RE = /^(?:---|\+\+\+)(?:\s|$)/;
+const DIFF_SIGN_RE = /^([+-])(.*)$/;
 const CONTEXT_RE = /^( )(.*)$/;
 
 export type DiffFormat = "numbered" | "unified";
@@ -25,6 +26,10 @@ export function parseDiff(diff: string, format: DiffFormat = "unified"): DiffLin
   const rows: DiffLine[] = [];
   for (const raw of diff.split("\n")) {
     if (format === "unified") {
+      if (DIFF_HEADER_RE.test(raw)) {
+        rows.push({ kind: "plain", content: raw });
+        continue;
+      }
       const signed = DIFF_SIGN_RE.exec(raw);
       if (signed) {
         rows.push(
