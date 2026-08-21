@@ -18,6 +18,7 @@
     "@react-router/node": "^8.3.0",
     "@react-router/serve": "^8.3.0",
     "@shikijs/rehype": "^4.4.1",
+    "hast-util-to-jsx-runtime": "^2.3.6",
     "hast-util-to-string": "^3.0.1",
     "isbot": "^5.2.1",
     "lucide-react": "^1.25.0",

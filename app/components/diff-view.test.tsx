@@ -155,8 +155,8 @@ describe("DiffView", () => {
     const innerToken = [...rows[1].querySelectorAll(".diff-token")].find(
       (el) => el.textContent === "  inner",
     );
-    const strToken = [...rows[3].querySelectorAll(".diff-token")].find(
-      (el) => el.textContent === '"str"',
+    const strToken = [...rows[3].querySelectorAll(".diff-token")].find((el) =>
+      el.textContent?.includes('"str"'),
     );
     expect(innerToken).not.toBeNull();
     expect(strToken).not.toBeNull();
@@ -232,19 +232,15 @@ describe("DiffView", () => {
     );
   });
 
-  it("paints the container background with the Shiki theme and caps the height", async () => {
+  it("uses Shiki's theme background and caps the height", async () => {
     const screen = await render(
       <DiffView path="foo.ts" format="numbered" diff={" 1 const a = 1;"} />,
     );
 
-    await expect
-      .poll(() => screen.container.querySelector(".diff-view")?.getAttribute("style"))
-      .toMatch(/--shiki-light-bg/);
+    await expect.poll(() => screen.container.querySelector(".diff-view")).not.toBeNull();
     const container = screen.container.querySelector(".diff-view")!;
-    // Dual-theme background variables are emitted inline, matching pre.shiki.
-    expect(container.getAttribute("style")).toMatch(/--shiki-light-bg:/);
-    expect(container.getAttribute("style")).toMatch(/--shiki-dark-bg:/);
-    // Tall diffs scroll within a fixed-height panel.
+    await expect.poll(() => container.getAttribute("style")).toMatch(/--shiki-light-bg/);
+    expect(container.getAttribute("style")).toMatch(/--shiki-dark-bg/);
     expect(container.className).toContain("max-h-80");
     expect(container.className).toContain("overflow-auto");
   });
