@@ -1,12 +1,27 @@
 import { execFile, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
-import { generateBranchName, hashProjectPath, WorktreeRepository } from "./worktree-repository";
+import {
+  generateBranchName,
+  hashProjectPath,
+  makeWritable,
+  WorktreeRepository,
+} from "./worktree-repository";
 
 const execFileAsync = promisify(execFile);
 
@@ -51,6 +66,41 @@ describe("hashProjectPath", () => {
     const hash = hashProjectPath(project);
     expect(hash).toMatch(/^[0-9a-f]{12}$/);
     expect(hashProjectPath(project)).toBe(hash);
+  });
+});
+
+describe("makeWritable", () => {
+  it("adds the owner-write bit recursively without following symlinks", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-writable-"));
+    const outside = mkdtempSync(path.join(os.tmpdir(), "pi-ui-outside-"));
+    try {
+      const dir = path.join(root, "sub", "nested");
+      mkdirSync(dir, { recursive: true });
+      const file = path.join(dir, "file.txt");
+      writeFileSync(file, "hello\n");
+      chmodSync(dir, 0o555);
+      chmodSync(file, 0o444);
+      const outsideFile = path.join(outside, "outside.txt");
+      writeFileSync(outsideFile, "outside\n");
+      chmodSync(outsideFile, 0o444);
+      let linkCreated = false;
+      try {
+        symlinkSync(outside, path.join(root, "link"));
+        linkCreated = true;
+      } catch {
+        // Symlinks may be unavailable (e.g. unprivileged Windows CI).
+      }
+      await makeWritable(root);
+      expect(statSync(dir).mode & 0o200).toBe(0o200);
+      expect(statSync(file).mode & 0o200).toBe(0o200);
+      // The symlink is not followed: the file outside the tree stays read-only.
+      if (linkCreated) {
+        expect(statSync(outsideFile).mode & 0o200).toBe(0);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 });
 
@@ -201,6 +251,23 @@ describe("WorktreeRepository", () => {
       ).toThrow();
       // The project's hash dir is cleaned up once it no longer holds worktrees.
       expect(existsSync(path.join(dataDir, hashProjectPath(project)))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("removes a worktree whose files and directories are read-only", async () => {
+    const { root, project, dataDir } = createRepo();
+    try {
+      const repo = new WorktreeRepository({ dataDir });
+      await repo.add(project);
+      const [worktree] = await repo.list(project);
+      // A read-only root dir blocks unlink on POSIX; a read-only file blocks
+      // deletion on Windows. Either way removal must still succeed.
+      chmodSync(path.join(worktree.path, "file.txt"), 0o444);
+      chmodSync(worktree.path, 0o555);
+      await repo.remove(project, worktree);
+      expect(await repo.list(project)).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
