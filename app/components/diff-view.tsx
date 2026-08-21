@@ -278,11 +278,7 @@ export function diffRowStyle(line: DiffLine): {
   const isAdd = line.kind === "add";
   const isRemove = line.kind === "remove";
   return {
-    rowClass: isAdd
-      ? "bg-green-50 dark:bg-green-950/40"
-      : isRemove
-        ? "bg-red-50 dark:bg-red-950/40"
-        : "",
+    rowClass: isAdd ? "bg-green-500/10" : isRemove ? "bg-red-500/10" : "",
     sign: isAdd ? "+" : isRemove ? "-" : " ",
     signClass: isAdd
       ? "text-green-600 dark:text-green-400"

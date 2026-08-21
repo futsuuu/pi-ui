@@ -87,8 +87,8 @@ describe("DiffView", () => {
     const rows = screen.container.querySelectorAll("tbody tr");
     expect(rows).toHaveLength(3);
     // Row backgrounds mark removals (red) and additions (green).
-    expect(rows[1].className).toContain("bg-red-50");
-    expect(rows[2].className).toContain("bg-green-50");
+    expect(rows[1].className).toContain("bg-red-500/10");
+    expect(rows[2].className).toContain("bg-green-500/10");
 
     // Gutters: old | new — context shows both, remove only old, add only new.
     const tds = screen.container.querySelectorAll("td");
@@ -288,8 +288,8 @@ describe("DiffView", () => {
     expect(getComputedStyle(token).backgroundColor).toBe("rgba(0, 0, 0, 0)");
     // The remove row still carries its red tint.
     const rows = screen.container.querySelectorAll("tbody tr");
-    expect(rows[0].className).toContain("bg-red-50");
-    expect(rows[1].className).toContain("bg-green-50");
+    expect(rows[0].className).toContain("bg-red-500/10");
+    expect(rows[1].className).toContain("bg-green-500/10");
   });
 
   it("renders plain text for unknown languages", async () => {
