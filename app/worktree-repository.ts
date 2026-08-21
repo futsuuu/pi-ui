@@ -138,6 +138,7 @@ function resolvePath(p: string): string {
  */
 export async function makeWritable(dir: string): Promise<void> {
   const stats = await lstat(dir);
+  if (stats.isSymbolicLink()) return;
   await chmod(dir, stats.mode | 0o200);
   const entries = await readdir(dir, { withFileTypes: true });
   await Promise.all(
