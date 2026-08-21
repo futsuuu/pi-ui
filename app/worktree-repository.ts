@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, realpathSync } from "node:fs";
-import { mkdir, rmdir } from "node:fs/promises";
+import { chmod, lstat, mkdir, readdir, rmdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -126,6 +126,31 @@ function resolvePath(p: string): string {
     }
     throw error;
   }
+}
+
+/**
+ * Recursive `chmod -R u+w` equivalent: add the owner-write bit to every file
+ * and directory under `dir` so the working tree can be deleted. Symlinks are
+ * skipped (their permissions are irrelevant and `chmod -R` does not follow
+ * them). Throws on the first failure; callers that treat it as best-effort
+ * should catch — `git worktree remove` remains the authority on whether the
+ * removal can proceed.
+ */
+export async function makeWritable(dir: string): Promise<void> {
+  const stats = await lstat(dir);
+  await chmod(dir, stats.mode | 0o200);
+  const entries = await readdir(dir, { withFileTypes: true });
+  await Promise.all(
+    entries.map(async (entry) => {
+      if (entry.isSymbolicLink()) return;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await makeWritable(full);
+      } else {
+        await chmod(full, (await lstat(full)).mode | 0o200);
+      }
+    }),
+  );
 }
 
 /** Short hash of a project path, used to namespace each project's worktrees. */
@@ -329,6 +354,10 @@ export class WorktreeRepository {
     if (!(await this.isManagedWorktreePath(projectPath, worktree.path))) {
       throw new Error("Only app-managed worktrees can be removed");
     }
+    // Best-effort chmod -R u+w: POSIX needs the write bit on directories to
+    // unlink their children, while Windows needs it on files to drop the
+    // read-only attribute that blocks deletion. One pass covers both.
+    await makeWritable(worktree.path).catch(() => {});
     try {
       await this.runGit(["worktree", "remove", "--force", worktree.path], {
         cwd: projectPath,
