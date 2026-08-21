@@ -4,11 +4,10 @@ import { MarkdownHooks, type Components, type ExtraProps, type Options } from "r
 import remarkGfm from "remark-gfm";
 
 import { rehypeDiffFence } from "./rehype-diff-fence";
+import { shikiThemeOptions } from "./shiki-options";
 
 const shikiOptions: RehypeShikiOptions = {
-  // Dual themes via CSS variables (--shiki-light / --shiki-dark), toggled by the `.dark` class.
-  themes: { light: "github-light", dark: "github-dark" },
-  defaultColor: false,
+  ...shikiThemeOptions,
   addLanguageClass: true,
   // Do not preload any grammar: every language is loaded on demand when a code
   // fence uses it (grammars are already split into lazy chunks by the bundler).

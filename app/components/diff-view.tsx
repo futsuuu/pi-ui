@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
-import type { BundledLanguage, ThemedToken } from "shiki";
-import { codeToTokens } from "shiki";
+import type { Element, ElementContent, Properties, Root, Text } from "hast";
+import { toJsxRuntime } from "hast-util-to-jsx-runtime";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { jsx, jsxs } from "react/jsx-runtime";
+import type { BundledLanguage } from "shiki";
+import { codeToHast } from "shiki";
 
-/**
- * One parsed line of a diff. `numbered` rows (the edit tool's `details.diff`)
- * carry line numbers, `unified` rows (```diff somelang fences) do not; the
- * optional fields reflect the two layouts sharing one type.
- */
+import { shikiThemeOptions } from "./shiki-options";
+
 export type DiffLine =
   | { kind: "add"; newLine?: number; content: string }
   | { kind: "remove"; oldLine?: number; content: string }
@@ -21,17 +21,10 @@ const CONTEXT_RE = /^( )(.*)$/;
 
 export type DiffFormat = "numbered" | "unified";
 
-/**
- * Split a diff into typed rows. The layout is passed in, not guessed from
- * the content: a unified `+2 x` would otherwise be ambiguous with a numbered
- * row. Defaults to `unified`, matching DiffView.
- */
 export function parseDiff(diff: string, format: DiffFormat = "unified"): DiffLine[] {
   const rows: DiffLine[] = [];
   for (const raw of diff.split("\n")) {
     if (format === "unified") {
-      // Sign directly attached to the content. A doubled sign (`---`/`+++`)
-      // is a file header, not a changed line.
       const signed = DIFF_SIGN_RE.exec(raw);
       if (signed) {
         rows.push(
@@ -67,7 +60,6 @@ export function parseDiff(diff: string, format: DiffFormat = "unified"): DiffLin
   return rows;
 }
 
-/** Extensions that are not already Shiki language ids or aliases. */
 const EXTENSION_TO_LANG: Record<string, string> = {
   h: "c",
   htm: "html",
@@ -85,14 +77,8 @@ export function langForPath(path?: string): string | undefined {
   return ext ? (EXTENSION_TO_LANG[ext] ?? ext) : undefined;
 }
 
-/** A code row within a diff, positioned by its index in the parsed row list. */
 export type DiffRowSegment = { index: number; content: string };
 
-/**
- * Split a parsed diff into runs of consecutive code rows. Anything else
- * (ellipsis, headers) splits the stream, so the grammar restarts after an
- * omission instead of inheriting state from the skipped (unknown) lines.
- */
 export function consecutiveCodeSegments(lines: DiffLine[]): DiffRowSegment[][] {
   const segments: DiffRowSegment[][] = [];
   let segment: DiffRowSegment[] = [];
@@ -108,129 +94,178 @@ export function consecutiveCodeSegments(lines: DiffLine[]): DiffRowSegment[][] {
   return segments;
 }
 
-/**
- * Tokenize each run of code rows as one stream (see consecutiveCodeSegments)
- * so multi-line constructs spanning diff rows keep their syntax; a segment's
- * i-th token line belongs to its i-th row.
- */
-const tokenCache = new Map<string, ThemedToken[][]>();
+type HighlightedLine = ElementContent[];
 
-export async function highlightSegments(
-  segments: DiffRowSegment[][],
-  lang: string,
-): Promise<Map<number, ThemedToken[]>> {
-  const byIndex = new Map<number, ThemedToken[]>();
-  for (const segment of segments) {
-    const code = segment.map((row) => row.content).join("\n");
-    const key = `${lang}\n${code}`;
-    let tokens = tokenCache.get(key);
-    if (!tokens) {
-      try {
-        tokens = (
-          await codeToTokens(code, {
-            lang: lang as BundledLanguage,
-            themes: { light: "github-light", dark: "github-dark" },
-            defaultColor: false,
-          })
-        ).tokens;
-        tokenCache.set(key, tokens);
-      } catch {
-        continue;
-      }
-    }
-    segment.forEach((row, i) => byIndex.set(row.index, tokens[i] ?? []));
-  }
-  return byIndex;
+export type DiffHighlight = {
+  lines: Map<number, HighlightedLine>;
+  style?: string;
+};
+
+function firstElement(node: Root | Element | undefined, tagName: string): Element | undefined {
+  const child = node?.children.find(
+    (child) => child.type === "element" && child.tagName === tagName,
+  );
+  return child?.type === "element" && child.tagName === tagName ? child : undefined;
 }
 
-/**
- * The dual-theme background CSS variables (`--shiki-light-bg` /
- * `--shiki-dark-bg`), so the diff container matches code-block backgrounds.
- * Theme-level, so it is fetched once and cached.
- */
-let themeBgVarsCache: Record<string, string> | undefined;
+function highlightedLines(tree: Root): { lines: Element[]; style?: string } {
+  const pre = firstElement(tree, "pre");
+  const code = firstElement(pre, "code");
+  return {
+    lines:
+      code?.children.filter(
+        (child): child is Element => child.type === "element" && child.tagName === "span",
+      ) ?? [],
+    style: typeof pre?.properties.style === "string" ? pre.properties.style : undefined,
+  };
+}
 
-export async function getThemeBgVars(): Promise<Record<string, string> | undefined> {
-  if (themeBgVarsCache) return themeBgVarsCache;
+function diffTokenChildren(line: Element | undefined): HighlightedLine {
+  return (
+    line?.children.map((child) => {
+      if (child.type !== "element") return child;
+      return {
+        ...child,
+        properties: { ...child.properties, className: ["diff-token"] },
+      };
+    }) ?? []
+  );
+}
+
+async function themeStyle(): Promise<string | undefined> {
   try {
-    const { bg } = await codeToTokens("", {
-      lang: "text" as BundledLanguage,
-      themes: { light: "github-light", dark: "github-dark" },
-      defaultColor: false,
-    });
-    if (!bg) return undefined;
-    const vars: Record<string, string> = {};
-    for (const part of bg.split(";")) {
-      const colon = part.indexOf(":");
-      if (colon !== -1) vars[part.slice(0, colon)] = part.slice(colon + 1);
-    }
-    themeBgVarsCache = vars;
-    return vars;
+    return highlightedLines(
+      await codeToHast("", { ...shikiThemeOptions, lang: "text" as BundledLanguage }),
+    ).style;
   } catch {
     return undefined;
   }
 }
 
+export async function highlightSegments(
+  segments: DiffRowSegment[][],
+  lang?: string,
+): Promise<DiffHighlight> {
+  const lines = new Map<number, HighlightedLine>();
+  let style: string | undefined;
+
+  await Promise.all(
+    segments.map(async (segment) => {
+      if (!lang) return;
+      const code = segment.map((row) => row.content).join("\n");
+      try {
+        const highlighted = highlightedLines(
+          await codeToHast(code, { ...shikiThemeOptions, lang: lang as BundledLanguage }),
+        );
+        style ??= highlighted.style;
+        segment.forEach((row, i) => lines.set(row.index, diffTokenChildren(highlighted.lines[i])));
+      } catch {
+        return;
+      }
+    }),
+  );
+
+  return { lines, style: style ?? (await themeStyle()) };
+}
+
+function element(
+  tagName: string,
+  properties: Properties,
+  children: ElementContent[] = [],
+): Element {
+  return { type: "element", tagName, properties, children };
+}
+
+function text(value: string): Text {
+  return { type: "text", value };
+}
+
+function classNames(...parts: Array<string | undefined>): string[] {
+  return parts.filter((part): part is string => part !== undefined && part !== "");
+}
+
+function rowElement(line: DiffLine, highlighted: HighlightedLine | undefined): Element {
+  if (line.kind === "ellipsis") {
+    return element("tr", { className: ["text-gray-400", "dark:text-gray-600"] }, [
+      element("td", { colSpan: 3, className: ["px-2", "select-none"] }, [text("\u2026")]),
+    ]);
+  }
+
+  const { rowClass, sign, signClass, plainClass, oldLine, newLine } = diffRowStyle(line);
+  const hasHighlight = highlighted !== undefined && highlighted.length > 0;
+  const content: ElementContent[] = [
+    element("span", { className: classNames("select-none", signClass) }, [text(sign)]),
+  ];
+  if (hasHighlight) content.push(...highlighted);
+  else
+    content.push(
+      element("span", plainClass ? { className: [plainClass] } : {}, [text(line.content)]),
+    );
+
+  return element("tr", rowClass ? { className: [rowClass] } : {}, [
+    element(
+      "td",
+      { className: classNames("w-9", "px-2", "text-right", "select-none", signClass) },
+      [text(String(oldLine ?? ""))],
+    ),
+    element(
+      "td",
+      { className: classNames("w-9", "px-2", "text-right", "select-none", signClass) },
+      [text(String(newLine ?? ""))],
+    ),
+    element("td", { className: ["pr-2", "whitespace-pre"] }, content),
+  ]);
+}
+
+export function diffTableElement(lines: DiffLine[], highlighted: DiffHighlight): Element {
+  const table = element(
+    "table",
+    {
+      className: ["w-full", "border-collapse", "font-mono", "text-xs", "leading-5", "tabular-nums"],
+    },
+    [
+      element(
+        "tbody",
+        {},
+        lines.map((line, i) => rowElement(line, highlighted.lines.get(i))),
+      ),
+    ],
+  );
+  const properties: Properties = {
+    className: classNames("diff-view", "not-prose", "rounded-lg", "overflow-auto", "max-h-80"),
+  };
+  if (highlighted.style) properties.style = highlighted.style;
+  return element("div", properties, [table]);
+}
+
 export interface DiffViewProps {
-  /** File path whose extension selects the highlighting language. */
   path?: string;
-  /** Explicit highlighting language, overriding `path`. */
   lang?: string;
-  /** Diff layout; the edit tool's `details.diff` passes `numbered`. */
   format?: DiffFormat;
   diff: string;
 }
 
-/**
- * Render a diff as a GitHub-style table: old/new line-number gutters, colored
- * add/remove rows, and whole-block Shiki highlighting. Highlighting runs
- * client-side after mount so the server render stays plain (no hydration
- * mismatch).
- */
+const jsxRuntime = { Fragment, jsx, jsxs };
+
 export function DiffView({ path, diff, lang: langOverride, format = "unified" }: DiffViewProps) {
   const lines = useMemo(() => parseDiff(diff, format), [diff, format]);
   const lang = useMemo(() => langOverride ?? langForPath(path), [langOverride, path]);
-  const [bgVars, setBgVars] = useState<Record<string, string> | undefined>(undefined);
-  const [tokenLines, setTokenLines] = useState<Map<number, ThemedToken[]>>(new Map());
+  const [highlighted, setHighlighted] = useState<DiffHighlight>({ lines: new Map() });
 
   useEffect(() => {
     let cancelled = false;
-    // The background is theme-level (independent of the file's language), so
-    // it is fetched even when the language is unknown.
-    void getThemeBgVars().then((vars) => {
-      if (!cancelled) setBgVars(vars);
+    setHighlighted({ lines: new Map() });
+    void highlightSegments(consecutiveCodeSegments(lines), lang).then((result) => {
+      if (!cancelled) setHighlighted(result);
     });
-    if (lang) {
-      void highlightSegments(consecutiveCodeSegments(lines), lang).then((tokens) => {
-        if (!cancelled) setTokenLines(tokens);
-      });
-    }
     return () => {
       cancelled = true;
     };
   }, [lines, lang]);
 
-  return (
-    // max-h-80 keeps tall diffs in a scrollable panel instead of expanding
-    // the whole message; the .diff-view style paints the Shiki theme bg.
-    <div className="diff-view rounded-lg overflow-auto max-h-80" style={bgVars}>
-      <table className="w-full border-collapse font-mono text-xs leading-5 tabular-nums">
-        <tbody>
-          {lines.map((line, i) => (
-            <DiffRow key={i} line={line} tokens={tokenLines.get(i)} />
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  return toJsxRuntime(diffTableElement(lines, highlighted), jsxRuntime);
 }
 
-/**
- * The row-level styling a diff row needs: the row background, the leading
- * sign and its color, the fallback content color (when no tokens are
- * available), and the old/new gutter numbers. Shared by the React DiffRow
- * and the rehype plugin's HAST builder so both render the same table.
- */
 export function diffRowStyle(line: DiffLine): {
   rowClass: string;
   sign: string;
@@ -261,38 +296,4 @@ export function diffRowStyle(line: DiffLine): {
     oldLine: line.kind === "remove" || line.kind === "context" ? line.oldLine : undefined,
     newLine: line.kind === "add" || line.kind === "context" ? line.newLine : undefined,
   };
-}
-
-function DiffRow({ line, tokens }: { line: DiffLine; tokens?: ThemedToken[] }) {
-  if (line.kind === "ellipsis") {
-    return (
-      <tr className="text-gray-400 dark:text-gray-600">
-        <td colSpan={3} className="px-2 select-none">
-          …
-        </td>
-      </tr>
-    );
-  }
-
-  const { rowClass, sign, signClass, plainClass, oldLine, newLine } = diffRowStyle(line);
-  const hasTokens = tokens !== undefined && tokens.length > 0;
-
-  return (
-    <tr className={rowClass}>
-      <td className={`w-9 px-2 text-right select-none ${signClass}`}>{oldLine ?? ""}</td>
-      <td className={`w-9 px-2 text-right select-none ${signClass}`}>{newLine ?? ""}</td>
-      <td className="pr-2 whitespace-pre">
-        <span className={`select-none ${signClass}`}>{sign}</span>
-        {hasTokens ? (
-          tokens.map((token, i) => (
-            <span key={i} className="diff-token" style={token.htmlStyle}>
-              {token.content}
-            </span>
-          ))
-        ) : (
-          <span className={plainClass}>{line.content}</span>
-        )}
-      </td>
-    </tr>
-  );
 }

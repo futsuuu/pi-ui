@@ -163,6 +163,8 @@ describe("Markdown", () => {
     await expect.poll(() => screen.container.querySelector(".diff-view")).not.toBeNull();
     const view = screen.container.querySelector(".diff-view")!;
     expect(screen.container.querySelector("pre.shiki")).toBeNull();
+    expect(view.getAttribute("style")).toMatch(/--shiki-light-bg/);
+    expect(view.getAttribute("style")).toMatch(/--shiki-dark-bg/);
     // Unified-format rows: no numbers, but the fence body is kept.
     expect(view.textContent).toContain("const a = 2;");
     // The inner language's grammar (typescript) tokenized the content.
@@ -197,6 +199,16 @@ describe("Markdown", () => {
     await expect.poll(() => screen.container.querySelector("pre.shiki")).not.toBeNull();
     expect(screen.container.querySelector("pre.shiki code")?.textContent).toContain("const a = 1;");
     expect(screen.container.querySelector(".diff-view")).toBeNull();
+  });
+
+  it("does not render trailing empty rows for a trailing blank line", async () => {
+    const screen = await render(
+      <Markdown>{"```diff ts\n-const a = 1;\n+const a = 2;\n\n```"}</Markdown>,
+    );
+
+    await expect.poll(() => screen.container.querySelector(".diff-view")).not.toBeNull();
+    const rows = screen.container.querySelectorAll(".diff-view tbody tr");
+    expect(rows).toHaveLength(2);
   });
 
   it("renders code fences without a language via Shiki for a consistent background", async () => {
