@@ -141,17 +141,15 @@ export async function makeWritable(dir: string): Promise<void> {
   if (stats.isSymbolicLink()) return;
   await chmod(dir, stats.mode | 0o200);
   const entries = await readdir(dir, { withFileTypes: true });
-  await Promise.all(
-    entries.map(async (entry) => {
-      if (entry.isSymbolicLink()) return;
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        await makeWritable(full);
-      } else {
-        await chmod(full, (await lstat(full)).mode | 0o200);
-      }
-    }),
-  );
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) continue;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      await makeWritable(full);
+    } else {
+      await chmod(full, (await lstat(full)).mode | 0o200);
+    }
+  }
 }
 
 /** Short hash of a project path, used to namespace each project's worktrees. */
