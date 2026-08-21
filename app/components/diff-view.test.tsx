@@ -119,6 +119,27 @@ describe("DiffView", () => {
     expect(rows[0].textContent).toContain("2 const n: number = 2;");
   });
 
+  it("does not recolor plain code text on tinted rows", async () => {
+    const screen = await render(<DiffView format="numbered" diff={"-1 removed\n+1 added"} />);
+
+    await expect
+      .poll(() => screen.container.querySelectorAll(".diff-view tbody tr").length)
+      .toBe(2);
+    const rows = screen.container.querySelectorAll(".diff-view tbody tr");
+    expect(rows[0].querySelector("td:nth-child(3) > span:nth-child(2)")?.className).toBe("");
+    expect(rows[1].querySelector("td:nth-child(3) > span:nth-child(2)")?.className).toBe("");
+  });
+
+  it("does not recolor plain-text language tokens on tinted rows", async () => {
+    const screen = await render(<DiffView path="notes.txt" format="numbered" diff={"+1 added"} />);
+
+    await expect.poll(() => screen.container.querySelector("span.diff-token")).not.toBeNull();
+    const content = screen.container.querySelector("td:nth-child(3) > span:nth-child(2)");
+    expect(content?.className).toBe("diff-token");
+    expect(content?.className).not.toContain("text-green");
+    expect(content?.className).not.toContain("text-red");
+  });
+
   it("renders ellipsis rows for skipped unchanged ranges", async () => {
     const screen = await render(
       <DiffView path="foo.ts" format="numbered" diff={"   ...\n+5 const x = 5;"} />,
