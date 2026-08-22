@@ -170,8 +170,8 @@ describe("chatReducer", () => {
       messageStart(userMessage("hello")),
       messageEnd(userMessage("hello")),
       messageStart(assistantMessage([], "stop")),
-      messageUpdate(textDelta("Hello"), assistantMessage(textBlock("Hello"), "stop")),
-      messageUpdate(textDelta(" world"), assistantMessage(textBlock("Hello world"), "stop")),
+      messageUpdate(textDelta("Hello"), assistantMessage(textBlock("Hello"), "pending")),
+      messageUpdate(textDelta(" world"), assistantMessage(textBlock("Hello world"), "pending")),
       messageEnd(final),
       turnEnd(final),
       agentEnd([userMessage("hello"), final]),
@@ -185,7 +185,8 @@ describe("chatReducer", () => {
     expect(eventMessages.filter((m) => m.role === "user")).toHaveLength(1);
     expect(eventMessages[0]).toMatchObject({ role: "user", content: "hello" });
     // Deltas are merged into a single text block and the real stopReason
-    // from the final message is preserved (not overwritten with "stop").
+    // from the final message is preserved (not overwritten with the
+    // partial's placeholder).
     expect(eventMessages[1]).toMatchObject({
       role: "assistant",
       content: [{ type: "text", text: "Hello world" }],
@@ -247,11 +248,11 @@ describe("chatReducer", () => {
       messageStart(assistantMessage([], "stop")),
       messageUpdate(
         thinkingDelta("let me "),
-        assistantMessage([{ type: "thinking", thinking: "let me " }], "stop"),
+        assistantMessage([{ type: "thinking", thinking: "let me " }], "pending"),
       ),
       messageUpdate(
         thinkingDelta("think"),
-        assistantMessage([{ type: "thinking", thinking: "let me think" }], "stop"),
+        assistantMessage([{ type: "thinking", thinking: "let me think" }], "pending"),
       ),
       messageEnd(final),
       turnEnd(final),
@@ -289,9 +290,9 @@ describe("chatReducer", () => {
           type: "toolcall_end",
           contentIndex: 0,
           toolCall,
-          partial: assistantMessage([toolCall], "stop"),
+          partial: assistantMessage([toolCall], "pending"),
         },
-        assistantMessage([toolCall], "stop"),
+        assistantMessage([toolCall], "pending"),
       ),
       messageEnd(assistant),
       toolExecutionStart("call-1", "bash", { command: "ls" }),
@@ -469,12 +470,12 @@ describe("chatReducer", () => {
       messageStart(userMessage("hello")),
       messageEnd(userMessage("hello")),
       messageStart(assistantMessage([], "stop")),
-      messageUpdate(textDelta("Hello"), assistantMessage(textBlock("Hello"), "stop")),
+      messageUpdate(textDelta("Hello"), assistantMessage(textBlock("Hello"), "pending")),
     ];
 
     const { eventMessages } = run(events);
 
-    // Providers set a placeholder `stopReason: "stop"` on in-flight partials;
+    // Providers set a placeholder `stopReason: "pending"` on in-flight partials;
     // the UI treats `stopReason === undefined` as "still streaming", so the
     // entry must keep streaming until `message_end` closes it.
     expect(eventMessages[1]).toMatchObject({
@@ -496,7 +497,7 @@ describe("chatReducer", () => {
       messageStart(userMessage("hello")),
       messageEnd(userMessage("hello")),
       messageStart(assistantMessage([], "stop")),
-      messageUpdate(textDelta("partial"), assistantMessage(textBlock("partial"), "stop")),
+      messageUpdate(textDelta("partial"), assistantMessage(textBlock("partial"), "pending")),
       messageEnd(aborted),
       turnEnd(aborted),
       agentEnd([userMessage("hello"), aborted], true),
@@ -523,7 +524,7 @@ describe("chatReducer", () => {
       messageStart(userMessage("hello")),
       messageEnd(userMessage("hello")),
       messageStart(assistantMessage([], "stop")),
-      messageUpdate(textDelta("Don"), assistantMessage(textBlock("Don"), "stop")),
+      messageUpdate(textDelta("Don"), assistantMessage(textBlock("Don"), "pending")),
       // No message_end for the assistant message (e.g. interrupted stream).
       agentEnd(runMessages),
       agentSettled(),
@@ -548,7 +549,7 @@ describe("chatReducer", () => {
       messageStart(userMessage("hello")),
       messageEnd(userMessage("hello")),
       messageStart(assistantMessage([], "stop")),
-      messageUpdate(textDelta("Hello"), assistantMessage(textBlock("Hello"), "stop")),
+      messageUpdate(textDelta("Hello"), assistantMessage(textBlock("Hello"), "pending")),
       messageEnd(assistantMessage(textBlock("Hello"), "stop")),
       toolExecutionStart("call-1", "bash", { command: "ls" }),
       // The tool never reports tool_execution_end, but the run settles anyway.
@@ -631,7 +632,7 @@ describe("chatReducer", () => {
       messageStart(userMessage("hello")),
       messageEnd(userMessage("hello")),
       messageStart(assistantMessage([], "stop")),
-      messageUpdate(textDelta("Hello"), assistantMessage(textBlock("Hello"), "stop")),
+      messageUpdate(textDelta("Hello"), assistantMessage(textBlock("Hello"), "pending")),
       toolExecutionStart("call-1", "bash", { command: "ls" }),
     ]);
 
@@ -692,7 +693,7 @@ describe("chatReducer", () => {
         messageStart(userMessage("hello")),
         messageEnd(userMessage("hello")),
       ]);
-      const partial = assistantMessage(textBlock("Hello"), "stop", { timestamp: 5 });
+      const partial = assistantMessage(textBlock("Hello"), "pending", { timestamp: 5 });
       const updated = chatReducer(state, messageUpdate(textDelta("Hello"), partial));
 
       expect(updated.eventMessages).toHaveLength(2);
@@ -767,14 +768,14 @@ describe("chatReducer", () => {
         messageStart(userMessage("hello")),
         messageEnd(userMessage("hello")),
         messageStart(assistantMessage([], "stop")),
-        messageUpdate(textDelta("old"), assistantMessage(textBlock("old"), "stop")),
+        messageUpdate(textDelta("old"), assistantMessage(textBlock("old"), "pending")),
         messageEnd(assistantMessage(textBlock("old answer"), "stop")),
         // Distinct timestamp: message identity is role + timestamp, so turn
         // 2's prompt must not collide with turn 1's.
         messageStart({ ...userMessage("second"), timestamp: 2 }),
         messageEnd({ ...userMessage("second"), timestamp: 2 }),
       ]);
-      const partial = assistantMessage(textBlock("new answer"), "stop", { timestamp: 5 });
+      const partial = assistantMessage(textBlock("new answer"), "pending", { timestamp: 5 });
       const updated = chatReducer(state, messageUpdate(textDelta("new"), partial));
 
       expect(updated.eventMessages).toHaveLength(4);
@@ -806,7 +807,7 @@ describe("chatReducer", () => {
         messageStart(assistantMessage([], "stop", { timestamp: 5 })),
         messageUpdate(
           textDelta("Hel"),
-          assistantMessage(textBlock("Hel"), "stop", { timestamp: 5 }),
+          assistantMessage(textBlock("Hel"), "pending", { timestamp: 5 }),
         ),
       ];
       const state = chatReducer(createChatState(loaded, "s1"), {
@@ -840,7 +841,7 @@ describe("chatReducer", () => {
           messageStart(userMessage("hello")),
           messageEnd(userMessage("hello")),
           messageStart(assistantMessage([], "stop")),
-          messageUpdate(textDelta("fin"), assistantMessage(textBlock("fin"), "stop")),
+          messageUpdate(textDelta("fin"), assistantMessage(textBlock("fin"), "pending")),
           toolExecutionStart("call-1", "bash", { command: "ls" }),
         ],
         [],
@@ -947,7 +948,7 @@ describe("chatReducer", () => {
         replay,
         messageUpdate(
           textDelta("Hel"),
-          assistantMessage(textBlock("Hel"), "stop", { timestamp: 5 }),
+          assistantMessage(textBlock("Hel"), "pending", { timestamp: 5 }),
         ),
       );
       expect(updated.eventMessages).toHaveLength(2);
