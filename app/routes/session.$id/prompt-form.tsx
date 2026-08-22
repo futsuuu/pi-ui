@@ -5,7 +5,7 @@ import {
   type Model,
   type ModelThinkingLevel,
 } from "@earendil-works/pi-ai";
-import { CheckIcon, ChevronDownIcon, ChevronUpIcon, SendIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, ChevronUpIcon, SendIcon, Square } from "lucide-react";
 import { Select } from "radix-ui";
 import { memo, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Await } from "react-router";
@@ -34,10 +34,12 @@ export interface SelectedModel {
 function MessageInput({
   isStreaming,
   onSubmit,
+  onAbort,
   children,
 }: {
   isStreaming: boolean;
   onSubmit?: (text: string) => void;
+  onAbort: () => void;
   children?: React.ReactNode;
 }) {
   const [input, setInput] = useState("");
@@ -85,13 +87,24 @@ function MessageInput({
         <div className="flex items-center gap-2 mt-3">
           {children}
           <div className="ml-auto">
-            <button
-              onClick={handleSubmit}
-              disabled={!onSubmit || !input.trim() || isStreaming}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white rounded-lg p-1.5 transition-colors disabled:cursor-not-allowed"
-            >
-              <SendIcon className="w-4 h-4" strokeWidth={2} />
-            </button>
+            {isStreaming ? (
+              <button
+                onClick={onAbort}
+                aria-label="Abort"
+                title="Abort"
+                className="bg-red-600 hover:bg-red-700 text-white rounded-lg p-1.5 transition-colors"
+              >
+                <Square className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                onClick={handleSubmit}
+                disabled={!onSubmit || !input.trim()}
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white rounded-lg p-1.5 transition-colors disabled:cursor-not-allowed"
+              >
+                <SendIcon className="w-4 h-4" strokeWidth={2} />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -224,6 +237,7 @@ export interface PromptFormProps {
     model: { provider: string; modelId: string },
     thinkingLevel: ModelThinkingLevel,
   ) => void;
+  onAbort: () => void;
 }
 
 /**
@@ -246,6 +260,7 @@ export const PromptForm = memo(function PromptForm({
   defaultModel,
   defaultThinkingLevel,
   onSend,
+  onAbort,
 }: PromptFormProps) {
   const [selectedModel, setSelectedModel] = useState<SelectedModel | null>(defaultModel);
   const [selectedThinkingLevel, setSelectedThinkingLevel] = useState(defaultThinkingLevel);
@@ -296,7 +311,11 @@ export const PromptForm = memo(function PromptForm({
     : "";
 
   return (
-    <MessageInput isStreaming={isStreaming} onSubmit={selectedModel ? handleSubmit : undefined}>
+    <MessageInput
+      isStreaming={isStreaming}
+      onSubmit={selectedModel ? handleSubmit : undefined}
+      onAbort={onAbort}
+    >
       {/* Model selector — the trigger is decoupled from the models promise so
           it always shows the default model; only the open dropdown waits. */}
       <SelectPicker
