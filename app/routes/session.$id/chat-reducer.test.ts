@@ -60,9 +60,7 @@ function toolResultMessage(
 }
 
 function textDelta(delta: string): AssistantMessageEvent {
-  // Partial messages carry the provider's placeholder stopReason ("stop" in
-  // the installed 0.81.1; TODO: switch to "pending" on upgrade).
-  return { type: "text_delta", contentIndex: 0, delta, partial: assistantMessage([], "stop") };
+  return { type: "text_delta", contentIndex: 0, delta, partial: assistantMessage([], "pending") };
 }
 
 function thinkingDelta(delta: string): AssistantMessageEvent {
@@ -70,7 +68,7 @@ function thinkingDelta(delta: string): AssistantMessageEvent {
     type: "thinking_delta",
     contentIndex: 0,
     delta,
-    partial: assistantMessage([], "stop"),
+    partial: assistantMessage([], "pending"),
   };
 }
 

@@ -11,9 +11,9 @@
     "test": "vitest --run"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.81.1",
-    "@earendil-works/pi-ai": "^0.81.1",
-    "@earendil-works/pi-coding-agent": "^0.81.1",
+    "@earendil-works/pi-agent-core": "^0.84.2",
+    "@earendil-works/pi-ai": "^0.84.2",
+    "@earendil-works/pi-coding-agent": "^0.84.2",
     "@react-router/fs-routes": "^8.3.0",
     "@react-router/node": "^8.3.0",
     "@react-router/serve": "^8.3.0",
