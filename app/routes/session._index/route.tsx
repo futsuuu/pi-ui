@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import {
+  ChevronRight,
   Dot,
   GitBranch,
   Layers,
@@ -10,6 +11,7 @@ import {
   Plus,
   Settings,
 } from "lucide-react";
+import { Collapsible } from "radix-ui";
 import { useEffect, useMemo, useState } from "react";
 import { data, Link, redirect, useFetcher, useLoaderData } from "react-router";
 import * as v from "valibot";
@@ -48,6 +50,15 @@ const ActionSchema = v.variant("type", [
 ]);
 
 export type ActionInput = v.InferInput<typeof ActionSchema>;
+
+type SessionWorktree = Worktree & {
+  isMain: boolean;
+  isManaged: boolean;
+};
+
+type WorktreeWithSessions = SessionWorktree & {
+  sessions: SessionListItem[];
+};
 
 export async function action({ request, context }: Route.ActionArgs) {
   const worktreeRepository = context.get(worktreeRepositoryContext);
@@ -180,6 +191,164 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   };
 }
 
+function formatDate(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const diff = now.getTime() - d.getTime();
+  if (diff < 60000) return "Just now";
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  if (diff < 7 * 86400000) return `${Math.floor(diff / 86400000)}d ago`;
+  if (diff < 30 * 86400000) return `${Math.floor(diff / (7 * 86400000))}w ago`;
+  if (diff < 365 * 86400000) return `${Math.floor(diff / (30 * 86400000))}mo ago`;
+  return d.toLocaleDateString();
+}
+
+function isAttentionSession(session: SessionListItem): boolean {
+  return session.isStreaming || !session.isRead;
+}
+
+function SessionRow({
+  session,
+  deleting,
+  onDelete,
+}: {
+  session: SessionListItem;
+  deleting: boolean;
+  onDelete: () => void;
+}) {
+  return (
+    <div
+      className={`flex items-center rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/60 ${deleting ? "opacity-50 pointer-events-none" : ""}`}
+    >
+      <span className="w-4 h-4 flex items-center justify-center flex-shrink-0">
+        {session.isStreaming ? (
+          <Loader2Icon aria-label="Streaming" className="w-4 h-4 text-blue-500 animate-spin" />
+        ) : (
+          !session.isRead && (
+            <Dot aria-label="Unread" className="w-4 h-4 fill-current text-blue-500" />
+          )
+        )}
+      </span>
+      <Link
+        to={`/session/${encodeURIComponent(session.id)}`}
+        className="min-w-0 flex-1 py-2 pl-2 text-left"
+      >
+        <p className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
+          {session.firstMessage || "Untitled Session"}
+        </p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+          {formatDate(session.timestamp)} · {session.messageCount} messages
+        </p>
+      </Link>
+      <ActionsMenu
+        ariaLabel="Session actions"
+        trigger={<MoreVertical className="w-5 h-5" />}
+        triggerClassName="p-1.5"
+      >
+        <DeleteMenuItem onSelect={onDelete} label="Delete Session" />
+      </ActionsMenu>
+    </div>
+  );
+}
+
+function WorktreeGroup({
+  worktree,
+  onDeleteSession,
+  onDeleteWorktree,
+  isDeletingSession,
+  isDeletingWorktree,
+}: {
+  worktree: WorktreeWithSessions;
+  onDeleteSession: (session: SessionListItem) => void;
+  onDeleteWorktree: (worktree: WorktreeWithSessions) => void;
+  isDeletingSession: (sessionId: string) => boolean;
+  isDeletingWorktree: (worktreePath: string) => boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const attentionSessions = worktree.sessions.filter(isAttentionSession);
+  const branch = worktree.branch ?? worktree.head ?? "detached";
+  const renderSession = (session: SessionListItem) => (
+    <SessionRow
+      key={session.id}
+      session={session}
+      deleting={isDeletingSession(session.id)}
+      onDelete={() => onDeleteSession(session)}
+    />
+  );
+
+  return (
+    <Collapsible.Root
+      open={open}
+      onOpenChange={setOpen}
+      className={`overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 ${isDeletingWorktree(worktree.path) ? "opacity-50 pointer-events-none" : ""}`}
+    >
+      <div className="flex items-center justify-between gap-4 p-3">
+        <Collapsible.Trigger asChild>
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg p-1 -m-1 text-left hover:bg-gray-50 dark:hover:bg-gray-800/60"
+          >
+            <ChevronRight
+              className={`w-4 h-4 flex-shrink-0 text-gray-400 transition-transform ${open ? "rotate-90" : ""}`}
+            />
+            <div className="min-w-0">
+              <p className="font-mono text-sm text-gray-900 dark:text-gray-100 truncate flex items-center gap-2">
+                {branch}
+                {worktree.isMain && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 text-[10px] font-sans font-medium uppercase tracking-wide flex-shrink-0">
+                    main
+                  </span>
+                )}
+                {worktree.branch === null && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-[10px] font-sans font-medium uppercase tracking-wide flex-shrink-0">
+                    detached
+                  </span>
+                )}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {worktree.sessions.length} {worktree.sessions.length === 1 ? "session" : "sessions"}
+              </p>
+            </div>
+          </button>
+        </Collapsible.Trigger>
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <Link
+            to={`/session/new?dir=${encodeURIComponent(worktree.path)}`}
+            title="New Session"
+            className="p-2 -m-1 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          >
+            <MessageCirclePlus className="w-5 h-5" />
+          </Link>
+          <ActionsMenu
+            ariaLabel="Worktree actions"
+            trigger={<MoreVertical className="w-5 h-5" />}
+            triggerClassName="p-1.5"
+          >
+            <DeleteMenuItem
+              onSelect={() => onDeleteWorktree(worktree)}
+              label="Delete Worktree"
+              disabled={worktree.isMain || !worktree.isManaged}
+            />
+          </ActionsMenu>
+        </div>
+      </div>
+      {worktree.sessions.length > 0 && (
+        <Collapsible.Content>
+          <div className="border-t border-gray-100 dark:border-gray-800/80 py-1 pl-3 pr-3">
+            {worktree.sessions.map(renderSession)}
+          </div>
+        </Collapsible.Content>
+      )}
+      {!open && attentionSessions.length > 0 && (
+        <div className="border-t border-gray-100 dark:border-gray-800/80 py-1 pl-3 pr-3">
+          {attentionSessions.map(renderSession)}
+        </div>
+      )}
+    </Collapsible.Root>
+  );
+}
+
 /**
  * Renders the session selection page with worktree management and session actions.
  */
@@ -198,29 +367,16 @@ export default function Sessions() {
   }, []);
 
   const sessionList = useSessionList(worktrees, cwd);
-  const worktreesWithCount = useMemo(
+  const worktreesWithSessions = useMemo(
     () =>
-      worktrees.map((worktree) => ({
-        ...worktree,
-        sessionCount: sessionList.filter(
-          (item) => item.worktree === (worktree.isMain ? null : worktree),
-        ).length,
-      })),
+      worktrees.map((worktree) => {
+        const sessions = sessionList.filter((session) =>
+          worktree.isMain ? session.worktree === null : session.worktree?.path === worktree.path,
+        );
+        return { ...worktree, sessions };
+      }),
     [worktrees, sessionList],
   );
-
-  function formatDate(ts: number): string {
-    const d = new Date(ts);
-    const now = new Date();
-    const diff = now.getTime() - d.getTime();
-    if (diff < 60000) return "Just now";
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-    if (diff < 7 * 86400000) return `${Math.floor(diff / 86400000)}d ago`;
-    if (diff < 30 * 86400000) return `${Math.floor(diff / (7 * 86400000))}w ago`;
-    if (diff < 365 * 86400000) return `${Math.floor(diff / (30 * 86400000))}mo ago`;
-    return d.toLocaleDateString();
-  }
 
   function addWorktree() {
     fetcher.reset();
@@ -253,9 +409,9 @@ export default function Sessions() {
     );
   }
 
-  function deleteWorktree(worktree: (typeof worktreesWithCount)[number]) {
+  function deleteWorktree(worktree: WorktreeWithSessions) {
     const branch = worktree.branch ?? worktree.head ?? "detached";
-    const { sessionCount } = worktree;
+    const sessionCount = worktree.sessions.length;
     const message =
       sessionCount > 0
         ? `Delete this worktree?\n\nBranch "${branch}" has ${sessionCount} ${sessionCount === 1 ? "session" : "sessions"} stored for it, which will also be deleted.`
@@ -300,142 +456,58 @@ export default function Sessions() {
         </div>
       </div>
 
-      <div className="flex-1 max-w-3xl mx-auto w-full p-6">
-        {/* Worktrees */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
-              <GitBranch className="w-4 h-4 text-green-600 dark:text-green-500" />
-              Worktrees
-            </h2>
-            <button
-              onClick={addWorktree}
-              disabled={fetcher.state !== "idle"}
-              className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Add Worktree
-            </button>
+      <div className="flex-1 max-w-3xl mx-auto w-full px-2 py-6 sm:p-6">
+        {!ready ? (
+          <div className="flex justify-center py-10">
+            <Loader2Icon className="w-6 h-6 text-gray-400 animate-spin" />
           </div>
-          {(fetcher.formData?.get("type") === "addWorktree" ||
-            fetcher.formData?.get("type") === "deleteWorktree") &&
-            fetcher.data &&
-            "error" in fetcher.data && (
-              <p className="text-sm text-red-600 dark:text-red-400 mb-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
-                {fetcher.data.error}
-              </p>
-            )}
-          <div className="space-y-2">
-            {worktreesWithCount.map((worktree) => (
-              <div
-                key={worktree.path}
-                className={`flex items-center justify-between gap-4 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 ${isDeletingWorktree(worktree.path) ? "opacity-50 pointer-events-none" : ""}`}
-              >
-                <div className="min-w-0">
-                  <p className="font-mono text-sm text-gray-900 dark:text-gray-100 truncate flex items-center gap-2">
-                    {worktree.branch ?? worktree.head ?? "detached"}
-                    {worktree.isMain && (
-                      <span className="px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 text-[10px] font-sans font-medium uppercase tracking-wide flex-shrink-0">
-                        main
-                      </span>
-                    )}
-                    {worktree.branch === null && (
-                      <span className="px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-[10px] font-sans font-medium uppercase tracking-wide flex-shrink-0">
-                        detached
-                      </span>
-                    )}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {worktree.sessionCount} {worktree.sessionCount === 1 ? "session" : "sessions"}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3 flex-shrink-0">
-                  <Link
-                    to={`/session/new?dir=${encodeURIComponent(worktree.path)}`}
-                    title="New Session"
-                    className="p-2 -m-1 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                  >
-                    <MessageCirclePlus className="w-5 h-5" />
-                  </Link>
-                  <ActionsMenu
-                    ariaLabel="Worktree actions"
-                    trigger={<MoreVertical className="w-5 h-5" />}
-                    triggerClassName="p-2 -m-1"
-                  >
-                    <DeleteMenuItem
-                      onSelect={() => deleteWorktree(worktree)}
-                      label="Delete Worktree"
-                      disabled={worktree.isMain || !worktree.isManaged}
-                    />
-                  </ActionsMenu>
-                </div>
+        ) : (
+          <>
+            <div className="mb-8">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                  <GitBranch className="w-4 h-4 text-green-600 dark:text-green-500" />
+                  Worktrees
+                </h2>
+                <button
+                  onClick={addWorktree}
+                  disabled={fetcher.state !== "idle"}
+                  className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Worktree
+                </button>
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Sessions */}
-        <div className="space-y-2">
-          {fetcher.formData?.get("type") === "deleteSession" &&
-            fetcher.data &&
-            "error" in fetcher.data && (
-              <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
-                {fetcher.data.error}
-              </p>
-            )}
-          {!ready ? (
-            <div className="flex justify-center py-10">
-              <Loader2Icon className="w-6 h-6 text-gray-400 animate-spin" />
+              {(fetcher.formData?.get("type") === "addWorktree" ||
+                fetcher.formData?.get("type") === "deleteWorktree") &&
+                fetcher.data &&
+                "error" in fetcher.data && (
+                  <p className="text-sm text-red-600 dark:text-red-400 mb-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
+                    {fetcher.data.error}
+                  </p>
+                )}
+              {fetcher.formData?.get("type") === "deleteSession" &&
+                fetcher.data &&
+                "error" in fetcher.data && (
+                  <p className="text-sm text-red-600 dark:text-red-400 mb-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
+                    {fetcher.data.error}
+                  </p>
+                )}
+              <div className="space-y-2">
+                {worktreesWithSessions.map((worktree) => (
+                  <WorktreeGroup
+                    key={worktree.path}
+                    worktree={worktree}
+                    onDeleteSession={deleteSession}
+                    onDeleteWorktree={deleteWorktree}
+                    isDeletingSession={isDeleting}
+                    isDeletingWorktree={isDeletingWorktree}
+                  />
+                ))}
+              </div>
             </div>
-          ) : (
-            sessionList.map((session) => (
-              <div
-                key={session.id}
-                className={`relative ${isDeleting(session.id) ? "opacity-50 pointer-events-none" : ""}`}
-              >
-                <Link
-                  to={`/session/${encodeURIComponent(session.id)}`}
-                  className="block w-full text-left bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-sm transition-all"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-gray-900 dark:text-gray-100 pr-12 flex items-center gap-2">
-                        <span className="truncate">
-                          {session.firstMessage || "Untitled Session"}
-                        </span>
-                        {!session.isRead && !session.isStreaming && (
-                          <Dot
-                            aria-label="Unread"
-                            className="w-5 h-5 fill-current text-blue-500 flex-shrink-0"
-                          />
-                        )}
-                        {session.isStreaming && (
-                          <Loader2Icon className="w-5 h-5 text-blue-500 animate-spin flex-shrink-0" />
-                        )}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1.5 flex-wrap">
-                        {formatDate(session.timestamp)} · {session.messageCount} messages
-                        {session.worktree && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 font-mono">
-                            <GitBranch className="w-3 h-3" />
-                            {session.worktree.branch ?? session.worktree.head ?? "detached"}
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                </Link>
-                <ActionsMenu
-                  ariaLabel="Session actions"
-                  trigger={<MoreVertical className="w-5 h-5" />}
-                  triggerClassName="absolute top-1/2 -translate-y-1/2 right-3 p-1.5"
-                >
-                  <DeleteMenuItem onSelect={() => deleteSession(session)} label="Delete Session" />
-                </ActionsMenu>
-              </div>
-            ))
-          )}
-        </div>
+          </>
+        )}
       </div>
     </div>
   );
