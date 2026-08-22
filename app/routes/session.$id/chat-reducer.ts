@@ -139,7 +139,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     }
     case "message_update": {
       // The partial carries the full accumulated content, but providers put a
-      // placeholder `stopReason: "stop"` on in-flight messages, so only the
+      // placeholder `stopReason: "pending"` on in-flight messages, so only the
       // content is applied; the entry keeps streaming until `message_end`.
       const { message } = action;
       if (message.role !== "assistant") return state;
@@ -350,6 +350,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "agent_start":
     case "auto_retry_start":
     case "auto_retry_end":
+    case "bash_execution_update":
     case "compaction_start":
     case "compaction_end":
     case "entry_appended":
@@ -410,7 +411,7 @@ function findToolIndex(messages: AgentMessagePropsWithKey[], toolCallId: string)
  * Convert the final assistant message carried by `message_end`/`agent_end`
  * into the fields the chat UI renders, including the real stopReason and
  * errorMessage. In-flight partials from `message_update` are NOT mapped with
- * this helper: providers set a placeholder `stopReason: "stop"` on them, so
+ * this helper: providers set a placeholder `stopReason: "pending"` on them, so
  * only `updateAssistantContent` is used to keep the entry streaming
  * (`stopReason === undefined`).
  */
