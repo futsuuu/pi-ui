@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import type { AgentMessage as SessionMessage } from "@earendil-works/pi-agent-core";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
-import { Layers, Plus, Settings } from "lucide-react";
+import { Layers, Settings } from "lucide-react";
 import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { data, Link, useFetcher, useRevalidator } from "react-router";
 
@@ -482,26 +482,6 @@ function Chat({
             </Link>
           </div>
         </div>
-        {/* Secondary toolbar */}
-        <div className="max-w-5xl mx-auto px-4 h-10 flex items-center gap-2 border-t border-gray-100 dark:border-gray-800">
-          <div className="ml-auto flex items-center gap-2">
-            {state.isStreaming && (
-              <button
-                onClick={abortMessage}
-                className="text-xs px-2.5 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
-              >
-                Abort
-              </button>
-            )}
-            <Link
-              to={`/session/new?dir=${encodeURIComponent(cwd)}`}
-              className="text-xs px-2.5 py-1 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors flex items-center gap-1"
-            >
-              <Plus className="w-3 h-3" />
-              New
-            </Link>
-          </div>
-        </div>
       </div>
 
       {/* Messages */}
@@ -555,6 +535,7 @@ function Chat({
         defaultModel={state.model}
         defaultThinkingLevel={state.thinkingLevel ?? "medium"}
         onSend={sendMessage}
+        onAbort={abortMessage}
       />
     </div>
   );
