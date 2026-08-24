@@ -371,7 +371,12 @@ export default function SessionLayout() {
   const fetcher = useFetcher<typeof action>();
   const navigate = useNavigate();
   const { id: openSessionId } = useParams();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(openSessionId === undefined);
+  const [prevSessionId, setPrevSessionId] = useState(openSessionId);
+  if (openSessionId !== prevSessionId) {
+    setPrevSessionId(openSessionId);
+    setSidebarOpen(openSessionId === undefined);
+  }
 
   // Re-render once a minute so relative timestamps stay current even while
   // no stream event arrives (an idle session would otherwise freeze at e.g.
