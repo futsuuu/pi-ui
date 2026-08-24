@@ -20,7 +20,7 @@ import {
   type SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent";
 
-import { orderedDisplayKeys } from "./routes/session.$id/message-key";
+import { messageKey, orderedDisplayKeys, toolResultKey } from "./routes/session.$id/message-key";
 import type { SessionInfo } from "./session-info";
 import {
   SessionViewStateRepository,
@@ -141,6 +141,49 @@ export function applyTurnEvent(
     }
   }
   return event.type === "turn_start" ? [event] : undefined;
+}
+
+/**
+ * The conversation snapshot for a loaded session: the persisted leaf-path
+ * entries merged with the runtime's live list. `buildContextEntries()` can
+ * return a failed assistant message that auto-retry already pruned from
+ * agent state, which `session.messages` alone would drop from the snapshot.
+ */
+export function mergedSessionMessages(session: {
+  readonly messages: AgentSession["messages"];
+  readonly sessionManager: Pick<SessionManager, "buildContextEntries">;
+}): AgentSession["messages"] {
+  const live = session.messages;
+  const context = session.sessionManager.buildContextEntries();
+  if (context.length === 0) return live;
+  const identityOf = (message: AgentSession["messages"][number]): string | null => {
+    if (message.role === "toolResult") return toolResultKey(message.toolCallId);
+    if (typeof message.timestamp === "number") {
+      return messageKey(message.role, message.timestamp);
+    }
+    // Non-conversation entries (custom, compaction summaries) have no
+    // timestamp; dedupe by role. The chat renders none, so over-deduplication
+    // is harmless.
+    return message.role;
+  };
+  const seen = new Set<string>();
+  const merged: AgentSession["messages"] = [];
+  for (const entry of context) {
+    if (entry.type !== "message") continue;
+    const identity = identityOf(entry.message);
+    if (identity !== null && seen.has(identity)) continue;
+    if (identity !== null) seen.add(identity);
+    merged.push(entry.message);
+  }
+  for (const message of live) {
+    const identity = identityOf(message);
+    if (identity !== null && seen.has(identity)) continue;
+    if (identity !== null) seen.add(identity);
+    merged.push(message);
+  }
+  // Keep the live reference when nothing was merged so revalidation
+  // comparisons can detect snapshot changes.
+  return merged.length === live.length ? live : merged;
 }
 
 export class AgentSessionContainer {
@@ -352,7 +395,10 @@ export class AgentSessionContainer {
   }
 
   private loadedInfo(sessionId: string, session: AgentSession): SessionInfo {
-    const keys = orderedDisplayKeys(session.messages, this.turnBuffers.get(sessionId) ?? []);
+    const keys = orderedDisplayKeys(
+      mergedSessionMessages(session),
+      this.turnBuffers.get(sessionId) ?? [],
+    );
     const stored = this.viewStateRepository.get(sessionId);
     const lastDisplayed = stored?.lastDisplayedMessageKey ?? null;
     const latest = keys.length > 0 ? keys[keys.length - 1] : null;
@@ -451,7 +497,10 @@ export class AgentSessionContainer {
     if (runtime) {
       const loaded = await runtime.catch(() => null);
       if (loaded) {
-        return orderedDisplayKeys(loaded.session.messages, this.turnBuffers.get(sessionId) ?? []);
+        return orderedDisplayKeys(
+          mergedSessionMessages(loaded.session),
+          this.turnBuffers.get(sessionId) ?? [],
+        );
       }
     }
     const infoList = hints.cwd

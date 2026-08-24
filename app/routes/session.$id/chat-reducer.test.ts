@@ -542,6 +542,47 @@ describe("chatReducer", () => {
     });
   });
 
+  it("promotes a retried failed message from the live list into the snapshot", () => {
+    // A revalidation after an auto-retry must render the persisted failed
+    // message (merged into the snapshot) at its conversation position.
+    const failed = assistantMessage(textBlock("half"), "error", { errorMessage: "boom" });
+    const retry = assistantMessage(textBlock("answer"), "stop", { timestamp: 2 });
+    const state = run([
+      agentStart(),
+      turnStart(),
+      messageStart(userMessage("hello")),
+      messageEnd(userMessage("hello")),
+      messageStart(assistantMessage([], "stop")),
+      messageUpdate(textDelta("half"), assistantMessage(textBlock("half"), "pending")),
+      messageEnd(failed),
+      turnEnd(failed),
+      agentEnd([userMessage("hello"), failed], true),
+      agentSettled(),
+      turnStart(),
+      messageStart(assistantMessage([], "stop", { timestamp: 2 })),
+      messageUpdate(
+        textDelta("answer"),
+        assistantMessage(textBlock("answer"), "pending", { timestamp: 2 }),
+      ),
+      messageEnd(retry),
+      turnEnd(retry),
+      agentEnd([userMessage("hello"), retry], false),
+      agentSettled(),
+    ]);
+
+    expect(state.eventMessages.map((m) => m.role)).toEqual(["user", "assistant", "assistant"]);
+    expect(state.eventMessages[1]).toMatchObject({ stopReason: "error", errorMessage: "boom" });
+
+    const rebuilt = chatReducer(state, {
+      type: "reset",
+      loadedMessages: [userMessage("hello"), failed, retry],
+      turnEvents: [],
+      sessionId: "s1",
+    });
+    expect(rebuilt.eventMessages).toEqual([]);
+    expect(rebuilt.loadedMessages).toEqual([userMessage("hello"), failed, retry]);
+  });
+
   it("closes unfinished streaming messages on agent_settled", () => {
     const events: AgentSessionEvent[] = [
       agentStart(),
