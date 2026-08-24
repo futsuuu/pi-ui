@@ -279,8 +279,20 @@ export class WorktreeRepository {
     }
   }
 
-  /** Path of the main worktree (repository toplevel) for a project. */
+  /**
+   * Path of the main worktree for the repository containing `projectPath`.
+   * git lists the main worktree first, so this also works when called from
+   * inside a linked worktree. Falls back to the toplevel (then to
+   * `projectPath` itself) outside a git repository.
+   */
   public async mainPath(projectPath: string): Promise<string> {
+    try {
+      const output = await this.runGit(["worktree", "list", "--porcelain"], {
+        cwd: projectPath,
+      });
+      const [main] = parseWorktreeList(output);
+      if (main) return main.path;
+    } catch {}
     return this.toplevel(projectPath);
   }
 

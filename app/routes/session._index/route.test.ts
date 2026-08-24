@@ -1,218 +1,89 @@
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
-
-import {
-  SessionManager,
-  type CreateAgentSessionRuntimeFactory,
-} from "@earendil-works/pi-coding-agent";
 import { RouterContextProvider } from "react-router";
 import { describe, expect, it } from "vitest";
 
-import { AgentSessionContainer } from "~/agent-session-container";
-import { agentSessionContainerContext, worktreeRepositoryContext } from "~/router-contexts";
+import { ProjectRepository } from "~/project-repository";
+import { projectRepositoryContext, worktreeRepositoryContext } from "~/router-contexts";
 import { WorktreeRepository } from "~/worktree-repository";
 
-import { action } from "./route";
+import { loader } from "./route";
 
-/** A runtime factory that is never invoked by the tested paths. */
-const noopFactory: CreateAgentSessionRuntimeFactory = async () => {
-  throw new Error("runtime factory should not be called");
-};
+const MAIN = "/repo/main";
+const LINKED = "/repo/linked";
 
-function git(cwd: string, args: string[]): void {
-  execFileSync("git", args, { cwd, stdio: "ignore" });
+/** `git worktree list --porcelain` shaped output for the given worktrees. */
+function porcelain(...paths: string[]): string {
+  return paths.map((path_) => `worktree ${path_}\nHEAD abc1234\ndetached\n`).join("\n\n");
 }
 
-/** Async git runner delegating to the real git (for mocked repositories). */
-function runGit(args: string[], options: { cwd?: string } = {}): Promise<string> {
-  return Promise.resolve(execFileSync("git", args, { cwd: options.cwd, encoding: "utf8" }).trim());
-}
-
-function createRepo(): { root: string; project: string; dataDir: string; agentDir: string } {
-  const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-route-"));
-  const project = path.join(root, "project");
-  const dataDir = path.join(root, "worktrees");
-  const agentDir = path.join(root, "agent");
-  mkdirSync(project, { recursive: true });
-  git(project, ["init", "--quiet", "--initial-branch", "main"]);
-  git(project, ["config", "user.email", "test@example.com"]);
-  git(project, ["config", "user.name", "Test"]);
-  writeFileSync(path.join(project, "file.txt"), "hello\n");
-  git(project, ["add", "."]);
-  git(project, ["commit", "--quiet", "--message", "init"]);
-  return { root, project, dataDir, agentDir };
-}
-
-/**
- * Persist a session for `cwd` under the default agent dir (redirected to a
- * temp dir via PI_CODING_AGENT_DIR) and return its id and file path.
- * Session files are only written once an assistant message arrives, so append
- * a user message followed by an assistant reply.
- */
-function createSession(cwd: string): { id: string; file: string } {
-  const sm = SessionManager.create(cwd);
-  const timestamp = Date.now();
-  sm.appendMessage({ role: "user", content: "hello", timestamp });
-  sm.appendMessage({
-    role: "assistant",
-    content: [{ type: "text", text: "Hi there!" }],
-    api: "anthropic-messages",
-    provider: "anthropic",
-    model: "test-model",
-    usage: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 0,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+/** WorktreeRepository whose git calls are stubbed to `porcelain`. */
+function repository(porcelainOutput: string): WorktreeRepository {
+  return new WorktreeRepository({
+    dataDir: "/tmp/test-worktrees",
+    runGit: async (args) => {
+      if (args[0] === "worktree" && args[1] === "list") return porcelainOutput;
+      if (args[0] === "worktree" && args[1] === "prune") return "";
+      if (args[0] === "rev-parse" && args[1] === "--show-toplevel") return MAIN;
+      return "";
     },
-    stopReason: "stop",
-    timestamp,
   });
-  return { id: sm.getSessionId(), file: sm.getSessionFile()! };
 }
 
-function postAction(context: RouterContextProvider, body: unknown): Promise<unknown> {
-  return action({
-    request: new Request("http://localhost/session?dir=test", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }),
-    url: new URL("http://localhost/session?dir=test"),
+function runLoader(context: RouterContextProvider, dir?: string): Promise<unknown> {
+  const query = dir ? `?dir=${encodeURIComponent(dir)}` : "";
+  return loader({
+    request: new Request(`http://localhost/session${query}`),
+    url: new URL(`http://localhost/session${query}`),
     params: {},
     pattern: "/session",
     context,
   });
 }
 
-/** Redirect the session storage dir so tests never touch the real ~/.pi/agent. */
-function withAgentDir(agentDir: string, fn: () => Promise<void>): Promise<void> {
-  const previous = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = agentDir;
-  return fn().finally(() => {
-    if (previous === undefined) {
-      // Assignment would store the string "undefined"; delete to unset.
-      delete process.env.PI_CODING_AGENT_DIR;
-    } else {
-      process.env.PI_CODING_AGENT_DIR = previous;
-    }
-  });
-}
+describe("session index loader", () => {
+  it("registers the browsed directory as a recently used project", async () => {
+    const projects = new ProjectRepository({ inMemory: true });
+    const context = new RouterContextProvider();
+    context.set(projectRepositoryContext, projects);
+    context.set(worktreeRepositoryContext, repository(porcelain(MAIN, LINKED)));
 
-describe("session list action", () => {
-  it("deleteWorktree removes the worktree and deletes its sessions", async () => {
-    const { root, project, dataDir, agentDir } = createRepo();
-    try {
-      await withAgentDir(agentDir, async () => {
-        const repo = new WorktreeRepository({ dataDir });
-        const worktree = await repo.add(project);
-        const container = AgentSessionContainer.withFactory(noopFactory);
+    await runLoader(context, MAIN);
 
-        // Sessions live outside the worktree directory (~/.pi/agent/sessions),
-        // so they must be cleaned up explicitly.
-        const { file } = createSession(worktree.path);
-        expect(existsSync(file)).toBe(true);
-        expect(await SessionManager.list(worktree.path)).toHaveLength(1);
-
-        const context = new RouterContextProvider();
-        context.set(worktreeRepositoryContext, repo);
-        context.set(agentSessionContainerContext, container);
-
-        const result = await postAction(context, {
-          type: "deleteWorktree",
-          dir: project,
-          path: worktree.path,
-        });
-        expect(result).toEqual({ ok: true });
-
-        expect(await repo.list(project)).toEqual([]);
-        expect(existsSync(file)).toBe(false);
-        expect(await SessionManager.list(worktree.path)).toEqual([]);
-      });
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
+    expect(projects.list().map((project) => project.path)).toEqual([MAIN]);
   });
 
-  it("deleteWorktree rejects a worktree the app does not manage", async () => {
-    const { root, project, dataDir, agentDir } = createRepo();
-    try {
-      await withAgentDir(agentDir, async () => {
-        const repo = new WorktreeRepository({ dataDir });
-        // A linked worktree created outside the app data dir is listed but
-        // must not be deletable through the action.
-        const otherDir = path.join(root, "user-worktree");
-        git(project, ["worktree", "add", "-b", "feature/user", otherDir, "HEAD"]);
+  it("redirects a linked worktree to the main worktree without registering it", async () => {
+    const projects = new ProjectRepository({ inMemory: true });
+    const context = new RouterContextProvider();
+    context.set(projectRepositoryContext, projects);
+    context.set(worktreeRepositoryContext, repository(porcelain(MAIN, LINKED)));
 
-        const context = new RouterContextProvider();
-        context.set(worktreeRepositoryContext, repo);
-        context.set(agentSessionContainerContext, AgentSessionContainer.withFactory(noopFactory));
+    const error = (await runLoader(context, LINKED).catch((e: unknown) => e)) as Response;
 
-        const result = await postAction(context, {
-          type: "deleteWorktree",
-          dir: project,
-          path: otherDir,
-        });
-        // Error paths return react-router's DataWithResponseInit.
-        const response = result as { type: string; data: { error?: string } };
-        expect(response.type).toBe("DataWithResponseInit");
-        expect(response.data.error).toMatch(/app-managed/);
-
-        // The worktree and its branch are untouched.
-        expect(existsSync(otherDir)).toBe(true);
-        expect(() =>
-          git(project, ["rev-parse", "--verify", "refs/heads/feature/user"]),
-        ).not.toThrow();
-      });
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
+    expect(error).toBeInstanceOf(Response);
+    expect(error.status).toBe(302);
+    expect(error.headers.get("Location")).toBe(`/session?dir=${encodeURIComponent(MAIN)}`);
+    expect(projects.list()).toEqual([]);
   });
 
-  it("deleteWorktree preserves sessions when worktree removal fails", async () => {
-    const { root, project, dataDir, agentDir } = createRepo();
-    try {
-      await withAgentDir(agentDir, async () => {
-        // Simulate a removal failure (e.g. locked files on Windows): the
-        // worktree is removed from git only after its sessions are deleted,
-        // so a failure must not destroy the chat history.
-        const repo = new WorktreeRepository({
-          dataDir,
-          runGit: async (args, options = {}) => {
-            if (args[0] === "worktree" && args[1] === "remove") {
-              throw new Error("fatal: failed to remove worktree (locked)");
-            }
-            return runGit(args, options);
-          },
-        });
-        const worktree = await repo.add(project);
-        const { file } = createSession(worktree.path);
-        expect(existsSync(file)).toBe(true);
+  it("keeps a main worktree subdirectory as its own project", async () => {
+    const SUB = `${MAIN}/sub`;
+    const projects = new ProjectRepository({ inMemory: true });
+    const context = new RouterContextProvider();
+    context.set(projectRepositoryContext, projects);
+    context.set(worktreeRepositoryContext, repository(porcelain(MAIN, LINKED)));
 
-        const context = new RouterContextProvider();
-        context.set(worktreeRepositoryContext, repo);
-        context.set(agentSessionContainerContext, AgentSessionContainer.withFactory(noopFactory));
+    await runLoader(context, SUB);
 
-        const result = await postAction(context, {
-          type: "deleteWorktree",
-          dir: project,
-          path: worktree.path,
-        });
-        const response = result as { type: string; data: { error?: string } };
-        expect(response.type).toBe("DataWithResponseInit");
-        expect(response.data.error).toMatch(/failed to remove worktree/);
+    expect(projects.list().map((project) => project.path)).toEqual([SUB]);
+  });
 
-        // The failed removal must leave both the worktree and its sessions.
-        expect(await repo.list(project)).toHaveLength(1);
-        expect(existsSync(file)).toBe(true);
-        expect(await SessionManager.list(worktree.path)).toHaveLength(1);
-      });
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
+  it("registers nothing without a ?dir parameter", async () => {
+    const projects = new ProjectRepository({ inMemory: true });
+    const context = new RouterContextProvider();
+    context.set(projectRepositoryContext, projects);
+    context.set(worktreeRepositoryContext, repository(porcelain(MAIN, LINKED)));
+
+    await expect(runLoader(context)).resolves.toBeNull();
+    expect(projects.list()).toEqual([]);
   });
 });
