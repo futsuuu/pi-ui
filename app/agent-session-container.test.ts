@@ -147,6 +147,38 @@ describe("mergedSessionMessages", () => {
     }
   });
 
+  it("returns the merged projection when a live entry matches a persisted one by identity but differs", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-merge-"));
+    try {
+      const cwd = path.join(root, "cwd");
+      mkdirSync(cwd, { recursive: true });
+      const sm = SessionManager.create(cwd);
+      const user = { role: "user" as const, content: "hello", timestamp: 10 };
+      const failed = {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: "half" }],
+        api: "anthropic-messages",
+        provider: "anthropic",
+        model: "test-model",
+        usage: usage(),
+        stopReason: "error" as const,
+        errorMessage: "boom",
+        timestamp: 20,
+      };
+      sm.appendMessage(user);
+      sm.appendMessage(failed);
+      // Same identity (assistant:20) as the persisted `failed`, but a different
+      // payload: the persisted copy wins while the length stays unchanged.
+      const diverged = { ...failed, content: [{ type: "text" as const, text: "changed" }] };
+      const live = [user, diverged];
+      const merged = mergedSessionMessages({ messages: live, sessionManager: sm });
+      expect(merged).toEqual([user, failed]);
+      expect(merged).not.toBe(live);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("appends live-only messages newer than the last persisted write", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-merge-"));
     try {
