@@ -34,7 +34,7 @@ export function ActionsMenu({
         <button
           type="button"
           aria-label={ariaLabel}
-          className={`rounded-lg text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors${triggerClassName ? ` ${triggerClassName}` : ""}`}
+          className={`rounded-lg text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 hover:bg-black/10 dark:hover:bg-white/10 transition-colors${triggerClassName ? ` ${triggerClassName}` : ""}`}
         >
           {trigger}
         </button>
