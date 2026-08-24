@@ -3,9 +3,8 @@ import { homedir } from "node:os";
 import type { AgentMessage as SessionMessage } from "@earendil-works/pi-agent-core";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
-import { Layers, Settings } from "lucide-react";
 import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
-import { data, Link, useFetcher, useRevalidator } from "react-router";
+import { data, useFetcher, useRevalidator } from "react-router";
 
 import { mergedSessionMessages } from "~/agent-session-container";
 import { ScrollArea } from "~/components/scroll-area";
@@ -464,23 +463,12 @@ function Chat({
     <div className="h-full flex flex-col relative">
       {/* Top bar — fixed at top */}
       <div className="flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
-        <div className="max-w-5xl mx-auto px-4 h-14 flex items-center gap-3">
-          <Layers className="w-5 h-5 text-blue-500" />
-          <span className="font-semibold text-gray-900 dark:text-gray-100">Chat</span>
-          <div className="flex items-center gap-2 ml-4">
+        <div className="max-w-5xl mx-auto pl-14 pr-4 lg:px-4 h-14 flex items-center">
+          <div className="flex items-center gap-2">
             <span className={`w-2 h-2 rounded-full ${connected ? "bg-green-500" : "bg-red-500"}`} />
             <span className="text-xs text-gray-500 dark:text-gray-400">
               {connected ? "Connected" : "Disconnected"}
             </span>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            <Link
-              to="/settings"
-              aria-label="Settings"
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-500 dark:text-gray-400"
-            >
-              <Settings className="w-5 h-5" />
-            </Link>
           </div>
         </div>
       </div>
@@ -492,11 +480,14 @@ function Chat({
         autoScroll
         restoreTarget={restoreTarget}
         onRestoreComplete={handleRestoreComplete}
-        viewportClassName="pb-36"
+        // Radix lays out the viewport's content wrapper as a table so wide
+        // children can scroll horizontally; force it back to a block so wide
+        // messages never widen the page beyond the pane next to the sidebar.
+        viewportClassName="pb-36 [&>div]:block!"
       >
         <div
           ref={messagesContainerRef}
-          className="max-w-5xl max-lg:max-w-[100vw] w-full mx-auto px-4 py-4 space-y-4 min-h-full min-w-0"
+          className="max-w-5xl w-full mx-auto px-4 py-4 space-y-4 min-h-full min-w-0"
         >
           {state.model == null && (
             <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">

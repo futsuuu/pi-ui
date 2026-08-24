@@ -486,6 +486,43 @@ describe("AgentSessionContainer.currentInfo", () => {
   });
 });
 
+describe("AgentSessionContainer.findSessionCwd", () => {
+  it("reads the cwd from persisted headers without loading a runtime", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        const { id } = createSession(cwd);
+
+        // The factory throws, so findSessionCwd() would fail if it loaded runtimes.
+        const container = AgentSessionContainer.withFactory(noopFactory);
+        expect(await container.findSessionCwd(id)).toBe(cwd);
+        expect(await container.findSessionCwd("missing")).toBeNull();
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("prefers the loaded runtime's cwd", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        const { id } = createSession(cwd);
+
+        const container = AgentSessionContainer.withFactory(realFactory);
+        await container.get(id, { cwd });
+
+        expect(await container.findSessionCwd(id)).toBe(cwd);
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("applyTurnEvent (per-session turn buffer)", () => {
   it("starts a buffer on turn_start and appends events until the turn ends", () => {
     let buffer = applyTurnEvent(undefined, { type: "turn_start" });

@@ -216,6 +216,21 @@ export class AgentSessionContainer {
     }));
   }
 
+  /**
+   * The working directory recorded for a session, or `null` when no session
+   * with this ID exists. Uses the loaded runtime when present and reads the
+   * persisted headers otherwise; never loads a runtime.
+   */
+  public async findSessionCwd(sessionId: string): Promise<string | null> {
+    const runtime = this.runtimes.get(sessionId);
+    if (runtime) {
+      const loaded = await runtime.catch(() => null);
+      if (loaded) return loaded.session.sessionManager.getCwd();
+    }
+    const infos = await SessionManager.listAll();
+    return infos.find((info) => info.id === sessionId)?.cwd ?? null;
+  }
+
   public subscribe(callback: (sessionId: string, event: ContainerEvent) => void): () => void {
     this.listeners.add(callback);
     return () => this.listeners.delete(callback);
