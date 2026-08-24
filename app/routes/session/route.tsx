@@ -231,7 +231,7 @@ function SessionRow({
     <div
       className={`flex items-center rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/60 ${deleting ? "opacity-50 pointer-events-none" : ""}`}
     >
-      <span className="w-4 h-4 flex items-center justify-center flex-shrink-0">
+      <span className="w-6 h-4 flex items-center justify-center flex-shrink-0">
         {session.isStreaming ? (
           <Loader2Icon aria-label="Streaming" className="w-4 h-4 text-blue-500 animate-spin" />
         ) : (
@@ -242,7 +242,7 @@ function SessionRow({
       </span>
       <Link
         to={`/session/${encodeURIComponent(session.id)}`}
-        className="min-w-0 flex-1 py-2 pl-2 text-left"
+        className="min-w-0 flex-1 py-2 text-left"
       >
         <p className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
           {session.firstMessage || "Untitled Session"}
@@ -293,65 +293,65 @@ function WorktreeGroup({
       onOpenChange={setOpen}
       className={`overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 ${isDeletingWorktree(worktree.path) ? "opacity-50 pointer-events-none" : ""}`}
     >
-      <div className="flex items-center justify-between gap-4 p-3">
-        <Collapsible.Trigger asChild>
-          <button
-            type="button"
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg p-1 -m-1 text-left hover:bg-gray-50 dark:hover:bg-gray-800/60"
-          >
-            <ChevronRight
-              className={`w-4 h-4 flex-shrink-0 text-gray-400 transition-transform ${open ? "rotate-90" : ""}`}
-            />
-            <div className="min-w-0">
-              <p className="font-mono text-sm text-gray-900 dark:text-gray-100 truncate flex items-center gap-2">
-                {branch}
-                {worktree.isMain && (
-                  <span className="px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 text-[10px] font-sans font-medium uppercase tracking-wide flex-shrink-0">
-                    main
-                  </span>
-                )}
-                {worktree.branch === null && (
-                  <span className="px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-[10px] font-sans font-medium uppercase tracking-wide flex-shrink-0">
-                    detached
-                  </span>
-                )}
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                {worktree.sessions.length} {worktree.sessions.length === 1 ? "session" : "sessions"}
-              </p>
-            </div>
-          </button>
-        </Collapsible.Trigger>
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <Link
-            to={`/session/new?dir=${encodeURIComponent(worktree.path)}`}
-            title="New Session"
-            className="p-2 -m-1 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-          >
-            <MessageCirclePlus className="w-5 h-5" />
-          </Link>
-          <ActionsMenu
-            ariaLabel="Worktree actions"
-            trigger={<MoreVertical className="w-5 h-5" />}
-            triggerClassName="p-1.5"
-          >
-            <DeleteMenuItem
-              onSelect={() => onDeleteWorktree(worktree)}
-              label="Delete Worktree"
-              disabled={worktree.isMain || !worktree.isManaged}
-            />
-          </ActionsMenu>
+      <div className="p-1">
+        <div className="flex items-center justify-between gap-2 rounded-lg py-2 hover:bg-gray-50 dark:hover:bg-gray-800/60">
+          <Collapsible.Trigger asChild>
+            <button type="button" className="flex min-w-0 flex-1 items-center gap-1 pl-1 text-left">
+              <ChevronRight
+                className={`w-4 h-4 flex-shrink-0 text-gray-400 transition-transform ${open ? "rotate-90" : ""}`}
+              />
+              <div className="min-w-0">
+                <p className="font-mono text-sm text-gray-900 dark:text-gray-100 truncate flex items-center gap-2">
+                  {branch}
+                  {worktree.isMain && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 text-[10px] font-sans font-medium uppercase tracking-wide flex-shrink-0">
+                      main
+                    </span>
+                  )}
+                  {worktree.branch === null && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-[10px] font-sans font-medium uppercase tracking-wide flex-shrink-0">
+                      detached
+                    </span>
+                  )}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {worktree.sessions.length}{" "}
+                  {worktree.sessions.length === 1 ? "session" : "sessions"}
+                </p>
+              </div>
+            </button>
+          </Collapsible.Trigger>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <Link
+              to={`/session/new?dir=${encodeURIComponent(worktree.path)}`}
+              title="New Session"
+              className="p-2 -m-1 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            >
+              <MessageCirclePlus className="w-5 h-5" />
+            </Link>
+            <ActionsMenu
+              ariaLabel="Worktree actions"
+              trigger={<MoreVertical className="w-5 h-5" />}
+              triggerClassName="p-1.5"
+            >
+              <DeleteMenuItem
+                onSelect={() => onDeleteWorktree(worktree)}
+                label="Delete Worktree"
+                disabled={worktree.isMain || !worktree.isManaged}
+              />
+            </ActionsMenu>
+          </div>
         </div>
       </div>
       {worktree.sessions.length > 0 && (
         <Collapsible.Content>
-          <div className="border-t border-gray-100 dark:border-gray-800/80 py-1 pl-3 pr-3">
+          <div className="border-t border-gray-100 dark:border-gray-800/80 py-1 px-1">
             {worktree.sessions.map(renderSession)}
           </div>
         </Collapsible.Content>
       )}
       {!open && attentionSessions.length > 0 && (
-        <div className="border-t border-gray-100 dark:border-gray-800/80 py-1 pl-3 pr-3">
+        <div className="border-t border-gray-100 dark:border-gray-800/80 py-1 px-1">
           {attentionSessions.map(renderSession)}
         </div>
       )}
