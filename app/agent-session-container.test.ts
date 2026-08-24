@@ -9,7 +9,11 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
 
-import { AgentSessionContainer, applyTurnEvent } from "./agent-session-container";
+import {
+  AgentSessionContainer,
+  applyTurnEvent,
+  mergedSessionMessages,
+} from "./agent-session-container";
 import { SessionViewStateRepository } from "./session-view-state";
 import { createSession, realFactory, withAgentDir } from "./test-helpers";
 
@@ -83,6 +87,131 @@ function branchedSession(cwd: string): SessionManager {
   appendAssistant(sm, "reply alt", 4000);
   return sm;
 }
+
+describe("mergedSessionMessages", () => {
+  /** A user turn, a failed assistant message, and its retry reply. */
+  function retriedSession(cwd: string) {
+    const sm = SessionManager.create(cwd);
+    const user = { role: "user" as const, content: "hello", timestamp: 10 };
+    const failed = {
+      role: "assistant" as const,
+      content: [{ type: "text" as const, text: "half" }],
+      api: "anthropic-messages",
+      provider: "anthropic",
+      model: "test-model",
+      usage: usage(),
+      stopReason: "error" as const,
+      errorMessage: "boom",
+      timestamp: 20,
+    };
+    const retry = {
+      role: "assistant" as const,
+      content: [{ type: "text" as const, text: "answer" }],
+      api: "anthropic-messages",
+      provider: "anthropic",
+      model: "test-model",
+      usage: usage(),
+      stopReason: "stop" as const,
+      timestamp: 30,
+    };
+    sm.appendMessage(user);
+    sm.appendMessage(failed);
+    sm.appendMessage(retry);
+    return { sm, user, failed, retry };
+  }
+
+  it("restores a failed message pruned from the live list by an auto-retry", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-merge-"));
+    try {
+      const cwd = path.join(root, "cwd");
+      mkdirSync(cwd, { recursive: true });
+      const { sm, user, failed, retry } = retriedSession(cwd);
+      const merged = mergedSessionMessages({ messages: [user, retry], sessionManager: sm });
+      expect(merged).toEqual([user, failed, retry]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("returns the live list unchanged when it already matches the persisted entries", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-merge-"));
+    try {
+      const cwd = path.join(root, "cwd");
+      mkdirSync(cwd, { recursive: true });
+      const { sm, user, failed, retry } = retriedSession(cwd);
+      const live = [user, failed, retry];
+      const merged = mergedSessionMessages({ messages: live, sessionManager: sm });
+      expect(merged).toBe(live);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("appends live-only messages newer than the last persisted write", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-merge-"));
+    try {
+      const cwd = path.join(root, "cwd");
+      mkdirSync(cwd, { recursive: true });
+      const { sm, user, failed, retry } = retriedSession(cwd);
+      const followUp = { role: "user" as const, content: "next", timestamp: 40 };
+      const merged = mergedSessionMessages({
+        messages: [user, followUp],
+        sessionManager: sm,
+      });
+      expect(merged).toEqual([user, failed, retry, followUp]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not restore messages left behind on other branches", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-merge-"));
+    try {
+      const cwd = path.join(root, "cwd");
+      mkdirSync(cwd, { recursive: true });
+      const sm = SessionManager.create(cwd);
+      appendUser(sm, "hello", 1000);
+      appendAssistant(sm, "reply 1", 1000);
+      const second = appendUser(sm, "second", 2000);
+      appendAssistant(sm, "reply 2", 2000);
+      // Branch before the second turn's reply: reply 2 stays on the
+      // original branch and must not leak into the snapshot from the file.
+      sm.branch(second);
+      appendUser(sm, "alt user", 3000);
+      appendAssistant(sm, "alt reply", 3000);
+      const user = { role: "user" as const, content: "hello", timestamp: 1000 };
+      const reply = {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: "reply 1" }],
+        api: "anthropic-messages",
+        provider: "anthropic",
+        model: "test-model",
+        usage: usage(),
+        stopReason: "stop" as const,
+        timestamp: 1000,
+      };
+      const secondUser = { role: "user" as const, content: "second", timestamp: 2000 };
+      const altUserMsg = { role: "user" as const, content: "alt user", timestamp: 3000 };
+      const altReplyMsg = {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: "alt reply" }],
+        api: "anthropic-messages",
+        provider: "anthropic",
+        model: "test-model",
+        usage: usage(),
+        stopReason: "stop" as const,
+        timestamp: 3000,
+      };
+      const merged = mergedSessionMessages({
+        messages: [user, reply, secondUser, altUserMsg, altReplyMsg],
+        sessionManager: sm,
+      });
+      expect(merged).toEqual([user, reply, secondUser, altUserMsg, altReplyMsg]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("AgentSessionContainer.currentInfoList", () => {
   it("lists persisted sessions with their persisted info when no runtime is loaded", async () => {

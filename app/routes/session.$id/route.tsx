@@ -7,6 +7,7 @@ import { Layers, Settings } from "lucide-react";
 import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { data, Link, useFetcher, useRevalidator } from "react-router";
 
+import { mergedSessionMessages } from "~/agent-session-container";
 import { ScrollArea } from "~/components/scroll-area";
 import { useSessionStream } from "~/contexts/session-events";
 import { agentSessionContainerContext } from "~/router-contexts";
@@ -80,7 +81,7 @@ export async function loader({ context }: Route.LoaderArgs) {
   const session = context.get(agentSessionContext);
   // Pass only the fields the Chat component uses, read directly from the
   // session, instead of the full SessionInfo.
-  const messages = session.messages;
+  const messages = mergedSessionMessages(session);
   // The model list is streamed to the client as a promise.
   const models = session.modelRuntime.getAvailable();
   // The in-flight turn's events, so a client that mounts mid-turn can render
