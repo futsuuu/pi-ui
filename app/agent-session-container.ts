@@ -181,9 +181,11 @@ export function mergedSessionMessages(session: {
     if (identity !== null) seen.add(identity);
     merged.push(message);
   }
-  // Keep the live reference when nothing was merged so revalidation
-  // comparisons can detect snapshot changes.
-  return merged.length === live.length ? live : merged;
+  // Keep the live reference only when every element is the corresponding
+  // live element, so revalidation comparisons can detect snapshot changes.
+  return merged.length === live.length && merged.every((message, index) => message === live[index])
+    ? live
+    : merged;
 }
 
 export class AgentSessionContainer {
