@@ -221,15 +221,17 @@ function isAttentionSession(session: SessionListItem): boolean {
 function SessionRow({
   session,
   deleting,
+  open,
   onDelete,
 }: {
   session: SessionListItem;
   deleting: boolean;
+  open: boolean;
   onDelete: () => void;
 }) {
   return (
     <div
-      className={`flex items-center rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/60 ${deleting ? "opacity-50 pointer-events-none" : ""}`}
+      className={`flex items-center rounded-lg ${open ? "bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30" : "hover:bg-gray-50 dark:hover:bg-gray-800/60"} ${deleting ? "opacity-50 pointer-events-none" : ""}`}
     >
       <span className="w-6 h-4 flex items-center justify-center flex-shrink-0">
         {session.isStreaming ? (
@@ -264,25 +266,31 @@ function SessionRow({
 
 function WorktreeGroup({
   worktree,
+  openSessionId,
   onDeleteSession,
   onDeleteWorktree,
   isDeletingSession,
   isDeletingWorktree,
 }: {
   worktree: WorktreeWithSessions;
+  openSessionId: string | undefined;
   onDeleteSession: (session: SessionListItem) => void;
   onDeleteWorktree: (worktree: WorktreeWithSessions) => void;
   isDeletingSession: (sessionId: string) => boolean;
   isDeletingWorktree: (worktreePath: string) => boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const attentionSessions = worktree.sessions.filter(isAttentionSession);
+  const attentionSessions = worktree.sessions.filter(
+    (session) =>
+      isAttentionSession(session) || (openSessionId !== undefined && session.id === openSessionId),
+  );
   const branch = worktree.branch ?? worktree.head ?? "detached";
   const renderSession = (session: SessionListItem) => (
     <SessionRow
       key={session.id}
       session={session}
       deleting={isDeletingSession(session.id)}
+      open={session.id === openSessionId}
       onDelete={() => onDeleteSession(session)}
     />
   );
@@ -518,6 +526,7 @@ export default function SessionLayout() {
                   <WorktreeGroup
                     key={worktree.path}
                     worktree={worktree}
+                    openSessionId={openSessionId}
                     onDeleteSession={deleteSession}
                     onDeleteWorktree={deleteWorktree}
                     isDeletingSession={isDeleting}
