@@ -31,6 +31,7 @@ function Harness({
   startHeight = 300,
   mountKey,
   restoreTarget,
+  disableHorizontalScroll,
 }: {
   api: HarnessApi;
   /** `undefined`/`false` disables auto-scroll. */
@@ -42,6 +43,8 @@ function Harness({
   mountKey?: string;
   /** Shared display anchor to restore on mount. */
   restoreTarget?: string | null;
+  /** Renders no horizontal scrollbar. */
+  disableHorizontalScroll?: boolean;
 }) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [lines, setLines] = useState(initialLines);
@@ -84,6 +87,7 @@ function Harness({
         autoScrollOffset={autoScrollOffset}
         restoreTarget={restoreTarget}
         onRestoreComplete={() => setRestoreCount((count) => count + 1)}
+        disableHorizontalScroll={disableHorizontalScroll}
       >
         <div data-testid="content">
           {Array.from({ length: lines }, (_, index) => (
@@ -101,6 +105,59 @@ function Harness({
 async function expectPinned(api: HarnessApi, timeout = 2000) {
   await expect.poll(() => api.distanceFromBottom(), { timeout }).toBeLessThanOrEqual(1);
 }
+
+describe("ScrollArea horizontal overflow", () => {
+  it("keeps horizontal scrolling enabled by default", async () => {
+    const api = {} as HarnessApi;
+    await render(<Harness api={api} />);
+
+    expect(getComputedStyle(api.viewport()!).overflowX).toBe("scroll");
+  });
+
+  it("clips horizontal overflow when disableHorizontalScroll is set", async () => {
+    const api = {} as HarnessApi;
+    await render(<Harness api={api} disableHorizontalScroll />);
+
+    expect(getComputedStyle(api.viewport()!).overflowX).toBe("hidden");
+  });
+
+  it("keeps the pane from widening with wide children when disableHorizontalScroll is set", async () => {
+    let vp: HTMLDivElement | null = null;
+    await render(
+      <div style={{ width: 400 }}>
+        <ScrollArea
+          disableHorizontalScroll
+          ref={(node) => {
+            vp = node;
+          }}
+        >
+          <div style={{ whiteSpace: "nowrap", width: 2000 }}>wide</div>
+        </ScrollArea>
+      </div>,
+    );
+
+    // The Radix content wrapper (the viewport's first child) must stay at
+    // the pane width instead of growing to the wide child's width.
+    expect((vp!.firstElementChild as HTMLElement).clientWidth).toBe(400);
+  });
+
+  it("keeps content widening when horizontal scrolling is enabled", async () => {
+    let vp: HTMLDivElement | null = null;
+    await render(
+      <div style={{ width: 400 }}>
+        <ScrollArea
+          ref={(node) => {
+            vp = node;
+          }}
+        >
+          <div style={{ whiteSpace: "nowrap", width: 2000 }}>wide</div>
+        </ScrollArea>
+      </div>,
+    );
+
+    expect((vp!.firstElementChild as HTMLElement).clientWidth).toBeGreaterThan(400);
+  });
+});
 
 describe("ScrollArea auto-scroll", () => {
   it("pins to the bottom on mount when autoScroll is enabled", async () => {
