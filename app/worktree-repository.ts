@@ -173,6 +173,7 @@ function parseWorktreeList(output: string): Worktree[] {
     let worktreePath: string | undefined;
     let branch: string | undefined;
     let head: string | undefined;
+    let bare = false;
     let detached = false;
     for (const line of block.split("\n")) {
       if (line.startsWith("worktree ")) {
@@ -181,11 +182,13 @@ function parseWorktreeList(output: string): Worktree[] {
         branch = line.slice("branch refs/heads/".length);
       } else if (line.startsWith("HEAD ")) {
         head = line.slice("HEAD ".length).slice(0, 7);
+      } else if (line === "bare") {
+        bare = true;
       } else if (line === "detached") {
         detached = true;
       }
     }
-    if (!worktreePath || (!branch && !detached)) continue;
+    if (!worktreePath || (!branch && !detached && !bare)) continue;
     worktrees.push({
       branch: branch ?? null,
       head: detached ? (head ?? null) : null,
