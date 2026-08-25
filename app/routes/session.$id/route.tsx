@@ -479,10 +479,8 @@ function Chat({
         autoScroll
         restoreTarget={restoreTarget}
         onRestoreComplete={handleRestoreComplete}
-        // Radix lays out the viewport's content wrapper as a table so wide
-        // children can scroll horizontally; force it back to a block so wide
-        // messages never widen the page beyond the pane next to the sidebar.
-        viewportClassName="pb-36 [&>div]:block!"
+        disableHorizontalScroll
+        viewportClassName="pb-36"
       >
         <div
           ref={messagesContainerRef}
