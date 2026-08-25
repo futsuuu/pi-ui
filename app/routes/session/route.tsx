@@ -210,8 +210,8 @@ function formatDate(ts: number): string {
   if (diff < 60000) return "Just now";
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  if (diff < 30 * 86400000) return `${Math.floor(diff / 86400000)}d ago`;
-  if (diff < 365 * 86400000) return `${Math.floor(diff / (30 * 86400000))}mo ago`;
+  if (diff < 7 * 86400000) return `${Math.floor(diff / 86400000)}d ago`;
+  if (diff < 30 * 86400000) return `${Math.floor(diff / (30 * 86400000))}mo ago`;
   return d.toLocaleDateString();
 }
 
@@ -484,7 +484,7 @@ export default function SessionLayout() {
       </button>
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex h-full w-full flex-col bg-gray-50 dark:bg-gray-950 transition-transform duration-200 sm:w-96 lg:static lg:w-96 lg:shrink-0 lg:translate-x-0 lg:border-r lg:border-gray-200 dark:lg:border-gray-800 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
+        className={`fixed inset-y-0 left-0 z-40 flex h-full w-full flex-col bg-gray-50 dark:bg-gray-950 transition-transform duration-200 sm:w-96 lg:static lg:w-96 lg:shrink-0 lg:translate-x-0 lg:visible lg:border-r lg:border-gray-200 dark:lg:border-gray-800 ${sidebarOpen ? "translate-x-0 visible" : "-translate-x-full invisible pointer-events-none"}`}
       >
         <div className="flex-shrink-0 h-14 px-3 flex items-center justify-end">
           <Link
