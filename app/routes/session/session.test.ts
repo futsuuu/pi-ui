@@ -150,9 +150,9 @@ describe("session layout loader", () => {
           cwd: string;
           worktrees: { path: string; isMain: boolean; isManaged: boolean }[];
         };
-        expect(result.cwd).toBe(path.resolve(project));
+        expect(result.cwd).toBe(repo.canonicalize(project));
         expect(result.worktrees).toHaveLength(2);
-        expect(result.worktrees[0]).toMatchObject({ path: path.resolve(project), isMain: true });
+        expect(result.worktrees[0]).toMatchObject({ path: repo.canonicalize(project), isMain: true });
         expect(result.worktrees[1]).toMatchObject({ path: worktree.path, isManaged: true });
         // Registering recent projects is the index route's job, not the layout's:
         // a worktree's New Session link must not register the worktree as one.
@@ -181,7 +181,7 @@ describe("session layout loader", () => {
           cwd: string;
           worktrees: { path: string }[];
         };
-        expect(result.cwd).toBe(path.resolve(project));
+        expect(result.cwd).toBe(repo.canonicalize(project));
         expect(result.worktrees.map((entry) => entry.path)).toContain(worktree.path);
       });
     } finally {
@@ -198,13 +198,14 @@ describe("session layout loader", () => {
         const { id } = createSession(plainDir);
 
         const projects = new ProjectRepository({ inMemory: true });
+        const repo = new WorktreeRepository({ dataDir });
         const context = new RouterContextProvider();
-        context.set(worktreeRepositoryContext, new WorktreeRepository({ dataDir }));
+        context.set(worktreeRepositoryContext, repo);
         context.set(projectRepositoryContext, projects);
         context.set(agentSessionContainerContext, AgentSessionContainer.withFactory(noopFactory));
 
         const result = (await runLoader(context, { id })) as { cwd: string };
-        expect(result.cwd).toBe(path.resolve(plainDir));
+        expect(result.cwd).toBe(repo.canonicalize(plainDir));
         // Viewing a session must not touch the recently-used projects list.
         expect(projects.list()).toEqual([]);
       });

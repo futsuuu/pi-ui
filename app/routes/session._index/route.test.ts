@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { RouterContextProvider } from "react-router";
 import { describe, expect, it } from "vitest";
 
@@ -7,8 +9,8 @@ import { WorktreeRepository } from "~/worktree-repository";
 
 import { loader } from "./route";
 
-const MAIN = "/repo/main";
-const LINKED = "/repo/linked";
+const MAIN = path.resolve("/repo/main");
+const LINKED = path.resolve("/repo/linked");
 
 /** `git worktree list --porcelain` shaped output for the given worktrees. */
 function porcelain(...paths: string[]): string {
@@ -66,7 +68,7 @@ describe("session index loader", () => {
   });
 
   it("keeps a main worktree subdirectory as its own project", async () => {
-    const SUB = `${MAIN}/sub`;
+    const SUB = path.join(MAIN, "sub");
     const projects = new ProjectRepository({ inMemory: true });
     const context = new RouterContextProvider();
     context.set(projectRepositoryContext, projects);
