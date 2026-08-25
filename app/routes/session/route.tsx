@@ -470,7 +470,7 @@ export default function SessionLayout() {
   return (
     <div className="h-full flex">
       <div
-        className={`fixed inset-0 z-30 bg-black/40 lg:hidden ${sidebarOpen ? "" : "hidden"}`}
+        className={`fixed inset-0 z-30 bg-black/40 lg:hidden transition-opacity duration-200 ${sidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}
         onClick={() => setSidebarOpen(false)}
       />
 
