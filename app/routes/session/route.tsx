@@ -210,8 +210,8 @@ function formatDate(ts: number): string {
   if (diff < 60000) return "Just now";
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  if (diff < 7 * 86400000) return `${Math.floor(diff / 86400000)}d ago`;
-  if (diff < 30 * 86400000) return `${Math.floor(diff / (30 * 86400000))}mo ago`;
+  if (diff < 30 * 86400000) return `${Math.floor(diff / 86400000)}d ago`;
+  if (diff < 365 * 86400000) return `${Math.floor(diff / (30 * 86400000))}mo ago`;
   return d.toLocaleDateString();
 }
 
