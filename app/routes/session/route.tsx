@@ -27,6 +27,7 @@ import {
 import * as v from "valibot";
 
 import { ActionsMenu, DeleteMenuItem } from "~/components/actions-menu";
+import { ScrollArea } from "~/components/scroll-area";
 import { useSessionEventsContext } from "~/contexts/session-events";
 import { agentSessionContainerContext, worktreeRepositoryContext } from "~/router-contexts";
 import type { Worktree } from "~/worktree-repository";
@@ -495,7 +496,7 @@ export default function SessionLayout() {
           </Link>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-4">
+        <ScrollArea disableHorizontalScroll viewportClassName="px-3 pb-4">
           {!ready ? (
             <div className="flex justify-center py-10">
               <Loader2Icon className="w-6 h-6 text-gray-400 animate-spin" />
@@ -536,7 +537,7 @@ export default function SessionLayout() {
               </div>
             </>
           )}
-        </div>
+        </ScrollArea>
       </aside>
 
       <main className="flex-1 min-w-0 h-full overflow-hidden">
