@@ -29,6 +29,7 @@ function findMessageElement(root: HTMLElement, key: string): HTMLElement | null 
  * @returns A configured scroll area with vertical and horizontal scrollbars.
  */
 export function ScrollArea({
+  children,
   autoScroll,
   autoScrollOffset = 50,
   className,
@@ -36,6 +37,7 @@ export function ScrollArea({
   onScroll,
   restoreTarget,
   onRestoreComplete,
+  disableHorizontalScroll,
   ref: forwardedRef,
   ...viewportProps
 }: Primitive.ScrollAreaViewportProps &
@@ -69,6 +71,14 @@ export function ScrollArea({
     restoreTarget?: string | null;
     /** Called once per mount after restoration finished (or fell back). */
     onRestoreComplete?: () => void;
+    /**
+     * Renders no horizontal scrollbar: Radix then sets `overflow-x: hidden`
+     * on the viewport, and the content is wrapped in a size-confinement box
+     * so the pane can never widen past its own width (wide children are
+     * clipped instead of scrolling). Use for panes whose content must never
+     * scroll sideways.
+     */
+    disableHorizontalScroll?: boolean;
   }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -289,19 +299,32 @@ export function ScrollArea({
         className={`size-full min-h-0 min-w-0${viewportClassName ? ` ${viewportClassName}` : ""}`}
         onScroll={handleScroll}
         ref={setViewportRef}
-      />
+      >
+        {disableHorizontalScroll ? (
+          // Radix wraps the viewport's content in a `display: table` box that
+          // grows to the widest unbreakable child (capped by `max-width`).
+          // Size confinement in the inline axis makes this wrapper's content
+          // stop feeding that intrinsic width, so the pane always lays out at
+          // its own width instead of widening and being clipped.
+          <div className="w-full contain-inline-size">{children}</div>
+        ) : (
+          children
+        )}
+      </Primitive.Viewport>
       <Primitive.Scrollbar
         orientation="vertical"
         className="flex flex-row select-none touch-none p-0.5 transition-colors duration-150 ease-out w-2"
       >
         <Primitive.Thumb className="relative flex-1 rounded-full transition-opacity opacity-30 hover:opacity-50 bg-black dark:bg-white" />
       </Primitive.Scrollbar>
-      <Primitive.Scrollbar
-        orientation="horizontal"
-        className="flex flex-col select-none touch-none p-0.5 transition-colors duration-150 ease-out h-2"
-      >
-        <Primitive.Thumb className="relative flex-1 rounded-full transition-opacity opacity-30 hover:opacity-50 bg-black dark:bg-white" />
-      </Primitive.Scrollbar>
+      {!disableHorizontalScroll && (
+        <Primitive.Scrollbar
+          orientation="horizontal"
+          className="flex flex-col select-none touch-none p-0.5 transition-colors duration-150 ease-out h-2"
+        >
+          <Primitive.Thumb className="relative flex-1 rounded-full transition-opacity opacity-30 hover:opacity-50 bg-black dark:bg-white" />
+        </Primitive.Scrollbar>
+      )}
       <Primitive.Corner className="bg-gray-100 dark:bg-gray-800" />
     </Primitive.Root>
   );
