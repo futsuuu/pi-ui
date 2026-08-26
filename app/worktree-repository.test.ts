@@ -14,7 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   generateBranchName,
@@ -24,6 +24,10 @@ import {
 } from "./worktree-repository";
 
 const execFileAsync = promisify(execFile);
+
+// Spawning real git processes is slow on Windows CI runners; the default 5s
+// per-test timeout is too tight there.
+vi.setConfig({ testTimeout: 30_000 });
 
 async function runGit(args: string[], options: { cwd?: string } = {}): Promise<string> {
   const { stdout } = await execFileAsync("git", args, { cwd: options.cwd, encoding: "utf8" });
