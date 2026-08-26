@@ -1,1 +1,71 @@
 @layer reset, base, tokens, recipes, utilities;
+
+/* Typographic features that are not Panda utility properties. */
+html,
+body {
+  text-autospace: normal;
+  font-variant-ligatures: common-ligatures contextual;
+  font-variant-alternates: styleset(ss02);
+}
+
+.font-mono {
+  text-autospace: no-autospace;
+  font-variant-alternates: normal;
+}
+
+/* Shiki syntax highlighting: dual themes via CSS variables emitted by @shikijs/rehype.
+   Theme switching relies on the .dark class on <html>, same as Panda's _dark condition. */
+pre.shiki,
+pre.shiki span {
+  color: var(--shiki-light);
+  background-color: var(--shiki-light-bg);
+  font-style: var(--shiki-light-font-style);
+  font-weight: var(--shiki-light-font-weight);
+  text-decoration: var(--shiki-light-text-decoration);
+}
+
+.dark pre.shiki,
+.dark pre.shiki span {
+  color: var(--shiki-dark);
+  background-color: var(--shiki-dark-bg);
+  font-style: var(--shiki-dark-font-style);
+  font-weight: var(--shiki-dark-font-weight);
+  text-decoration: var(--shiki-dark-text-decoration);
+}
+
+.diff-token {
+  color: var(--shiki-light);
+  font-style: var(--shiki-light-font-style);
+  font-weight: var(--shiki-light-font-weight);
+  text-decoration: var(--shiki-light-text-decoration);
+}
+
+.dark .diff-token {
+  color: var(--shiki-dark);
+  font-style: var(--shiki-dark-font-style);
+  font-weight: var(--shiki-dark-font-weight);
+  text-decoration: var(--shiki-dark-text-decoration);
+}
+
+.diff-view {
+  background-color: var(--shiki-light-bg);
+}
+
+.dark .diff-view {
+  background-color: var(--shiki-dark-bg);
+}
+
+/* Remove the backtick glyphs that @tailwindcss/typography draws around inline
+   code via ::before/::after (unlayered CSS wins over the plugin's styles). */
+.prose :where(code):not(:where([class~="not-prose"], [class~="not-prose"] *))::before,
+.prose :where(code):not(:where([class~="not-prose"], [class~="not-prose"] *))::after {
+  content: none;
+}
+
+/* The typography plugin renders inline code with font-weight: 600 and
+   font-size: .875em; reset both by inheriting from the parent so bold-wrapped
+   code (e.g. **`code`**) stays bold while plain inline code stays normal. */
+.prose :where(code):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  font-weight: inherit;
+  font-size: inherit;
+}

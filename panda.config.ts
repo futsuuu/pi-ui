@@ -82,6 +82,20 @@ export default defineConfig({
   include: ["./app/**/*.{ts,tsx}"],
   exclude: [],
   outdir: "styled-system",
+  globalCss: {
+    html: {
+      backgroundColor: "bg.page",
+      color: "fg.primary",
+      fontFamily: "sans",
+    },
+    body: {
+      backgroundColor: "bg.page",
+      color: "fg.primary",
+    },
+    "button:not(:disabled), [role=\"button\"]:not(:disabled)": {
+      cursor: "pointer",
+    },
+  },
   theme: {
     extend: {
       tokens: {

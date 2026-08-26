@@ -1,13 +1,6 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
-@layer base {
-  button:not(:disabled),
-  [role="button"]:not(:disabled) {
-    cursor: pointer;
-  }
-}
-
 /* Class-based dark mode: <html class="dark"> controls all dark: variants */
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -18,13 +11,11 @@
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
-/* Theme is managed by ThemeContext with .dark class on <html> */
+/* Colors are applied by Panda globalCss; these typographic features stay as
+   plain CSS because they are not Panda utility properties. */
 html,
 body {
   @apply bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100;
-  text-autospace: normal;
-  font-variant-ligatures: common-ligatures contextual;
-  font-variant-alternates: styleset(ss02);
 }
 
 /* Shiki syntax highlighting: dual themes via CSS variables emitted by @shikijs/rehype */
