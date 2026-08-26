@@ -19,7 +19,10 @@ import {
 } from "./router-contexts";
 import { getSingletonContainer } from "./singleton-container";
 
+import pandaStylesheet from "./panda.css?url";
+
 export const links: Route.LinksFunction = () => [
+  { rel: "stylesheet", href: pandaStylesheet },
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
   { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
   { rel: "preconnect", href: "https://rsms.me/" },

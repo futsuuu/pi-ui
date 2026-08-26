@@ -8,3 +8,6 @@
 # Vitest browser mode artifacts
 /.vitest-attachments/
 __screenshots__/
+
+# Panda CSS generated code
+/styled-system/

@@ -1,7 +1,14 @@
 # treefmt – universal formatter multiplexer
 # See https://github.com/numtide/treefmt
 
-excludes = [".git/**", "pnpm-lock.yaml", "node_modules/**", ".react-router/**", "build/**"]
+excludes = [
+  ".git/**",
+  "pnpm-lock.yaml",
+  "node_modules/**",
+  ".react-router/**",
+  "build/**",
+  "styled-system/**",
+]
 walk = "filesystem"
 verbose = 1
 
