@@ -80,6 +80,10 @@ describe("parseDiff", () => {
 });
 
 describe("DiffView", () => {
+  // Shiki lazily loads its engine and grammars; under CI load this takes
+  // longer than expect.poll's default 1000ms timeout.
+  const shikiTimeout = { timeout: 5000 };
+
   it("renders gutter line numbers and per-row signs", async () => {
     const screen = await render(
       <DiffView
@@ -140,7 +144,9 @@ describe("DiffView", () => {
   it("does not recolor plain-text language tokens on tinted rows", async () => {
     const screen = await render(<DiffView path="notes.txt" format="numbered" diff={"+1 added"} />);
 
-    await expect.poll(() => screen.container.querySelector("span.diff-token")).not.toBeNull();
+    await expect
+      .poll(() => screen.container.querySelector("span.diff-token"), shikiTimeout)
+      .not.toBeNull();
     const content = screen.container.querySelector("td:nth-child(3) > span:nth-child(2)");
     expect(content?.className).toBe("diff-token");
     expect(content?.className).not.toContain("text-green");
@@ -162,7 +168,9 @@ describe("DiffView", () => {
     );
 
     // Tokenization is async (Shiki lazily loads the grammar); wait for it.
-    await expect.poll(() => screen.container.querySelector("span.diff-token")).not.toBeNull();
+    await expect
+      .poll(() => screen.container.querySelector("span.diff-token"), shikiTimeout)
+      .not.toBeNull();
     const token = screen.container.querySelector("span.diff-token")!;
     // Dual-theme CSS variables are emitted inline on each token.
     expect(token.getAttribute("style")).toMatch(/--shiki-light/);
@@ -261,7 +269,9 @@ describe("DiffView", () => {
       />,
     );
 
-    await expect.poll(() => screen.container.querySelector("span.diff-token")).not.toBeNull();
+    await expect
+      .poll(() => screen.container.querySelector("span.diff-token"), shikiTimeout)
+      .not.toBeNull();
     expect(screen.container.querySelector("span.diff-token")?.getAttribute("style")).toMatch(
       /--shiki-light/,
     );
@@ -274,7 +284,9 @@ describe("DiffView", () => {
 
     await expect.poll(() => screen.container.querySelector(".diff-view")).not.toBeNull();
     const container = screen.container.querySelector(".diff-view")!;
-    await expect.poll(() => container.getAttribute("style")).toMatch(/--shiki-light-bg/);
+    await expect
+      .poll(() => container.getAttribute("style"), shikiTimeout)
+      .toMatch(/--shiki-light-bg/);
     expect(container.getAttribute("style")).toMatch(/--shiki-dark-bg/);
     expect(container.className).toContain("max-h-80");
     expect(container.className).toContain("overflow-auto");
