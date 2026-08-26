@@ -1,3 +1,4 @@
+import { css } from "styled-system/css";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
@@ -41,18 +42,20 @@ function ThemeHarness() {
     <div>
       <span data-testid="theme">{theme}</span>
       <span data-testid="resolved">{resolvedTheme}</span>
-      <button className="px-2 py-1" onClick={() => setTheme("system")}>
+      <button className={harnessButton} onClick={() => setTheme("system")}>
         set system
       </button>
-      <button className="px-2 py-1" onClick={() => setTheme("light")}>
+      <button className={harnessButton} onClick={() => setTheme("light")}>
         set light
       </button>
-      <button className="px-2 py-1" onClick={() => setTheme("dark")}>
+      <button className={harnessButton} onClick={() => setTheme("dark")}>
         set dark
       </button>
     </div>
   );
 }
+
+const harnessButton = css({ paddingInline: "2", paddingBlock: "1" });
 
 async function renderProvider(initialSystemDark = false) {
   const system = installSystemDark(initialSystemDark);

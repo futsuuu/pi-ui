@@ -76,9 +76,7 @@ const amber = scale({
 });
 
 export default defineConfig({
-  // Preflight stays off while Tailwind's reset is still active; enable it in
-  // the final phase when Tailwind (and its preflight) is removed.
-  preflight: false,
+  preflight: true,
   include: ["./app/**/*.{ts,tsx}"],
   exclude: [],
   outdir: "styled-system",

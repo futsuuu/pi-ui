@@ -1,6 +1,5 @@
 import { reactRouter } from "@react-router/dev/vite";
 import babel from "@rolldown/plugin-babel";
-import tailwindcss from "@tailwindcss/vite";
 import { reactCompilerPreset } from "@vitejs/plugin-react";
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig, type UserConfig } from "vite";
@@ -11,7 +10,6 @@ export default defineConfig(({ mode }) => {
     plugins: [
       // React Router Vite plugin does not work in tests
       !process.env.VITEST && reactRouter(),
-      tailwindcss(),
       babel({
         presets: [
           reactCompilerPreset({
