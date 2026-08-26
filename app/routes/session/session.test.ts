@@ -152,7 +152,10 @@ describe("session layout loader", () => {
         };
         expect(result.cwd).toBe(repo.canonicalize(project));
         expect(result.worktrees).toHaveLength(2);
-        expect(result.worktrees[0]).toMatchObject({ path: repo.canonicalize(project), isMain: true });
+        expect(result.worktrees[0]).toMatchObject({
+          path: repo.canonicalize(project),
+          isMain: true,
+        });
         expect(result.worktrees[1]).toMatchObject({ path: worktree.path, isManaged: true });
         // Registering recent projects is the index route's job, not the layout's:
         // a worktree's New Session link must not register the worktree as one.
