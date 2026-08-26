@@ -46,6 +46,7 @@ const textareaStyle = css({
   width: "full",
   resize: "none",
   backgroundColor: "transparent",
+  textStyle: "sm",
   _focus: { outline: "none" },
   _disabled: { opacity: 0.5, cursor: "not-allowed" },
   overflow: "hidden",
