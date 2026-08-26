@@ -75,6 +75,7 @@ export default function Settings() {
             height: "14",
             display: "flex",
             alignItems: "center",
+            gap: "3",
           })}
         >
           <Layers className={css({ width: "5", height: "5", color: "blue.500" })} />

@@ -23,6 +23,7 @@ const topbarInnerStyle = css({
   height: "14",
   display: "flex",
   alignItems: "center",
+  gap: "3",
 });
 
 const iconGhostButton = css({
