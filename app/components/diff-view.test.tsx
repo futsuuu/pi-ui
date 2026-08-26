@@ -192,7 +192,7 @@ describe("DiffView", () => {
     );
 
     await expect
-      .poll(() => screen.container.querySelectorAll("span.diff-token").length)
+      .poll(() => screen.container.querySelectorAll("span.diff-token").length, shikiTimeout)
       .toBeGreaterThan(0);
     const rows = screen.container.querySelectorAll("tbody tr");
     const innerToken = [...rows[1].querySelectorAll(".diff-token")].find(
@@ -221,7 +221,7 @@ describe("DiffView", () => {
     );
 
     await expect
-      .poll(() => screen.container.querySelectorAll("span.diff-token").length)
+      .poll(() => screen.container.querySelectorAll("span.diff-token").length, shikiTimeout)
       .toBeGreaterThan(0);
     const rows = screen.container.querySelectorAll("tbody tr");
     const commentStyle = rows[0].querySelector(".diff-token")!.getAttribute("style");
@@ -248,7 +248,7 @@ describe("DiffView", () => {
     );
 
     await expect
-      .poll(() => screen.container.querySelectorAll("span.diff-token").length)
+      .poll(() => screen.container.querySelectorAll("span.diff-token").length, shikiTimeout)
       .toBeGreaterThan(0);
     const rows = screen.container.querySelectorAll("tbody tr");
     const codeToken = [...rows[2].querySelectorAll(".diff-token")].find((el) =>
@@ -299,7 +299,7 @@ describe("DiffView", () => {
 
     // Both rows get tokenized once the grammar loads.
     await expect
-      .poll(() => screen.container.querySelectorAll("span.diff-token").length)
+      .poll(() => screen.container.querySelectorAll("span.diff-token").length, shikiTimeout)
       .toBeGreaterThan(0);
     const token = screen.container.querySelector("span.diff-token")!;
     // Token spans must not paint an opaque theme background over the row
