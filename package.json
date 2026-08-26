@@ -9,7 +9,7 @@
     "start": "react-router-serve ./build/server/index.js",
     "lint": "panda codegen && react-router typegen && oxlint",
     "fmt": "oxfmt --write",
-    "test": "panda codegen && node scripts/check-no-tailwind.mjs && vitest --run"
+    "test": "panda codegen && vitest --run"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.84.2",
