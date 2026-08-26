@@ -514,7 +514,7 @@ function Chat({
         restoreTarget={restoreTarget}
         onRestoreComplete={handleRestoreComplete}
         disableHorizontalScroll
-        viewportClassName="pb-36"
+        viewportClassName={css({ paddingBottom: "9rem" })}
       >
         <div
           ref={messagesContainerRef}

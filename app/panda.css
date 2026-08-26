@@ -17,6 +17,15 @@ body {
   font-variant-alternates: normal;
 }
 
+/* Tailwind's preflight applied the mono family to code elements globally;
+   Panda's reset does not, so restore it for code blocks and inline code. */
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--fonts-mono);
+}
+
 /* Shiki syntax highlighting: dual themes via CSS variables emitted by @shikijs/rehype.
    Theme switching relies on the .dark class on <html>, same as Panda's _dark condition. */
 pre.shiki,

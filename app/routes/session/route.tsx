@@ -222,6 +222,8 @@ function isAttentionSession(session: SessionListItem): boolean {
 
 const triggerPadding = css({ padding: "1.5" });
 
+const viewportStyle = css({ paddingInline: "3", paddingBottom: "4" });
+
 const sessionRow = cva({
   base: {
     display: "flex",
@@ -753,7 +755,7 @@ export default function SessionLayout() {
           </Link>
         </div>
 
-        <ScrollArea disableHorizontalScroll viewportClassName="px-3 pb-4">
+        <ScrollArea disableHorizontalScroll viewportClassName={viewportStyle}>
           {!ready ? (
             <div className={css({ display: "flex", justifyContent: "center", paddingBlock: "10" })}>
               <Loader2Icon

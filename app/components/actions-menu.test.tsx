@@ -19,20 +19,22 @@ describe("ActionsMenu", () => {
     await expect.element(trigger).toHaveTextContent("menu");
   });
 
-  it("merges positioning classes into the trigger button", async () => {
+  it("merges positioning styles into the trigger button", async () => {
     const screen = await render(
       <ActionsMenu
         ariaLabel="Worktree actions"
         trigger={<span>menu</span>}
-        triggerClassName="p-2 -m-1"
+        triggerClassName={css({ padding: "2", margin: "-0.25rem" })}
       >
         <DeleteMenuItem onSelect={() => {}} label="Delete Worktree" />
       </ActionsMenu>,
     );
 
     const trigger = screen.getByRole("button", { name: "Worktree actions" });
-    await expect.element(trigger).toHaveClass("p-2");
-    await expect.element(trigger).toHaveClass("-m-1");
+    await expect.element(trigger).toBeInTheDocument();
+    const style = getComputedStyle(trigger.element());
+    expect(style.paddingLeft).toBe("8px");
+    expect(style.marginLeft).toBe("-4px");
   });
 
   it("opens the menu on click and renders the delete item", async () => {

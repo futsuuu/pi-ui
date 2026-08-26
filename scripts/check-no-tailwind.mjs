@@ -22,7 +22,11 @@ function walk(dir) {
 const offenders = [];
 for (const file of walk("app")) {
   const src = readFileSync(file, "utf8");
-  const literals = src.matchAll(/(?:className|class)=["']([^"']+)["']/g);
+  // Any *className/class attribute (JSX props like viewportClassName
+  // included) carrying a raw string is suspect: only css() results,
+  // owned helper classes (font-mono, prose), or Radix data attributes
+  // are expected.
+  const literals = src.matchAll(/[a-zA-Z]*[cC]lass[Nn]ame=["']([^"']+)["']/g);
   for (const [, value] of literals) {
     for (const cls of value.split(/\s+/)) {
       if (!cls || ALLOWED.has(cls)) continue;
@@ -33,6 +37,6 @@ for (const file of walk("app")) {
 
 if (offenders.length > 0) {
   console.error("Raw utility-like class strings found (use css()/cva instead):");
-  for (const line of [...new Set(offenders)]) console.error(`  ${line}`);
+  for (const line of new Set(offenders)) console.error(`  ${line}`);
   process.exit(1);
 }
