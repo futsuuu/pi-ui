@@ -49,6 +49,8 @@ const errorStyle = css({
 
 const iconStyle = css({ width: "4", height: "4", flexShrink: 0 });
 
+const monoMutedStyle = `${css({ opacity: 0.8 })} font-mono`;
+
 export function AssistantMessage({ content, stopReason, errorMessage }: Props) {
   const text = content
     .filter((b): b is TextContent => b.type === "text")
@@ -99,9 +101,9 @@ export function AssistantMessage({ content, stopReason, errorMessage }: Props) {
                 {stopReason === "aborted" ? "Aborted" : stopReason === "error" ? "Error" : "Error"}
               </span>
             </div>
-            {errorMessage && <p className="font-mono opacity-80">{errorMessage}</p>}
+            {errorMessage && <p className={monoMutedStyle}>{errorMessage}</p>}
             {stopReason && !errorMessage && (
-              <p className="font-mono opacity-80">stopReason: {stopReason}</p>
+              <p className={monoMutedStyle}>stopReason: {stopReason}</p>
             )}
           </div>
         )}

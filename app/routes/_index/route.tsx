@@ -4,10 +4,117 @@ import path from "node:path";
 
 import { Folder, ArrowLeft, File, Layers, Settings, ArrowRight } from "lucide-react";
 import { Link, useLoaderData } from "react-router";
+import { css } from "styled-system/css";
 
 import { projectRepositoryContext } from "~/router-contexts";
 
 import type { Route } from "./+types/route";
+
+const topbarStyle = css({
+  backgroundColor: "bg.panel",
+  borderBottomWidth: "1px",
+  borderColor: "border.panel",
+});
+
+const topbarInnerStyle = css({
+  maxWidth: "3xl",
+  marginInline: "auto",
+  paddingInline: "4",
+  height: "14",
+  display: "flex",
+  alignItems: "center",
+});
+
+const iconGhostButton = css({
+  padding: "2",
+  borderRadius: "lg",
+  color: "fg.muted",
+  transitionProperty: "colors",
+  transitionDuration: "150ms",
+  _hover: { backgroundColor: { base: "gray.100", _dark: "gray.800" } },
+});
+
+const crumbLink = css({
+  paddingInline: "2",
+  paddingBlock: "1",
+  textStyle: "xs",
+  borderRadius: "sm",
+  flexShrink: 0,
+  _hover: { backgroundColor: { base: "gray.200", _dark: "gray.700" } },
+});
+
+const recentDirStyle = css({
+  display: "flex",
+  alignItems: "center",
+  gap: "2",
+  width: "full",
+  textAlign: "left",
+  paddingInline: "3",
+  paddingBlock: "2.5",
+  borderRadius: "lg",
+  textStyle: "sm",
+  color: "fg.secondary",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  transitionProperty: "colors",
+  transitionDuration: "150ms",
+  _hover: { backgroundColor: { base: "gray.100", _dark: "gray.800" } },
+});
+
+const entryRowBase = {
+  display: "flex",
+  alignItems: "center",
+  gap: "2",
+  width: "full",
+  textAlign: "left",
+  paddingInline: "4",
+  paddingBlock: "2.5",
+  textStyle: "sm",
+};
+
+const dirRowStyle = css({
+  ...entryRowBase,
+  _hover: { backgroundColor: { base: "gray.100", _dark: "gray.800" } },
+});
+
+const fileRowStyle = css({
+  ...entryRowBase,
+  cursor: "default",
+  color: "gray.500",
+});
+
+const parentRowStyle = css({
+  ...entryRowBase,
+  color: "fg.muted",
+  borderBottomWidth: "1px",
+  borderColor: { base: "gray.100", _dark: "gray.800" },
+  _hover: { backgroundColor: { base: "gray.100", _dark: "gray.800" } },
+});
+
+const ctaStyle = css({
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: "2",
+  width: "full",
+  backgroundColor: "action",
+  color: "white",
+  fontWeight: "medium",
+  paddingBlock: "2.5",
+  paddingInline: "4",
+  borderRadius: "lg",
+  textStyle: "sm",
+  transitionProperty: "colors",
+  transitionDuration: "150ms",
+  _hover: { backgroundColor: "action.hover" },
+});
+
+const truncateStyle = css({
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+});
 
 export function meta(_: Route.MetaArgs) {
   return [{ title: "Pi UI - Select Directory" }];
@@ -60,42 +167,61 @@ export default function Home() {
   const parentDir = currentDir.substring(0, currentDir.lastIndexOf("/")) || "/";
 
   return (
-    <div className="h-full flex flex-col">
+    <div className={css({ height: "full", display: "flex", flexDirection: "column" })}>
       {/* Top bar */}
-      <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
-        <div className="max-w-3xl mx-auto px-4 h-14 flex items-center gap-3">
-          <Layers className="w-5 h-5 text-blue-500" />
-          <span className="font-semibold text-gray-900 dark:text-gray-100">
+      <div className={topbarStyle}>
+        <div className={topbarInnerStyle}>
+          <Layers className={css({ width: "5", height: "5", color: "blue.500" })} />
+          <span className={css({ fontWeight: "semibold", color: "fg.primary" })}>
             Select Working Directory
           </span>
-          <div className="ml-auto flex items-center gap-2">
-            <Link
-              to="/settings"
-              aria-label="Settings"
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-500 dark:text-gray-400"
-            >
-              <Settings className="w-5 h-5" />
+          <div
+            className={css({ marginLeft: "auto", display: "flex", alignItems: "center", gap: "2" })}
+          >
+            <Link to="/settings" aria-label="Settings" className={iconGhostButton}>
+              <Settings className={css({ width: "5", height: "5" })} />
             </Link>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 max-w-3xl mx-auto w-full p-6">
+      <div
+        className={css({
+          flex: "1",
+          maxWidth: "3xl",
+          marginInline: "auto",
+          width: "full",
+          padding: "6",
+        })}
+      >
         {/* Recent Directories */}
         {recentDirs.length > 0 && (
-          <div className="mb-6">
-            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          <div className={css({ marginBottom: "6" })}>
+            <h2
+              className={css({
+                textStyle: "sm",
+                fontWeight: "medium",
+                color: "fg.secondary",
+                marginBottom: "2",
+              })}
+            >
               Recent Directories
             </h2>
-            <div className="space-y-1">
+            <div
+              className={css({
+                "& > :not([hidden]) ~ :not([hidden])": { marginTop: "1" },
+              })}
+            >
               {recentDirs.map((dir) => (
                 <Link
                   key={dir.path}
                   to={`/session?dir=${encodeURIComponent(dir.path)}`}
-                  className="block w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors truncate flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300"
+                  className={recentDirStyle}
                 >
-                  <Folder className="w-4 h-4 flex-shrink-0 text-amber-500" />
-                  <span className="truncate">{dir.path}</span>
+                  <Folder
+                    className={css({ width: "4", height: "4", flexShrink: 0, color: "amber.500" })}
+                  />
+                  <span className={truncateStyle}>{dir.path}</span>
                 </Link>
               ))}
             </div>
@@ -103,29 +229,55 @@ export default function Home() {
         )}
 
         {/* Directory Picker */}
-        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden">
-          <div className="flex items-center gap-1 p-2 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 overflow-x-auto">
-            <Link
-              to={`/?dir=${encodeURIComponent(homeDir)}`}
-              replace
-              className="px-2 py-1 text-xs rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 flex-shrink-0"
-            >
+        <div
+          className={css({
+            backgroundColor: "bg.panel",
+            borderWidth: "1px",
+            borderColor: "border.panel",
+            borderRadius: "xl",
+            overflow: "hidden",
+          })}
+        >
+          <div
+            className={css({
+              display: "flex",
+              alignItems: "center",
+              gap: "1",
+              padding: "2",
+              borderBottomWidth: "1px",
+              borderColor: "border.panel",
+              backgroundColor: { base: "gray.50", _dark: "gray.900" },
+              overflowX: "auto",
+            })}
+          >
+            <Link to={`/?dir=${encodeURIComponent(homeDir)}`} replace className={crumbLink}>
               ~
             </Link>
-            <span className="text-gray-400 flex-shrink-0">/</span>
+            <span className={css({ color: "gray.400", flexShrink: 0 })}>/</span>
             {breadcrumbs.map((crumb, i) => (
-              <span key={crumb.path} className="flex items-center gap-1 flex-shrink-0">
-                {i > 0 && <span className="text-gray-400">/</span>}
+              <span
+                key={crumb.path}
+                className={css({ display: "flex", alignItems: "center", gap: "1", flexShrink: 0 })}
+              >
+                {i > 0 && <span className={css({ color: "gray.400" })}>/</span>}
                 {i < breadcrumbs.length - 1 ? (
                   <Link
                     to={`/?dir=${encodeURIComponent(crumb.path)}`}
                     replace
-                    className="px-2 py-1 text-xs rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400"
+                    className={crumbLink}
                   >
                     {crumb.name}
                   </Link>
                 ) : (
-                  <span className="px-2 py-1 text-xs font-medium text-gray-900 dark:text-gray-100">
+                  <span
+                    className={css({
+                      paddingInline: "2",
+                      paddingBlock: "1",
+                      textStyle: "xs",
+                      fontWeight: "medium",
+                      color: "fg.primary",
+                    })}
+                  >
                     {crumb.name}
                   </span>
                 )}
@@ -133,13 +285,9 @@ export default function Home() {
             ))}
           </div>
 
-          <div className="max-h-80 overflow-y-auto">
-            <Link
-              to={`/?dir=${encodeURIComponent(parentDir)}`}
-              replace
-              className="w-full text-left px-4 py-2.5 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 text-sm flex items-center gap-2 border-b border-gray-100 dark:border-gray-800"
-            >
-              <ArrowLeft className="w-4 h-4" />
+          <div className={css({ maxHeight: "20rem", overflowY: "auto" })}>
+            <Link to={`/?dir=${encodeURIComponent(parentDir)}`} replace className={parentRowStyle}>
+              <ArrowLeft className={css({ width: "4", height: "4" })} />
               ..
             </Link>
             {entries.map((entry) =>
@@ -148,33 +296,48 @@ export default function Home() {
                   key={entry.path}
                   to={`/?dir=${encodeURIComponent(entry.path)}`}
                   replace
-                  className="w-full text-left px-4 py-2.5 hover:bg-gray-100 dark:hover:bg-gray-800 text-sm flex items-center gap-2"
+                  className={dirRowStyle}
                 >
-                  <Folder className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                  <span className="truncate">{entry.name}</span>
+                  <Folder
+                    className={css({ width: "4", height: "4", color: "amber.500", flexShrink: 0 })}
+                  />
+                  <span className={truncateStyle}>{entry.name}</span>
                 </Link>
               ) : (
-                <div
-                  key={entry.path}
-                  className="w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 cursor-default text-gray-500"
-                >
-                  <File className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                  <span className="truncate">{entry.name}</span>
+                <div key={entry.path} className={fileRowStyle}>
+                  <File
+                    className={css({ width: "4", height: "4", color: "gray.400", flexShrink: 0 })}
+                  />
+                  <span className={truncateStyle}>{entry.name}</span>
                 </div>
               ),
             )}
             {entries.length === 0 && (
-              <p className="px-4 py-8 text-center text-gray-400 text-sm">Empty directory</p>
+              <p
+                className={css({
+                  paddingInline: "4",
+                  paddingBlock: "8",
+                  textAlign: "center",
+                  color: "gray.400",
+                  textStyle: "sm",
+                })}
+              >
+                Empty directory
+              </p>
             )}
           </div>
 
-          <div className="p-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
-            <Link
-              to={`/session?dir=${encodeURIComponent(currentDir)}`}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 rounded-lg transition-colors text-sm flex items-center justify-center gap-2"
-            >
+          <div
+            className={css({
+              padding: "4",
+              borderTopWidth: "1px",
+              borderColor: "border.panel",
+              backgroundColor: { base: "gray.50", _dark: "gray.900" },
+            })}
+          >
+            <Link to={`/session?dir=${encodeURIComponent(currentDir)}`} className={ctaStyle}>
               Use This Directory
-              <ArrowRight className="w-4 h-4" />
+              <ArrowRight className={css({ width: "4", height: "4" })} />
             </Link>
           </div>
         </div>

@@ -24,6 +24,7 @@ import {
   useNavigate,
   useParams,
 } from "react-router";
+import { cva, css, cx } from "styled-system/css";
 import * as v from "valibot";
 
 import { ActionsMenu, DeleteMenuItem } from "~/components/actions-menu";
@@ -219,6 +220,171 @@ function isAttentionSession(session: SessionListItem): boolean {
   return session.isStreaming || !session.isRead;
 }
 
+const triggerPadding = css({ padding: "1.5" });
+
+const sessionRow = cva({
+  base: {
+    display: "flex",
+    alignItems: "center",
+    borderRadius: "lg",
+    transitionProperty: "colors",
+    transitionDuration: "150ms",
+  },
+  variants: {
+    open: {
+      true: {
+        backgroundColor: { base: "blue.50", _dark: "blue.900/20" },
+        _hover: { backgroundColor: { base: "blue.100", _dark: "blue.900/30" } },
+      },
+      false: {
+        _hover: { backgroundColor: { base: "gray.50", _dark: "gray.800/60" } },
+      },
+    },
+    deleting: {
+      true: { opacity: 0.5, pointerEvents: "none" },
+      false: {},
+    },
+  },
+});
+
+const badgeBase = css.raw({
+  paddingInline: "1.5",
+  paddingBlock: "0.5",
+  borderRadius: "full",
+  fontSize: "10px",
+  fontFamily: "sans",
+  fontWeight: "medium",
+  textTransform: "uppercase",
+  letterSpacing: "0.025em",
+  flexShrink: 0,
+});
+
+const mainBadgeStyle = cx(
+  css(badgeBase),
+  css({
+    backgroundColor: { base: "blue.100", _dark: "blue.900/40" },
+    color: { base: "blue.700", _dark: "blue.400" },
+  }),
+);
+
+const detachedBadgeStyle = cx(
+  css(badgeBase),
+  css({ backgroundColor: "bg.subtle", color: "fg.muted" }),
+);
+
+const newSessionLinkStyle = css({
+  padding: "2",
+  margin: "-1",
+  borderRadius: "lg",
+  color: "fg.muted",
+  transitionProperty: "colors",
+  transitionDuration: "150ms",
+  _hover: {
+    color: "fg.primary",
+    backgroundColor: { base: "gray.100", _dark: "gray.800" },
+  },
+});
+
+const sectionStyle = css({
+  borderTopWidth: "1px",
+  borderColor: "border.divider",
+  paddingBlock: "1",
+  paddingInline: "1",
+});
+
+const worktreeCardStyle = css({
+  overflow: "hidden",
+  borderRadius: "xl",
+  borderWidth: "1px",
+  borderColor: "border.panel",
+  backgroundColor: "bg.panel",
+});
+
+const overlayStyle = css({
+  position: "fixed",
+  inset: 0,
+  zIndex: 30,
+  backgroundColor: "black/40",
+  lg: { display: "none" },
+  transitionProperty: "opacity",
+  transitionDuration: "200ms",
+});
+
+const sidebarToggleStyle = css({
+  position: "fixed",
+  left: "2",
+  top: "2.5",
+  zIndex: 50,
+  borderRadius: "lg",
+  padding: "2",
+  color: "fg.muted",
+  _hover: { backgroundColor: { base: "gray.100", _dark: "gray.800" } },
+  lg: { display: "none" },
+});
+
+const sidebarStyle = css({
+  position: "fixed",
+  insetBlock: 0,
+  left: 0,
+  zIndex: 40,
+  display: "flex",
+  height: "full",
+  width: "full",
+  flexDirection: "column",
+  backgroundColor: "bg.page",
+  transitionProperty: "transform",
+  transitionDuration: "200ms",
+  sm: { width: "24rem" },
+  lg: {
+    position: "static",
+    width: "24rem",
+    flexShrink: 0,
+    transform: "translateX(0)",
+    visibility: "visible",
+    pointerEvents: "auto",
+    borderRightWidth: "1px",
+    borderColor: "border.panel",
+  },
+});
+
+const ghostIconButton = css({
+  padding: "2",
+  borderRadius: "lg",
+  color: "fg.muted",
+  transitionProperty: "colors",
+  transitionDuration: "150ms",
+  _hover: { backgroundColor: { base: "gray.100", _dark: "gray.800" } },
+});
+
+const addWorktreeButton = css({
+  paddingInline: "3",
+  paddingBlock: "1.5",
+  borderRadius: "lg",
+  textStyle: "sm",
+  fontWeight: "medium",
+  transitionProperty: "colors",
+  transitionDuration: "150ms",
+  display: "flex",
+  alignItems: "center",
+  gap: "1.5",
+  backgroundColor: "bg.subtle",
+  _hover: { backgroundColor: { base: "gray.200", _dark: "gray.700" } },
+  color: "fg.secondary",
+  _disabled: { opacity: 0.5, cursor: "not-allowed" },
+});
+
+const errorBannerStyle = css({
+  textStyle: "sm",
+  color: "danger",
+  marginBottom: "2",
+  backgroundColor: "danger.soft",
+  borderWidth: "1px",
+  borderColor: "danger.border",
+  borderRadius: "lg",
+  paddingInline: "3",
+  paddingBlock: "2",
+});
+
 function SessionRow({
   session,
   deleting,
@@ -232,32 +398,71 @@ function SessionRow({
 }) {
   return (
     <div
-      className={`flex items-center rounded-lg ${open ? "bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30" : "hover:bg-gray-50 dark:hover:bg-gray-800/60"} ${deleting ? "opacity-50 pointer-events-none" : ""}`}
+      className={cx(
+        sessionRow({ open, deleting }),
+        css({
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }),
+      )}
     >
-      <span className="w-6 h-4 flex items-center justify-center flex-shrink-0">
+      <span
+        className={css({
+          width: "6",
+          height: "4",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        })}
+      >
         {session.isStreaming ? (
-          <Loader2Icon aria-label="Streaming" className="w-4 h-4 text-blue-500 animate-spin" />
+          <Loader2Icon
+            aria-label="Streaming"
+            className={css({ width: "4", height: "4", color: "info", animation: "spin" })}
+          />
         ) : (
           !session.isRead && (
-            <Dot aria-label="Unread" className="w-4 h-4 fill-current text-blue-500" />
+            <Dot
+              aria-label="Unread"
+              className={css({ width: "4", height: "4", fill: "current", color: "info" })}
+            />
           )
         )}
       </span>
       <Link
         to={`/session/${encodeURIComponent(session.id)}`}
-        className="min-w-0 flex-1 py-2 text-left"
+        className={css({ minWidth: 0, flex: "1", paddingBlock: "2", textAlign: "left" })}
       >
-        <p className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
+        <p
+          className={css({
+            fontWeight: "medium",
+            textStyle: "sm",
+            color: "fg.primary",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          })}
+        >
           {session.firstMessage || "Untitled Session"}
         </p>
-        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+        <p
+          className={css({
+            textStyle: "xs",
+            color: "fg.muted",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          })}
+        >
           {formatDate(session.timestamp)} · {session.messageCount} messages
         </p>
       </Link>
       <ActionsMenu
         ariaLabel="Session actions"
-        trigger={<MoreVertical className="w-5 h-5" />}
-        triggerClassName="p-1.5"
+        trigger={<MoreVertical className={css({ width: "5", height: "5" })} />}
+        triggerClassName={triggerPadding}
       >
         <DeleteMenuItem onSelect={onDelete} label="Delete Session" />
       </ActionsMenu>
@@ -300,48 +505,83 @@ function WorktreeGroup({
     <Collapsible.Root
       open={open}
       onOpenChange={setOpen}
-      className={`overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 ${isDeletingWorktree(worktree.path) ? "opacity-50 pointer-events-none" : ""}`}
+      className={cx(
+        worktreeCardStyle,
+        isDeletingWorktree(worktree.path) && css({ opacity: 0.5, pointerEvents: "none" }),
+      )}
     >
-      <div className="p-1">
-        <div className="flex items-center justify-between gap-2 rounded-lg py-2 hover:bg-gray-50 dark:hover:bg-gray-800/60">
+      <div className={css({ padding: "1" })}>
+        <div
+          className={css({
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "2",
+            borderRadius: "lg",
+            paddingBlock: "2",
+            _hover: { backgroundColor: { base: "gray.50", _dark: "gray.800/60" } },
+          })}
+        >
           <Collapsible.Trigger asChild>
-            <button type="button" className="flex min-w-0 flex-1 items-center gap-1 pl-1 text-left">
+            <button
+              type="button"
+              className={css({
+                display: "flex",
+                minWidth: 0,
+                flex: "1",
+                alignItems: "center",
+                gap: "1",
+                paddingInlineStart: "1",
+                textAlign: "left",
+              })}
+            >
               <ChevronRight
-                className={`w-4 h-4 flex-shrink-0 text-gray-400 transition-transform ${open ? "rotate-90" : ""}`}
+                className={css({
+                  width: "4",
+                  height: "4",
+                  flexShrink: 0,
+                  color: "fg.subtle",
+                  transitionProperty: "transform",
+                  transitionDuration: "150ms",
+                  transform: open ? "rotate(90deg)" : undefined,
+                })}
               />
-              <div className="min-w-0">
-                <p className="font-mono text-sm text-gray-900 dark:text-gray-100 truncate flex items-center gap-2">
+              <div className={css({ minWidth: 0 })}>
+                <p
+                  className={`font-mono ${css({
+                    textStyle: "sm",
+                    color: "fg.primary",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "2",
+                  })}`}
+                >
                   {branch}
-                  {worktree.isMain && (
-                    <span className="px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 text-[10px] font-sans font-medium uppercase tracking-wide flex-shrink-0">
-                      main
-                    </span>
-                  )}
-                  {worktree.branch === null && (
-                    <span className="px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-[10px] font-sans font-medium uppercase tracking-wide flex-shrink-0">
-                      detached
-                    </span>
-                  )}
+                  {worktree.isMain && <span className={mainBadgeStyle}>main</span>}
+                  {worktree.branch === null && <span className={detachedBadgeStyle}>detached</span>}
                 </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
+                <p className={css({ textStyle: "xs", color: "fg.muted" })}>
                   {worktree.sessions.length}{" "}
                   {worktree.sessions.length === 1 ? "session" : "sessions"}
                 </p>
               </div>
             </button>
           </Collapsible.Trigger>
-          <div className="flex items-center gap-1 flex-shrink-0">
+          <div className={css({ display: "flex", alignItems: "center", gap: "1", flexShrink: 0 })}>
             <Link
               to={`/session/new?dir=${encodeURIComponent(worktree.path)}`}
               title="New Session"
-              className="p-2 -m-1 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              className={newSessionLinkStyle}
             >
-              <MessageCirclePlus className="w-5 h-5" />
+              <MessageCirclePlus className={css({ width: "5", height: "5" })} />
             </Link>
             <ActionsMenu
               ariaLabel="Worktree actions"
-              trigger={<MoreVertical className="w-5 h-5" />}
-              triggerClassName="p-1.5"
+              trigger={<MoreVertical className={css({ width: "5", height: "5" })} />}
+              triggerClassName={triggerPadding}
             >
               <DeleteMenuItem
                 onSelect={() => onDeleteWorktree(worktree)}
@@ -354,15 +594,11 @@ function WorktreeGroup({
       </div>
       {worktree.sessions.length > 0 && (
         <Collapsible.Content>
-          <div className="border-t border-gray-100 dark:border-gray-800/80 py-1 px-1">
-            {worktree.sessions.map(renderSession)}
-          </div>
+          <div className={sectionStyle}>{worktree.sessions.map(renderSession)}</div>
         </Collapsible.Content>
       )}
       {!open && attentionSessions.length > 0 && (
-        <div className="border-t border-gray-100 dark:border-gray-800/80 py-1 px-1">
-          {attentionSessions.map(renderSession)}
-        </div>
+        <div className={sectionStyle}>{attentionSessions.map(renderSession)}</div>
       )}
     </Collapsible.Root>
   );
@@ -468,9 +704,12 @@ export default function SessionLayout() {
   }
 
   return (
-    <div className="h-full flex">
+    <div className={css({ height: "full", display: "flex" })}>
       <div
-        className={`fixed inset-0 z-30 bg-black/40 lg:hidden transition-opacity duration-200 ${sidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+        className={cx(
+          overlayStyle,
+          sidebarOpen ? css({ opacity: 1 }) : css({ opacity: 0, pointerEvents: "none" }),
+        )}
         onClick={() => setSidebarOpen(false)}
       />
 
@@ -478,51 +717,96 @@ export default function SessionLayout() {
         type="button"
         aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
         onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="fixed left-2 top-2.5 z-50 rounded-lg p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 lg:hidden"
+        className={sidebarToggleStyle}
       >
-        {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+        {sidebarOpen ? (
+          <X className={css({ width: "5", height: "5" })} />
+        ) : (
+          <Menu className={css({ width: "5", height: "5" })} />
+        )}
       </button>
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex h-full w-full flex-col bg-gray-50 dark:bg-gray-950 transition-transform duration-200 sm:w-96 lg:static lg:w-96 lg:shrink-0 lg:translate-x-0 lg:visible lg:pointer-events-auto lg:border-r lg:border-gray-200 dark:lg:border-gray-800 ${sidebarOpen ? "translate-x-0 visible" : "-translate-x-full invisible pointer-events-none"}`}
+        className={cx(
+          sidebarStyle,
+          sidebarOpen
+            ? css({ transform: "translateX(0)", visibility: "visible" })
+            : css({
+                transform: "translateX(-100%)",
+                visibility: "hidden",
+                pointerEvents: "none",
+              }),
+        )}
       >
-        <div className="flex-shrink-0 h-14 px-3 flex items-center justify-end">
-          <Link
-            to="/settings"
-            aria-label="Settings"
-            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-500 dark:text-gray-400"
-          >
-            <Settings className="w-5 h-5" />
+        <div
+          className={css({
+            flexShrink: 0,
+            height: "14",
+            paddingInline: "3",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "flex-end",
+          })}
+        >
+          <Link to="/settings" aria-label="Settings" className={ghostIconButton}>
+            <Settings className={css({ width: "5", height: "5" })} />
           </Link>
         </div>
 
         <ScrollArea disableHorizontalScroll viewportClassName="px-3 pb-4">
           {!ready ? (
-            <div className="flex justify-center py-10">
-              <Loader2Icon className="w-6 h-6 text-gray-400 animate-spin" />
+            <div className={css({ display: "flex", justifyContent: "center", paddingBlock: "10" })}>
+              <Loader2Icon
+                className={css({ width: "6", height: "6", color: "gray.400", animation: "spin" })}
+              />
             </div>
           ) : (
             <>
-              <div className="flex items-center justify-between mb-2 pl-1">
-                <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
-                  <GitBranch className="w-4 h-4 text-green-600 dark:text-green-500" />
+              <div
+                className={css({
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginBottom: "2",
+                  paddingInlineStart: "1",
+                })}
+              >
+                <h2
+                  className={css({
+                    textStyle: "sm",
+                    fontWeight: "medium",
+                    color: "fg.secondary",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "2",
+                  })}
+                >
+                  <GitBranch
+                    className={css({
+                      width: "4",
+                      height: "4",
+                      color: { base: "green.600", _dark: "green.500" },
+                    })}
+                  />
                   Worktrees
                 </h2>
                 <button
                   onClick={addWorktree}
                   disabled={fetcher.state !== "idle"}
-                  className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={addWorktreeButton}
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus className={css({ width: "3.5", height: "3.5" })} />
                   Add Worktree
                 </button>
               </div>
               {fetcher.data && typeof fetcher.data === "object" && "error" in fetcher.data && (
-                <p className="text-sm text-red-600 dark:text-red-400 mb-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
-                  {fetcher.data.error}
-                </p>
+                <p className={errorBannerStyle}>{fetcher.data.error}</p>
               )}
-              <div className="space-y-2">
+              <div
+                className={css({
+                  "& > :not([hidden]) ~ :not([hidden])": { marginTop: "2" },
+                })}
+              >
                 {worktreesWithSessions.map((worktree) => (
                   <WorktreeGroup
                     key={worktree.path}
@@ -540,7 +824,7 @@ export default function SessionLayout() {
         </ScrollArea>
       </aside>
 
-      <main className="flex-1 min-w-0 h-full overflow-hidden">
+      <main className={css({ flex: "1", minWidth: 0, height: "full", overflow: "hidden" })}>
         <Outlet />
       </main>
     </div>

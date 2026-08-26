@@ -1,4 +1,5 @@
 import { redirect } from "react-router";
+import { css } from "styled-system/css";
 
 import { projectRepositoryContext, worktreeRepositoryContext } from "~/router-contexts";
 
@@ -31,8 +32,18 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
 export default function NoSessionSelected() {
   return (
-    <div className="h-full flex items-center justify-center px-4">
-      <p className="text-sm text-gray-500 dark:text-gray-400">Select a session from the sidebar.</p>
+    <div
+      className={css({
+        height: "full",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        paddingInline: "4",
+      })}
+    >
+      <p className={css({ textStyle: "sm", color: "fg.muted" })}>
+        Select a session from the sidebar.
+      </p>
     </div>
   );
 }

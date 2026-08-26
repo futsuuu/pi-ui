@@ -9,6 +9,8 @@ import {
 } from "react-router";
 
 import "./app.css";
+import { css } from "styled-system/css";
+
 import type { Route } from "./+types/root";
 import { SessionEventProvider } from "./contexts/session-events";
 import { ThemeProvider, ThemeScript } from "./contexts/theme";
@@ -42,6 +44,30 @@ export const middleware: Route.MiddlewareFunction[] = [
   },
 ];
 
+const bodyStyle = css({
+  height: "var(--visual-viewport-height, 100dvh)",
+  display: "flex",
+  flexDirection: "column",
+});
+
+const wrapperStyle = css({ flex: "1", minHeight: 0, display: "flex", flexDirection: "column" });
+
+// Mirrors Tailwind's `container` utility: full width capped per breakpoint,
+// centered, with the page's own padding.
+const errorMainStyle = css({
+  padding: "4",
+  paddingTop: "16",
+  marginInline: "auto",
+  width: "100%",
+  sm: { maxWidth: "40rem" },
+  md: { maxWidth: "48rem" },
+  lg: { maxWidth: "64rem" },
+  xl: { maxWidth: "80rem" },
+  "2xl": { maxWidth: "96rem" },
+});
+
+const errorStackStyle = css({ width: "full", padding: "4", overflowX: "auto" });
+
 export function Layout({ children }: { children: React.ReactNode }) {
   // Global visualViewport handler – updates --visual-viewport-height on :root
   // so all pages can use var(--visual-viewport-height, 100dvh) for correct
@@ -71,10 +97,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
         <ThemeScript />
       </head>
-      <body className="bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 h-(--visual-viewport-height,100dvh) flex flex-col">
+      <body className={bodyStyle}>
         <ThemeProvider>
           <SessionEventProvider>
-            <div className="flex-1 min-h-0 flex flex-col">{children}</div>
+            <div className={wrapperStyle}>{children}</div>
           </SessionEventProvider>
         </ThemeProvider>
         <ScrollRestoration />
@@ -103,11 +129,11 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   }
 
   return (
-    <main className="pt-16 p-4 container mx-auto">
+    <main className={errorMainStyle}>
       <h1>{message}</h1>
       <p>{details}</p>
       {stack && (
-        <pre className="w-full p-4 overflow-x-auto">
+        <pre className={errorStackStyle}>
           <code>{stack}</code>
         </pre>
       )}
