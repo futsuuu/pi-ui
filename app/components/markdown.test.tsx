@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
 
+import { diffRowClass } from "./diff-view";
 import { Markdown } from "./markdown";
 
 type Screen = Awaited<ReturnType<typeof render>>;
@@ -46,7 +47,7 @@ describe("Markdown", () => {
     await expect.element(screen.getByRole("table")).toBeInTheDocument();
     const wrapper = screen.getByRole("table").element().parentElement;
     // Wide tables scroll within the message instead of widening the screen.
-    expect(wrapper?.className).toContain("overflow-x-auto");
+    expect(getComputedStyle(wrapper!).overflowX).toBe("auto");
   });
 
   it("renders GFM task lists with checkbox state", async () => {
@@ -187,7 +188,7 @@ describe("Markdown", () => {
     expect(rows[0].textContent).toContain("1 const a = 1;");
     expect(rows[1].querySelector("td:nth-child(2)")?.textContent).toBe("");
     expect(rows[1].textContent).toContain("+2 const a = 2;");
-    expect(rows[1].className).toContain("bg-green-500/10");
+    expect(rows[1].className).toContain(diffRowClass.add);
   });
 
   it("renders a bare ```diff``` fence via Shiki's diff grammar", async () => {

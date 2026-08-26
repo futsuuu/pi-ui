@@ -1,7 +1,8 @@
+import { css } from "styled-system/css";
 import { describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
 
-import { DiffView, parseDiff } from "./diff-view";
+import { DiffView, diffRowClass, parseDiff } from "./diff-view";
 
 describe("parseDiff", () => {
   it("parses context/remove/add rows with line numbers", () => {
@@ -98,8 +99,8 @@ describe("DiffView", () => {
     const rows = screen.container.querySelectorAll("tbody tr");
     expect(rows).toHaveLength(3);
     // Row backgrounds mark removals (red) and additions (green).
-    expect(rows[1].className).toContain("bg-red-500/10");
-    expect(rows[2].className).toContain("bg-green-500/10");
+    expect(rows[1].className).toContain(diffRowClass.remove);
+    expect(rows[2].className).toContain(diffRowClass.add);
 
     // Gutters: old | new — context shows both, remove only old, add only new.
     const tds = screen.container.querySelectorAll("td");
@@ -288,8 +289,8 @@ describe("DiffView", () => {
       .poll(() => container.getAttribute("style"), shikiTimeout)
       .toMatch(/--shiki-light-bg/);
     expect(container.getAttribute("style")).toMatch(/--shiki-dark-bg/);
-    expect(container.className).toContain("max-h-80");
-    expect(container.className).toContain("overflow-auto");
+    expect(getComputedStyle(container).maxHeight).toBe("320px");
+    expect(getComputedStyle(container).overflowX).toBe("auto");
   });
 
   it("keeps add/remove row tints visible through token spans", async () => {
@@ -307,8 +308,8 @@ describe("DiffView", () => {
     expect(getComputedStyle(token).backgroundColor).toBe("rgba(0, 0, 0, 0)");
     // The remove row still carries its red tint.
     const rows = screen.container.querySelectorAll("tbody tr");
-    expect(rows[0].className).toContain("bg-red-500/10");
-    expect(rows[1].className).toContain("bg-green-500/10");
+    expect(rows[0].className).toContain(diffRowClass.remove);
+    expect(rows[1].className).toContain(diffRowClass.add);
   });
 
   it("renders plain text for unknown languages", async () => {

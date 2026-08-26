@@ -1,10 +1,54 @@
 import { Trash2 } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { Children, type ReactNode } from "react";
+import { css, cx } from "styled-system/css";
+
+const triggerStyle = css({
+  borderRadius: "lg",
+  color: "fg.subtle",
+  transitionProperty: "colors",
+  transitionDuration: "150ms",
+  _hover: {
+    backgroundColor: { base: "black/10", _dark: "white/10" },
+    color: { base: "gray.600", _dark: "gray.300" },
+  },
+});
+
+const contentStyle = css({
+  zIndex: 50,
+  minWidth: "160px",
+  backgroundColor: "bg.card",
+  borderWidth: "1px",
+  borderColor: "border",
+  borderRadius: "lg",
+  boxShadow: "lg",
+  padding: "1",
+});
+
+const deleteItemStyle = css({
+  display: "flex",
+  alignItems: "center",
+  gap: "2",
+  paddingInline: "2.5",
+  paddingBlock: "1.5",
+  borderRadius: "md",
+  textStyle: "sm",
+  color: "danger",
+  outline: "none",
+  cursor: "pointer",
+  _highlighted: {
+    backgroundColor: { base: "red.50", _dark: "red.900/30" },
+    color: "danger.strong",
+  },
+  _disabled: {
+    opacity: 0.4,
+    cursor: "not-allowed",
+  },
+});
 
 /**
  * Shared frame of a row action dropdown menu: trigger button, portal, and
- * content box. Callers pass in the trigger icon and any positioning classes;
+ * content box. Callers pass in the trigger icon and any positioning styles;
  * the menu items (e.g. {@link DeleteMenuItem}) are supplied as children.
  */
 export function ActionsMenu({
@@ -19,7 +63,7 @@ export function ActionsMenu({
   ariaLabel: string;
   /** Trigger button contents (e.g. a MoreVertical icon). */
   trigger: ReactNode;
-  /** Positioning / padding classes for the trigger button. */
+  /** Positioning / padding styles for the trigger button (a `css()` result). */
   triggerClassName?: string;
   align?: "start" | "center" | "end";
   sideOffset?: number;
@@ -31,21 +75,13 @@ export function ActionsMenu({
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
-        <button
-          type="button"
-          aria-label={ariaLabel}
-          className={`rounded-lg text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 hover:bg-black/10 dark:hover:bg-white/10 transition-colors${triggerClassName ? ` ${triggerClassName}` : ""}`}
-        >
+        <button type="button" aria-label={ariaLabel} className={cx(triggerStyle, triggerClassName)}>
           {trigger}
         </button>
       </DropdownMenu.Trigger>
       {hasItems && (
         <DropdownMenu.Portal>
-          <DropdownMenu.Content
-            align={align}
-            sideOffset={sideOffset}
-            className="z-50 min-w-[160px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-1"
-          >
+          <DropdownMenu.Content align={align} sideOffset={sideOffset} className={contentStyle}>
             {children}
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
@@ -65,12 +101,8 @@ export function DeleteMenuItem({
   disabled?: boolean;
 }) {
   return (
-    <DropdownMenu.Item
-      onSelect={onSelect}
-      disabled={disabled}
-      className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm text-red-600 dark:text-red-400 outline-none cursor-pointer data-[highlighted]:bg-red-50 dark:data-[highlighted]:bg-red-900/30 data-[highlighted]:text-red-700 dark:data-[highlighted]:text-red-300 data-[disabled]:opacity-40 data-[disabled]:cursor-not-allowed"
-    >
-      <Trash2 className="w-4 h-4" />
+    <DropdownMenu.Item onSelect={onSelect} disabled={disabled} className={deleteItemStyle}>
+      <Trash2 className={css({ width: "4", height: "4" })} />
       {label}
     </DropdownMenu.Item>
   );

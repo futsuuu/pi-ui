@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { jsx, jsxs } from "react/jsx-runtime";
 import type { BundledLanguage } from "shiki";
 import { codeToHast } from "shiki";
+import { css } from "styled-system/css";
 
 import { shikiThemeOptions } from "./shiki-options";
 
@@ -186,37 +187,59 @@ function text(value: string): Text {
   return { type: "text", value };
 }
 
+/** Stable Panda-generated classes shared with tests that assert row styling. */
+export const diffRowClass = {
+  add: css({ backgroundColor: "green.500/10" }),
+  remove: css({ backgroundColor: "red.500/10" }),
+};
+
+const ellipsisRowStyle = css({ color: { base: "gray.400", _dark: "gray.600" } });
+const ellipsisCellStyle = css({ paddingInline: "2", userSelect: "none" });
+const signSpanStyle = css({ userSelect: "none" });
+const lineNumberStyle = css({
+  width: "9",
+  paddingInline: "2",
+  textAlign: "right",
+  userSelect: "none",
+});
+const contentCellStyle = css({ paddingRight: "2", whiteSpace: "pre" });
+const tableStyle = css({
+  width: "100%",
+  borderCollapse: "collapse",
+  fontFamily: "mono",
+  textStyle: "xs",
+  lineHeight: "1.25rem",
+  fontVariantNumeric: "tabular-nums",
+});
+const wrapperStyle = css({ borderRadius: "lg", overflow: "auto", maxHeight: "20rem" });
+
 function classNames(...parts: Array<string | undefined>): string[] {
   return parts.filter((part): part is string => part !== undefined && part !== "");
 }
 
 function rowElement(line: DiffLine, highlighted: HighlightedLine | undefined): Element {
   if (line.kind === "ellipsis") {
-    return element("tr", { className: ["text-gray-400", "dark:text-gray-600"] }, [
-      element("td", { colSpan: 3, className: ["px-2", "select-none"] }, [text("\u2026")]),
+    return element("tr", { className: [ellipsisRowStyle] }, [
+      element("td", { colSpan: 3, className: [ellipsisCellStyle] }, [text("\u2026")]),
     ]);
   }
 
   const { rowClass, sign, signClass, oldLine, newLine } = diffRowStyle(line);
   const hasHighlight = highlighted !== undefined && highlighted.length > 0;
   const content: ElementContent[] = [
-    element("span", { className: classNames("select-none", signClass) }, [text(sign)]),
+    element("span", { className: classNames(signSpanStyle, signClass) }, [text(sign)]),
   ];
   if (hasHighlight) content.push(...highlighted);
   else content.push(element("span", {}, [text(line.content)]));
 
   return element("tr", rowClass ? { className: [rowClass] } : {}, [
-    element(
-      "td",
-      { className: classNames("w-9", "px-2", "text-right", "select-none", signClass) },
-      [text(String(oldLine ?? ""))],
-    ),
-    element(
-      "td",
-      { className: classNames("w-9", "px-2", "text-right", "select-none", signClass) },
-      [text(String(newLine ?? ""))],
-    ),
-    element("td", { className: ["pr-2", "whitespace-pre"] }, content),
+    element("td", { className: classNames(lineNumberStyle, signClass) }, [
+      text(String(oldLine ?? "")),
+    ]),
+    element("td", { className: classNames(lineNumberStyle, signClass) }, [
+      text(String(newLine ?? "")),
+    ]),
+    element("td", { className: [contentCellStyle] }, content),
   ]);
 }
 
@@ -224,7 +247,7 @@ export function diffTableElement(lines: DiffLine[], highlighted: DiffHighlight):
   const table = element(
     "table",
     {
-      className: ["w-full", "border-collapse", "font-mono", "text-xs", "leading-5", "tabular-nums"],
+      className: [tableStyle],
     },
     [
       element(
@@ -235,7 +258,7 @@ export function diffTableElement(lines: DiffLine[], highlighted: DiffHighlight):
     ],
   );
   const properties: Properties = {
-    className: classNames("diff-view", "not-prose", "rounded-lg", "overflow-auto", "max-h-80"),
+    className: classNames(wrapperStyle, "diff-view", "not-prose"),
   };
   if (highlighted.style) properties.style = highlighted.style;
   return element("div", properties, [table]);
@@ -270,23 +293,23 @@ export function DiffView({ path, diff, lang: langOverride, format = "unified" }:
 }
 
 export function diffRowStyle(line: DiffLine): {
-  rowClass: string;
+  rowClass: string | undefined;
   sign: string;
-  signClass: string;
+  signClass: string | undefined;
   oldLine: number | undefined;
   newLine: number | undefined;
 } {
   const isAdd = line.kind === "add";
   const isRemove = line.kind === "remove";
   return {
-    rowClass: isAdd ? "bg-green-500/10" : isRemove ? "bg-red-500/10" : "",
+    rowClass: isAdd ? diffRowClass.add : isRemove ? diffRowClass.remove : undefined,
     sign: isAdd ? "+" : isRemove ? "-" : " ",
-    signClass: isAdd
-      ? "text-green-600 dark:text-green-400"
-      : isRemove
-        ? "text-red-600 dark:text-red-400"
-        : "text-gray-400 dark:text-gray-500",
+    signClass: isAdd ? successSignClass : isRemove ? dangerSignClass : contextSignClass,
     oldLine: line.kind === "remove" || line.kind === "context" ? line.oldLine : undefined,
     newLine: line.kind === "add" || line.kind === "context" ? line.newLine : undefined,
   };
 }
+
+const successSignClass = css({ color: "success" });
+const dangerSignClass = css({ color: "danger" });
+const contextSignClass = css({ color: "fg.subtle" });

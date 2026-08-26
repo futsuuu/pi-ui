@@ -1,7 +1,10 @@
+import { css } from "styled-system/css";
 import { describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
 
 import { ActionsMenu, DeleteMenuItem } from "./actions-menu";
+
+const triggerPadding = css({ padding: "2", margin: "-1" });
 
 describe("ActionsMenu", () => {
   it("renders a trigger button with the given accessible name and content", async () => {
@@ -34,7 +37,11 @@ describe("ActionsMenu", () => {
 
   it("opens the menu on click and renders the delete item", async () => {
     const screen = await render(
-      <ActionsMenu ariaLabel="Worktree actions" trigger={<span>menu</span>} triggerClassName="p-2">
+      <ActionsMenu
+        ariaLabel="Worktree actions"
+        trigger={<span>menu</span>}
+        triggerClassName={triggerPadding}
+      >
         <DeleteMenuItem onSelect={() => {}} label="Delete Worktree" />
       </ActionsMenu>,
     );
@@ -50,7 +57,7 @@ describe("ActionsMenu", () => {
       <ActionsMenu
         ariaLabel="Worktree actions"
         trigger={<span>menu</span>}
-        triggerClassName="p-2"
+        triggerClassName={triggerPadding}
       />,
     );
 
@@ -62,7 +69,11 @@ describe("ActionsMenu", () => {
   it("fires onSelect when the delete item is chosen", async () => {
     let calls = 0;
     const screen = await render(
-      <ActionsMenu ariaLabel="Worktree actions" trigger={<span>menu</span>} triggerClassName="p-2">
+      <ActionsMenu
+        ariaLabel="Worktree actions"
+        trigger={<span>menu</span>}
+        triggerClassName={triggerPadding}
+      >
         <DeleteMenuItem
           onSelect={() => {
             calls++;
@@ -80,7 +91,11 @@ describe("ActionsMenu", () => {
   it("renders a disabled delete item that does not fire onSelect", async () => {
     let calls = 0;
     const screen = await render(
-      <ActionsMenu ariaLabel="Worktree actions" trigger={<span>menu</span>} triggerClassName="p-2">
+      <ActionsMenu
+        ariaLabel="Worktree actions"
+        trigger={<span>menu</span>}
+        triggerClassName={triggerPadding}
+      >
         <DeleteMenuItem
           onSelect={() => {
             calls++;

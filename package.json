@@ -7,9 +7,9 @@
     "build": "react-router build",
     "dev": "react-router dev",
     "start": "react-router-serve ./build/server/index.js",
-    "lint": "react-router typegen && oxlint",
+    "lint": "panda codegen && react-router typegen && oxlint",
     "fmt": "oxfmt --write",
-    "test": "vitest --run"
+    "test": "panda codegen && vitest --run"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.84.2",
@@ -38,7 +38,6 @@
     "@pandacss/dev": "^1.12.0",
     "@react-router/dev": "^8.3.0",
     "@rolldown/plugin-babel": "^0.2.3",
-    "@tailwindcss/typography": "^0.5.20",
     "@tailwindcss/vite": "^4.3.3",
     "@types/hast": "^3.0.5",
     "@types/node": "^22.20.1",

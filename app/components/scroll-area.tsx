@@ -1,9 +1,62 @@
 import { ScrollArea as Primitive } from "radix-ui";
 import { useCallback, useEffect, useRef, type UIEvent } from "react";
+import { cva, css, cx } from "styled-system/css";
 
 const RESTORE_MARGIN = 48;
 const RESTORE_POLL_MS = 50;
 const RESTORE_GRACE_MS = 2000;
+
+const rootStyle = css({
+  flex: "1",
+  minWidth: 0,
+  minHeight: 0,
+  width: "100%",
+  height: "100%",
+  overflow: "hidden",
+});
+
+const viewportStyle = css({
+  width: "100%",
+  height: "100%",
+  minWidth: 0,
+  minHeight: 0,
+});
+
+const confinementStyle = css({
+  width: "100%",
+  contain: "inline-size",
+});
+
+const scrollbar = cva({
+  base: {
+    display: "flex",
+    userSelect: "none",
+    touchAction: "none",
+    padding: "0.5",
+    transitionProperty: "colors",
+    transitionDuration: "150ms",
+    transitionTimingFunction: "ease-out",
+  },
+  variants: {
+    orientation: {
+      vertical: { flexDirection: "row", width: "2" },
+      horizontal: { flexDirection: "column", height: "2" },
+    },
+  },
+});
+
+const thumbStyle = css({
+  position: "relative",
+  flex: "1",
+  borderRadius: "full",
+  opacity: 0.3,
+  transitionProperty: "opacity",
+  transitionDuration: "150ms",
+  _hover: { opacity: 0.5 },
+  backgroundColor: { base: "black", _dark: "white" },
+});
+
+const cornerStyle = css({ backgroundColor: "bg.subtle" });
 
 /**
  * Finds a descendant element identified by a message key.
@@ -294,14 +347,10 @@ export function ScrollArea({
   }, [autoScroll, restoreTarget, scrollToBottom, atBottom, onRestoreComplete]);
 
   return (
-    <Primitive.Root
-      ref={rootRef}
-      scrollHideDelay={1500}
-      className={`flex-1 min-h-0 min-w-0 size-full overflow-hidden${className ? ` ${className}` : ""}`}
-    >
+    <Primitive.Root ref={rootRef} scrollHideDelay={1500} className={cx(rootStyle, className)}>
       <Primitive.Viewport
         {...viewportProps}
-        className={`size-full min-h-0 min-w-0${viewportClassName ? ` ${viewportClassName}` : ""}`}
+        className={cx(viewportStyle, viewportClassName)}
         onScroll={handleScroll}
         ref={setViewportRef}
       >
@@ -311,26 +360,26 @@ export function ScrollArea({
           // Size confinement in the inline axis makes this wrapper's content
           // stop feeding that intrinsic width, so the pane always lays out at
           // its own width instead of widening and being clipped.
-          <div className="w-full contain-inline-size">{children}</div>
+          <div className={confinementStyle}>{children}</div>
         ) : (
           children
         )}
       </Primitive.Viewport>
       <Primitive.Scrollbar
         orientation="vertical"
-        className="flex flex-row select-none touch-none p-0.5 transition-colors duration-150 ease-out w-2"
+        className={scrollbar({ orientation: "vertical" })}
       >
-        <Primitive.Thumb className="relative flex-1 rounded-full transition-opacity opacity-30 hover:opacity-50 bg-black dark:bg-white" />
+        <Primitive.Thumb className={thumbStyle} />
       </Primitive.Scrollbar>
       {!disableHorizontalScroll && (
         <Primitive.Scrollbar
           orientation="horizontal"
-          className="flex flex-col select-none touch-none p-0.5 transition-colors duration-150 ease-out h-2"
+          className={scrollbar({ orientation: "horizontal" })}
         >
-          <Primitive.Thumb className="relative flex-1 rounded-full transition-opacity opacity-30 hover:opacity-50 bg-black dark:bg-white" />
+          <Primitive.Thumb className={thumbStyle} />
         </Primitive.Scrollbar>
       )}
-      <Primitive.Corner className="bg-gray-100 dark:bg-gray-800" />
+      <Primitive.Corner className={cornerStyle} />
     </Primitive.Root>
   );
 }

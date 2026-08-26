@@ -2,6 +2,7 @@ import rehypeShiki, { type RehypeShikiOptions } from "@shikijs/rehype";
 import type { ComponentProps } from "react";
 import { MarkdownHooks, type Components, type ExtraProps, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { css } from "styled-system/css";
 
 import { rehypeDiffFence } from "./rehype-diff-fence";
 import { shikiThemeOptions } from "./shiki-options";
@@ -27,6 +28,8 @@ const rehypePlugins: NonNullable<Options["rehypePlugins"]> = [
   [rehypeShiki, shikiOptions],
 ];
 
+const scrollWrapper = css({ overflowX: "auto" });
+
 type AnchorProps = ComponentProps<"a"> & ExtraProps;
 type TableProps = ComponentProps<"table"> & ExtraProps;
 
@@ -38,7 +41,7 @@ const components: Components = {
   ),
   // Keep wide tables scrollable within the message instead of widening the screen.
   table: ({ node: _node, ...props }: TableProps) => (
-    <div className="overflow-x-auto">
+    <div className={scrollWrapper}>
       <table {...props} />
     </div>
   ),
@@ -51,7 +54,7 @@ export interface Props {
 /** Render assistant message text as GitHub-flavored Markdown with Shiki highlighting. */
 export function Markdown({ children }: Props) {
   return (
-    <div className="prose dark:prose-invert max-w-none break-words">
+    <div className="prose">
       <MarkdownHooks
         remarkPlugins={[remarkGfm]}
         rehypePlugins={rehypePlugins}

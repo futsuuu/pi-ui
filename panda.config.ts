@@ -92,7 +92,7 @@ export default defineConfig({
       backgroundColor: "bg.page",
       color: "fg.primary",
     },
-    "button:not(:disabled), [role=\"button\"]:not(:disabled)": {
+    'button:not(:disabled), [role="button"]:not(:disabled)': {
       cursor: "pointer",
     },
   },
@@ -146,6 +146,10 @@ export default defineConfig({
             DEFAULT: { value: { base: "{colors.amber.600}", _dark: "{colors.amber.400}" } },
           },
         },
+      },
+      textStyles: {
+        sm: { value: { fontSize: "0.875rem", lineHeight: "calc(1.25 / 0.875)" } },
+        xs: { value: { fontSize: "0.75rem", lineHeight: "calc(1 / 0.75)" } },
       },
     },
   },
