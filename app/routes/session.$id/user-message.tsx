@@ -1,6 +1,22 @@
 import type { UserMessage as Data, TextContent } from "@earendil-works/pi-ai";
+import { css } from "styled-system/css";
 
 export type Props = Pick<Data, "role" | "content">;
+
+const outerStyle = css({ display: "flex", justifyContent: "flex-end" });
+
+const bubbleStyle = css({
+  borderRadius: "xl",
+  paddingInline: "4",
+  paddingBlock: "3",
+  whiteSpace: "pre-wrap",
+  overflowWrap: "break-word",
+  maxWidth: "80%",
+  backgroundColor: "bg.card",
+  color: "fg.primary",
+  borderWidth: "1px",
+  borderColor: "border",
+});
 
 export function UserMessage({ content }: Props) {
   const text =
@@ -14,10 +30,8 @@ export function UserMessage({ content }: Props) {
   if (!text.trim()) return null;
 
   return (
-    <div className="flex justify-end">
-      <div className="rounded-xl px-4 py-3 whitespace-pre-wrap break-words max-w-[80%] bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700">
-        {text.trim()}
-      </div>
+    <div className={outerStyle}>
+      <div className={bubbleStyle}>{text.trim()}</div>
     </div>
   );
 }

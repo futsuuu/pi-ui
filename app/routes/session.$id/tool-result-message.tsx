@@ -1,6 +1,7 @@
 import type { ToolResultMessage as Data, TextContent } from "@earendil-works/pi-ai";
 import type { EditToolDetails } from "@earendil-works/pi-coding-agent";
 import { CheckIcon, Loader2Icon, WrenchIcon, XIcon } from "lucide-react";
+import { css } from "styled-system/css";
 
 import { DiffView } from "~/components/diff-view";
 import { ScrollArea } from "~/components/scroll-area";
@@ -14,6 +15,49 @@ export type Props = Pick<Data, "role" | "content" | "toolName" | "toolCallId" | 
   details?: EditToolDetails;
   isStreaming?: boolean;
 };
+
+const outerStyle = css({ display: "flex", justifyContent: "flex-start" });
+
+const panelStyle = css({
+  borderRadius: "xl",
+  paddingBlock: "3",
+  width: "full",
+  color: "fg.secondary",
+  textStyle: "sm",
+  borderWidth: "1px",
+  borderColor: "border",
+  paddingInline: "4",
+});
+
+const summaryStyle = css({
+  display: "flex",
+  alignItems: "center",
+  gap: "2",
+  color: "fg.secondary",
+  cursor: "pointer",
+  userSelect: "none",
+  listStyleType: "none",
+  "&::-webkit-details-marker": { display: "none" },
+  "&::marker": { display: "none" },
+});
+
+const summaryTextStyle = css({
+  fontFamily: "mono",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  color: { base: "gray.600", _dark: "gray.300" },
+});
+
+const argsStyle = css({
+  padding: "2",
+  backgroundColor: "bg.subtle",
+  borderRadius: "sm",
+  textStyle: "xs",
+  color: { base: "gray.500", _dark: "gray.200" },
+});
+
+const resultViewportClass = `${css({ whiteSpace: "pre" })} font-mono`;
 
 export function ToolResultMessage({
   content,
@@ -73,45 +117,73 @@ export function ToolResultMessage({
   const diff = toolName === "edit" ? details?.diff : undefined;
 
   return (
-    <div className="flex justify-start">
-      <div className="rounded-xl py-3 w-full text-gray-700 dark:text-gray-300 text-sm border border-gray-200 dark:border-gray-700 px-4">
+    <div className={outerStyle}>
+      <div className={panelStyle}>
         {toolName && (
-          <details className="group" open={diff ? true : isStreaming || undefined}>
-            <summary className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden [&::marker]:hidden">
-              <WrenchIcon className="w-3 h-3 shrink-0 text-gray-400" />
-              <span className="font-medium shrink-0 text-gray-400">{toolName}</span>
+          <details open={diff ? true : isStreaming || undefined}>
+            <summary className={summaryStyle}>
+              <WrenchIcon
+                className={css({ width: "3", height: "3", flexShrink: 0, color: "fg.subtle" })}
+              />
+              <span className={css({ fontWeight: "medium", flexShrink: 0, color: "fg.subtle" })}>
+                {toolName}
+              </span>
               {summary ? (
-                <span
-                  className="font-mono truncate text-gray-600 dark:text-gray-300"
-                  title={summaryFull ?? summary}
-                >
+                <span className={summaryTextStyle} title={summaryFull ?? summary}>
                   {summary}
                 </span>
               ) : null}
               {isStreaming ? (
-                <Loader2Icon className="ml-auto w-4 h-4 text-gray-400 dark:text-gray-500 shrink-0 animate-spin" />
+                <Loader2Icon
+                  className={css({
+                    marginLeft: "auto",
+                    width: "4",
+                    height: "4",
+                    color: "fg.subtle",
+                    flexShrink: 0,
+                    animation: "spin",
+                  })}
+                />
               ) : isError !== undefined ? (
                 isError ? (
-                  <XIcon className="ml-auto w-4 h-4 text-red-500 dark:text-red-400 shrink-0" />
+                  <XIcon
+                    className={css({
+                      marginLeft: "auto",
+                      width: "4",
+                      height: "4",
+                      color: { base: "red.500", _dark: "red.400" },
+                      flexShrink: 0,
+                    })}
+                  />
                 ) : (
-                  <CheckIcon className="ml-auto w-4 h-4 text-green-500 dark:text-green-400 shrink-0" />
+                  <CheckIcon
+                    className={css({
+                      marginLeft: "auto",
+                      width: "4",
+                      height: "4",
+                      color: { base: "green.500", _dark: "green.400" },
+                      flexShrink: 0,
+                    })}
+                  />
                 )
               ) : null}
             </summary>
-            <div className="mt-2 space-y-2">
+            <div
+              className={css({
+                marginTop: "2",
+                "& > :not([hidden]) ~ :not([hidden])": { marginTop: "2" },
+              })}
+            >
               {diff ? (
                 <DiffView path={summary} diff={diff} format="numbered" />
               ) : (
                 <>
                   {record && (
-                    <ScrollArea
-                      className="p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs text-gray-500 dark:text-gray-200"
-                      viewportClassName="font-mono whitespace-pre"
-                    >
+                    <ScrollArea className={argsStyle} viewportClassName={resultViewportClass}>
                       {JSON.stringify(displayToolArgs(record, cwd, home), null, 2)}
                     </ScrollArea>
                   )}
-                  <ScrollArea viewportClassName="font-mono whitespace-pre">{text}</ScrollArea>
+                  <ScrollArea viewportClassName={resultViewportClass}>{text}</ScrollArea>
                 </>
               )}
             </div>

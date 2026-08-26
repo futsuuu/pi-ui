@@ -8,7 +8,11 @@ body {
   font-variant-alternates: styleset(ss02);
 }
 
+/* Monospace text: Tailwind's old font-mono utility plus the CJK/ligature
+   adjustments that must ride along wherever mono is applied. Kept as plain
+   CSS because these features are not Panda utility properties. */
 .font-mono {
+  font-family: var(--fonts-mono);
   text-autospace: no-autospace;
   font-variant-alternates: normal;
 }

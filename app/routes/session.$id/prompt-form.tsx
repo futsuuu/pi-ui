@@ -9,6 +9,7 @@ import { CheckIcon, ChevronDownIcon, ChevronUpIcon, SendIcon, Square } from "luc
 import { Select } from "radix-ui";
 import { memo, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Await } from "react-router";
+import { css, cx } from "styled-system/css";
 
 const THINKING_LEVELS = [
   "off",
@@ -19,6 +20,129 @@ const THINKING_LEVELS = [
   "xhigh",
   "max",
 ] as const satisfies readonly ModelThinkingLevel[];
+
+const inputShellStyle = css({
+  position: "absolute",
+  bottom: 0,
+  left: 0,
+  right: 0,
+  maxWidth: "5xl",
+  marginInline: "auto",
+  paddingInline: "4",
+  paddingBottom: "4",
+  paddingTop: "2",
+});
+
+const cardStyle = css({
+  backgroundColor: "bg.card",
+  borderRadius: "xl",
+  boxShadow: "overlay",
+  borderWidth: "1px",
+  borderColor: "border",
+  padding: "4",
+});
+
+const textareaStyle = css({
+  width: "full",
+  resize: "none",
+  backgroundColor: "transparent",
+  _focus: { outline: "none" },
+  _disabled: { opacity: 0.5, cursor: "not-allowed" },
+  overflow: "hidden",
+  maxHeight: "15rem",
+});
+
+const sendButtonStyle = css({
+  backgroundColor: "action",
+  color: "white",
+  borderRadius: "lg",
+  padding: "1.5",
+  transitionProperty: "colors",
+  transitionDuration: "150ms",
+  _hover: { backgroundColor: "action.hover" },
+  _disabled: {
+    backgroundColor: { base: "gray.300", _dark: "gray.700" },
+    cursor: "not-allowed",
+  },
+});
+
+const abortButtonStyle = css({
+  backgroundColor: { base: "red.600", _dark: "red.600" },
+  color: "white",
+  borderRadius: "lg",
+  padding: "1.5",
+  transitionProperty: "colors",
+  transitionDuration: "150ms",
+  _hover: { backgroundColor: { base: "red.700", _dark: "red.700" } },
+});
+
+const selectTriggerStyle = css({
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "1",
+  textStyle: "xs",
+  paddingInline: "2.5",
+  paddingBlock: "1",
+  borderRadius: "full",
+  _hover: { backgroundColor: { base: "gray.100", _dark: "gray.700" } },
+});
+
+const selectContentStyle = css({
+  zIndex: 50,
+  backgroundColor: "bg.card",
+  borderWidth: "1px",
+  borderColor: "border",
+  borderRadius: "xl",
+  boxShadow: "lg",
+  overflow: "hidden",
+});
+
+const selectScrollButtonStyle = css({
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  height: "6",
+});
+
+const selectItemStyle = css({
+  position: "relative",
+  display: "flex",
+  alignItems: "center",
+  paddingInline: "8",
+  paddingBlock: "2",
+  textStyle: "sm",
+  borderRadius: "lg",
+  outline: "none",
+  cursor: "pointer",
+  userSelect: "none",
+  _highlighted: {
+    backgroundColor: { base: "blue.100", _dark: "blue.900/50" },
+    color: { base: "blue.700", _dark: "blue.300" },
+  },
+});
+
+const itemIndicatorStyle = css({
+  position: "absolute",
+  left: "2",
+  display: "inline-flex",
+  alignItems: "center",
+});
+
+const emptyMessageStyle = css({
+  paddingInline: "3",
+  paddingBlock: "2",
+  textStyle: "sm",
+  color: "gray.500",
+});
+
+const groupLabelStyle = css({
+  paddingInline: "2",
+  paddingBlock: "1.5",
+  textStyle: "xs",
+  fontWeight: "semibold",
+  color: "fg.muted",
+  letterSpacing: "0.05em",
+});
 
 /** A model selection summarized by the parts the UI needs to render. */
 export interface SelectedModel {
@@ -67,8 +191,8 @@ function MessageInput({
   }
 
   return (
-    <div className="absolute bottom-0 left-0 right-0 max-w-5xl mx-auto px-4 pb-4 pt-2">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-[0_4px_10px_-4px_rgba(0,0,0,0.15)] border border-gray-200 dark:border-gray-700 p-4">
+    <div className={inputShellStyle}>
+      <div className={cardStyle}>
         <textarea
           ref={inputRef}
           value={input}
@@ -77,32 +201,32 @@ function MessageInput({
           placeholder={isStreaming ? "Pi is thinking…" : "Type a message… (Ctrl+Enter to send)"}
           disabled={isStreaming}
           rows={1}
-          className="w-full resize-none bg-transparent text-sm focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden max-h-60"
+          className={textareaStyle}
           onInput={(e) => {
             const el = e.currentTarget;
             el.style.height = "auto";
             el.style.height = el.scrollHeight + "px";
           }}
         />
-        <div className="flex items-center gap-2 mt-3">
+        <div className={css({ display: "flex", alignItems: "center", gap: "2", marginTop: "3" })}>
           {children}
-          <div className="ml-auto">
+          <div className={css({ marginLeft: "auto" })}>
             {isStreaming ? (
               <button
                 onClick={onAbort}
                 aria-label="Abort"
                 title="Abort"
-                className="bg-red-600 hover:bg-red-700 text-white rounded-lg p-1.5 transition-colors"
+                className={abortButtonStyle}
               >
-                <Square className="w-4 h-4" />
+                <Square className={css({ width: "4", height: "4" })} />
               </button>
             ) : (
               <button
                 onClick={handleSubmit}
                 disabled={!onSubmit || !input.trim()}
-                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white rounded-lg p-1.5 transition-colors disabled:cursor-not-allowed"
+                className={sendButtonStyle}
               >
-                <SendIcon className="w-4 h-4" strokeWidth={2} />
+                <SendIcon className={css({ width: "4", height: "4" })} strokeWidth={2} />
               </button>
             )}
           </div>
@@ -130,24 +254,22 @@ function SelectPicker<T extends string>({
 }) {
   return (
     <Select.Root value={value} onValueChange={onValueChange}>
-      <Select.Trigger
-        className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full ${triggerClassName}`}
-      >
+      <Select.Trigger className={cx(selectTriggerStyle, triggerClassName)}>
         {trigger}
-        <ChevronDownIcon className="w-3 h-3" />
+        <ChevronDownIcon className={css({ width: "3", height: "3" })} />
       </Select.Trigger>
       <Select.Content
         position="popper"
         side="top"
         align="start"
-        className={`z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg overflow-hidden ${contentClassName}`}
+        className={cx(selectContentStyle, contentClassName)}
       >
-        <Select.ScrollUpButton className="flex items-center justify-center h-6">
-          <ChevronUpIcon className="w-4 h-4" />
+        <Select.ScrollUpButton className={selectScrollButtonStyle}>
+          <ChevronUpIcon className={css({ width: "4", height: "4" })} />
         </Select.ScrollUpButton>
-        <Select.Viewport className="p-1">{children}</Select.Viewport>
-        <Select.ScrollDownButton className="flex items-center justify-center h-6">
-          <ChevronDownIcon className="w-4 h-4" />
+        <Select.Viewport className={css({ padding: "1" })}>{children}</Select.Viewport>
+        <Select.ScrollDownButton className={selectScrollButtonStyle}>
+          <ChevronDownIcon className={css({ width: "4", height: "4" })} />
         </Select.ScrollDownButton>
       </Select.Content>
     </Select.Root>
@@ -175,7 +297,7 @@ function ModelListItems({
   }, [models, onResolved]);
 
   if (models.length === 0) {
-    return <div className="px-3 py-2 text-sm text-gray-500">No models available</div>;
+    return <div className={emptyMessageStyle}>No models available</div>;
   }
 
   const groupedModels = models.reduce<Array<{ provider: string; models: readonly Model<Api>[] }>>(
@@ -195,9 +317,7 @@ function ModelListItems({
     <>
       {groupedModels.map((group) => (
         <Select.Group key={group.provider}>
-          <Select.Label className="px-2 py-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 tracking-wider">
-            {group.provider}
-          </Select.Label>
+          <Select.Label className={groupLabelStyle}>{group.provider}</Select.Label>
           {group.models.map((m) => {
             const value = serializeModelName({ provider: m.provider, modelId: m.id });
             return (
@@ -205,18 +325,18 @@ function ModelListItems({
                 key={value}
                 value={value}
                 onSelect={() => onSelect({ name: m.name, provider: m.provider, id: m.id })}
-                className="relative flex items-center px-8 py-2 text-sm rounded-lg data-highlighted:bg-blue-100 dark:data-highlighted:bg-blue-900/50 data-highlighted:text-blue-700 dark:data-highlighted:text-blue-300 cursor-pointer select-none outline-none"
+                className={selectItemStyle}
               >
                 <Select.ItemText>
-                  <div className="flex flex-col">
-                    <span className="font-medium">{m.name}</span>
-                    <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">
+                  <div className={css({ display: "flex", flexDirection: "column" })}>
+                    <span className={css({ fontWeight: "medium" })}>{m.name}</span>
+                    <span className={`${css({ textStyle: "xs", color: "fg.subtle" })} font-mono`}>
                       {m.id}
                     </span>
                   </div>
                 </Select.ItemText>
-                <Select.ItemIndicator className="absolute left-2 inline-flex items-center">
-                  <CheckIcon className="w-4 h-4" />
+                <Select.ItemIndicator className={itemIndicatorStyle}>
+                  <CheckIcon className={css({ width: "4", height: "4" })} />
                 </Select.ItemIndicator>
               </Select.Item>
             );
@@ -328,11 +448,11 @@ export const PromptForm = memo(function PromptForm({
           handleSelectModel({ name: spec?.name ?? modelId, provider, id: modelId });
         }}
         trigger={<Select.Value>{selectedModel ? selectedModel.name : "Select Model"}</Select.Value>}
-        contentClassName="max-h-64"
+        contentClassName={css({ maxHeight: "16rem" })}
       >
         <Suspense
           fallback={
-            <div className="px-3 py-2 text-sm text-gray-500" aria-busy="true">
+            <div className={emptyMessageStyle} aria-busy="true">
               Loading...
             </div>
           }
@@ -354,18 +474,18 @@ export const PromptForm = memo(function PromptForm({
         value={selectedThinkingLevel}
         onValueChange={setSelectedThinkingLevel}
         trigger={<Select.Value />}
-        triggerClassName="capitalize"
-        contentClassName="min-w-28"
+        triggerClassName={css({ textTransform: "capitalize" })}
+        contentClassName={css({ minWidth: "7rem" })}
       >
         {availableThinkingLevels.map((level) => (
           <Select.Item
             key={level}
             value={level}
-            className="relative flex items-center px-8 py-2 text-sm rounded-lg capitalize data-highlighted:bg-blue-100 dark:data-highlighted:bg-blue-900/50 data-highlighted:text-blue-700 dark:data-highlighted:text-blue-300 cursor-pointer select-none outline-none"
+            className={cx(selectItemStyle, css({ textTransform: "capitalize" }))}
           >
             <Select.ItemText>{level}</Select.ItemText>
-            <Select.ItemIndicator className="absolute left-2 inline-flex items-center">
-              <CheckIcon className="w-4 h-4" />
+            <Select.ItemIndicator className={itemIndicatorStyle}>
+              <CheckIcon className={css({ width: "4", height: "4" })} />
             </Select.ItemIndicator>
           </Select.Item>
         ))}
@@ -375,7 +495,13 @@ export const PromptForm = memo(function PromptForm({
 });
 
 function ModelLoadError() {
-  return <div className="px-3 py-2 text-sm text-red-600">Failed to load models</div>;
+  return (
+    <div
+      className={css({ paddingInline: "3", paddingBlock: "2", textStyle: "sm", color: "danger" })}
+    >
+      Failed to load models
+    </div>
+  );
 }
 
 function serializeModelName(model: { provider: string; modelId: string }): string {

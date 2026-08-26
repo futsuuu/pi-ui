@@ -5,6 +5,7 @@ import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { data, useFetcher, useRevalidator } from "react-router";
+import { css } from "styled-system/css";
 
 import { mergedSessionMessages } from "~/agent-session-container";
 import { ScrollArea } from "~/components/scroll-area";
@@ -460,13 +461,45 @@ function Chat({
   }
 
   return (
-    <div className="h-full flex flex-col relative">
+    <div
+      className={css({
+        height: "full",
+        display: "flex",
+        flexDirection: "column",
+        position: "relative",
+      })}
+    >
       {/* Top bar — fixed at top */}
-      <div className="flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
-        <div className="max-w-5xl mx-auto pl-14 pr-4 lg:px-4 h-14 flex items-center">
-          <div className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full ${connected ? "bg-green-500" : "bg-red-500"}`} />
-            <span className="text-xs text-gray-500 dark:text-gray-400">
+      <div
+        className={css({
+          flexShrink: 0,
+          backgroundColor: "bg.panel",
+          borderBottomWidth: "1px",
+          borderColor: "border.panel",
+        })}
+      >
+        <div
+          className={css({
+            maxWidth: "5xl",
+            marginInline: "auto",
+            paddingInlineStart: "14",
+            paddingInlineEnd: "4",
+            lg: { paddingInline: "4" },
+            height: "14",
+            display: "flex",
+            alignItems: "center",
+          })}
+        >
+          <div className={css({ display: "flex", alignItems: "center", gap: "2" })}>
+            <span
+              className={css({
+                width: "2",
+                height: "2",
+                borderRadius: "full",
+                backgroundColor: connected ? "green.500" : "red.500",
+              })}
+            />
+            <span className={css({ textStyle: "xs", color: "fg.muted" })}>
               {connected ? "Connected" : "Disconnected"}
             </span>
           </div>
@@ -485,10 +518,30 @@ function Chat({
       >
         <div
           ref={messagesContainerRef}
-          className="max-w-5xl w-full mx-auto px-4 py-4 space-y-4 min-h-full min-w-0"
+          className={css({
+            maxWidth: "5xl",
+            width: "full",
+            marginInline: "auto",
+            paddingInline: "4",
+            paddingBlock: "4",
+            minHeight: "full",
+            minWidth: 0,
+            "& > :not([hidden]) ~ :not([hidden])": { marginTop: "4" },
+          })}
         >
           {state.model == null && (
-            <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
+            <p
+              className={css({
+                textStyle: "sm",
+                color: "danger",
+                backgroundColor: "danger.soft",
+                borderWidth: "1px",
+                borderColor: "danger.border",
+                borderRadius: "lg",
+                paddingInline: "3",
+                paddingBlock: "2",
+              })}
+            >
               No model configured. Set an API key environment variable (e.g. ANTHROPIC_API_KEY), or
               select a model from the dropdown below.
             </p>

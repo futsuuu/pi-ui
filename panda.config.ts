@@ -142,6 +142,10 @@ export default defineConfig({
             DEFAULT: { value: { base: "{colors.green.600}", _dark: "{colors.green.400}" } },
           },
           info: { DEFAULT: { value: { base: "{colors.blue.500}", _dark: "{colors.blue.400}" } } },
+          action: {
+            DEFAULT: { value: { base: "{colors.blue.600}", _dark: "{colors.blue.600}" } },
+            hover: { value: { base: "{colors.blue.700}", _dark: "{colors.blue.700}" } },
+          },
           warning: {
             DEFAULT: { value: { base: "{colors.amber.600}", _dark: "{colors.amber.400}" } },
           },

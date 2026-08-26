@@ -1,4 +1,3 @@
-import { css } from "styled-system/css";
 import { describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
 
