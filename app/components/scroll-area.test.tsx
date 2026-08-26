@@ -295,9 +295,12 @@ describe("ScrollArea anchor restoration", () => {
     await render(<Harness api={api} autoScroll restoreTarget="user:999" />);
 
     // The anchor never renders: after the polling grace period the viewport
-    // falls back to the newest content.
-    await expectPinned(api, 4000);
-    await expect.poll(() => api.restoreCount(), { timeout: 6000 }).toBe(1);
+    // falls back to the newest content. Wait for the completion signal rather
+    // than a fixed window: finish() scrolls to the bottom before it fires,
+    // while the internal polling duration stretches unpredictably when timer
+    // throttling kicks in on loaded CI runners.
+    await expect.poll(() => api.restoreCount(), { timeout: 10000 }).toBe(1);
+    await expectPinned(api);
   });
 
   it("restores against the scroll area's own top, not the page top", async () => {

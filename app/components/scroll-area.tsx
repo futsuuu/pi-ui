@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, type UIEvent } from "react";
 
 const RESTORE_MARGIN = 48;
 const RESTORE_POLL_MS = 50;
-const MAX_RESTORE_ATTEMPTS = 40;
+const RESTORE_GRACE_MS = 2000;
 
 /**
  * Finds a descendant element identified by a message key.
@@ -88,9 +88,11 @@ export function ScrollArea({
   // skipped while the anchor is pending, and later effect re-runs (a changed
   // cursor after revalidation) never re-pin over a restored position.
   const restoredOnceRef = useRef(false);
-  // Poll attempts spent waiting for the restore anchor; kept outside the
-  // effect so a re-run (changed restoreTarget) does not reset the budget.
-  const restoreAttemptsRef = useRef(0);
+  // Wall-clock deadline for the anchor to appear; kept outside the effect so
+  // a re-run (changed restoreTarget) does not extend the wait. A deadline
+  // instead of a poll-attempt count keeps the grace period bounded even when
+  // the browser throttles timers under load.
+  const restoreDeadlineRef = useRef(0);
   // Set on a user scroll input (wheel / touch / keyboard / scrollbar drag) so
   // that the following `scroll` event is attributed to the user rather than to
   // layout changes (async content growth or a viewport resize) that the browser
@@ -216,7 +218,7 @@ export function ScrollArea({
 
     const finish = (pinned: boolean) => {
       restoredOnceRef.current = true;
-      restoreAttemptsRef.current = 0;
+      restoreDeadlineRef.current = 0;
       if (pinned) {
         // Pin to the bottom immediately; content that has not been laid out
         // yet (async markdown, fonts, images) re-pins via the ResizeObserver
@@ -258,9 +260,12 @@ export function ScrollArea({
     // Content can render asynchronously (markdown, images, fonts), so poll
     // for the anchor until it exists; fall back to the bottom when the saved
     // key is absent (compacted away or removed) after a grace period.
+    if (restoring && restoreDeadlineRef.current === 0) {
+      restoreDeadlineRef.current = Date.now() + RESTORE_GRACE_MS;
+    }
     const restoreTimer = restoring
       ? window.setInterval(() => {
-          if (restore() || ++restoreAttemptsRef.current > MAX_RESTORE_ATTEMPTS) {
+          if (restore() || Date.now() > restoreDeadlineRef.current) {
             clearInterval(restoreTimer);
             if (!restoredOnceRef.current) finish(true);
           }
