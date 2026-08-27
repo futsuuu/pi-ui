@@ -189,11 +189,11 @@ function text(value: string): Text {
 
 /** Stable Panda-generated classes shared with tests that assert row styling. */
 export const diffRowClass = {
-  add: css({ backgroundColor: "green.500/10" }),
-  remove: css({ backgroundColor: "red.500/10" }),
+  add: css({ backgroundColor: "success.soft" }),
+  remove: css({ backgroundColor: "danger.soft" }),
 };
 
-const ellipsisRowStyle = css({ color: { base: "gray.400", _dark: "gray.600" } });
+const ellipsisRowStyle = css({ color: "fg.subtle" });
 const ellipsisCellStyle = css({ paddingInline: "2", userSelect: "none" });
 const signSpanStyle = css({ userSelect: "none" });
 const lineNumberStyle = css({

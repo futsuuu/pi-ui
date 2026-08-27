@@ -53,7 +53,7 @@ const thumbStyle = css({
   transitionProperty: "opacity",
   transitionDuration: "150ms",
   _hover: { opacity: 0.5 },
-  backgroundColor: { base: "black", _dark: "white" },
+  backgroundColor: "bg.scroll",
 });
 
 const cornerStyle = css({ backgroundColor: "bg.subtle" });

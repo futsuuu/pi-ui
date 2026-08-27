@@ -9,8 +9,8 @@ const triggerStyle = css({
   transitionProperty: "colors",
   transitionDuration: "150ms",
   _hover: {
-    backgroundColor: { base: "black/10", _dark: "white/10" },
-    color: { base: "gray.600", _dark: "gray.300" },
+    backgroundColor: "bg.hoverTransparent",
+    color: "fg.secondary",
   },
 });
 
@@ -37,7 +37,7 @@ const deleteItemStyle = css({
   outline: "none",
   cursor: "pointer",
   _highlighted: {
-    backgroundColor: { base: "red.50", _dark: "red.900/30" },
+    backgroundColor: "danger.soft",
     color: "danger.strong",
   },
   _disabled: {
