@@ -189,8 +189,8 @@ function text(value: string): Text {
 
 /** Stable Panda-generated classes shared with tests that assert row styling. */
 export const diffRowClass = {
-  add: css({ backgroundColor: "success.soft" }),
-  remove: css({ backgroundColor: "danger.soft" }),
+  add: css({ backgroundColor: "wash.success" }),
+  remove: css({ backgroundColor: "wash.danger" }),
 };
 
 const ellipsisRowStyle = css({ color: "fg.subtle" });
