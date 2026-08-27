@@ -16,7 +16,7 @@ const bodyStyle = css({
   borderRadius: "xl",
   paddingBlock: "3",
   width: "full",
-  color: "fg.primary",
+  color: "primary.fg",
 });
 
 const summaryStyle = css({
@@ -30,7 +30,7 @@ const summaryStyle = css({
 const thinkingStyle = css({
   marginTop: "1",
   padding: "2",
-  backgroundColor: "wash.warning",
+  backgroundColor: "warning.wash",
   borderRadius: "sm",
   textStyle: "xs",
   color: "warning.fg",

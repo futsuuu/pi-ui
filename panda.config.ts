@@ -7,15 +7,15 @@ const iconButton = defineRecipe({
   base: {
     padding: "2",
     borderRadius: "lg",
-    color: "fg.muted",
+    color: "muted.fg",
     transitionProperty: "colors",
     transitionDuration: "150ms",
-    _hover: { backgroundColor: "wash.muted" },
+    _hover: { backgroundColor: "muted.wash" },
   },
   variants: {
     emphasis: {
       onHover: {
-        _hover: { color: "fg.primary", backgroundColor: "wash.muted" },
+        _hover: { color: "primary.fg", backgroundColor: "muted.wash" },
       },
     },
   },
@@ -25,7 +25,7 @@ const button = defineRecipe({
   className: "button",
   base: {
     borderRadius: "lg",
-    color: "fg.inverse",
+    color: "inverse.fg",
     transitionProperty: "colors",
     transitionDuration: "150ms",
   },
@@ -49,8 +49,8 @@ const card = defineRecipe({
   base: { borderWidth: "1px", borderRadius: "xl" },
   variants: {
     surface: {
-      panel: { backgroundColor: "bg.panel", borderColor: "border.panel" },
-      elevated: { backgroundColor: "bg.card", borderColor: "border", boxShadow: "overlay" },
+      panel: { backgroundColor: "panel.bg", borderColor: "panel.border" },
+      elevated: { backgroundColor: "card.bg", borderColor: "border", boxShadow: "overlay" },
     },
     padded: {
       true: { padding: "4" },
@@ -65,9 +65,9 @@ const topbar = defineSlotRecipe({
   slots: ["root", "inner"],
   base: {
     root: {
-      backgroundColor: "bg.panel",
+      backgroundColor: "panel.bg",
       borderBottomWidth: "1px",
-      borderColor: "border.panel",
+      borderColor: "panel.border",
     },
     inner: {
       maxWidth: "3xl",
@@ -100,13 +100,13 @@ export default defineConfig({
   outdir: "styled-system",
   globalCss: {
     html: {
-      backgroundColor: "bg.page",
-      color: "fg.primary",
+      backgroundColor: "page.bg",
+      color: "primary.fg",
       fontFamily: "sans",
     },
     body: {
-      backgroundColor: "bg.page",
-      color: "fg.primary",
+      backgroundColor: "page.bg",
+      color: "primary.fg",
     },
     'button:not(:disabled), [role="button"]:not(:disabled)': {
       cursor: "pointer",

@@ -483,7 +483,7 @@ function Chat({
                 backgroundColor: connected ? "success.icon" : "danger.icon",
               })}
             />
-            <span className={css({ textStyle: "xs", color: "fg.muted" })}>
+            <span className={css({ textStyle: "xs", color: "muted.fg" })}>
               {connected ? "Connected" : "Disconnected"}
             </span>
           </div>
@@ -518,7 +518,7 @@ function Chat({
               className={css({
                 textStyle: "sm",
                 color: "danger",
-                backgroundColor: "wash.danger",
+                backgroundColor: "danger.wash",
                 borderWidth: "1px",
                 borderColor: "danger.border",
                 borderRadius: "lg",

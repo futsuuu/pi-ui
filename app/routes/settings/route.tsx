@@ -42,11 +42,11 @@ const toggleItemStyle = css({
   borderRightWidth: "1px",
   borderRightColor: "border",
   _last: { borderRightWidth: 0 },
-  backgroundColor: "bg.subtle",
-  color: "fg.secondary",
-  _hover: { backgroundColor: "wash.secondary" },
+  backgroundColor: "subtle.bg",
+  color: "secondary.fg",
+  _hover: { backgroundColor: "secondary.wash" },
   "&[data-state=on]": {
-    backgroundColor: "wash.accent",
+    backgroundColor: "accent.wash",
     color: "accent.fg",
   },
 });
@@ -60,7 +60,7 @@ export default function Settings() {
       <div className={topbarClasses.root}>
         <div className={topbarClasses.inner}>
           <Layers className={css({ width: "5", height: "5", color: "info" })} />
-          <span className={css({ fontWeight: "semibold", color: "fg.primary" })}>Settings</span>
+          <span className={css({ fontWeight: "semibold", color: "primary.fg" })}>Settings</span>
         </div>
       </div>
 
@@ -81,7 +81,7 @@ export default function Settings() {
               justifyContent: "space-between",
             })}
           >
-            <h2 className={css({ textStyle: "sm", fontWeight: "medium", color: "fg.secondary" })}>
+            <h2 className={css({ textStyle: "sm", fontWeight: "medium", color: "secondary.fg" })}>
               Theme
             </h2>
             <ToggleGroup.Root

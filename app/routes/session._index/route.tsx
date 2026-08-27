@@ -41,7 +41,7 @@ export default function NoSessionSelected() {
         paddingInline: "4",
       })}
     >
-      <p className={css({ textStyle: "sm", color: "fg.muted" })}>
+      <p className={css({ textStyle: "sm", color: "muted.fg" })}>
         Select a session from the sidebar.
       </p>
     </div>

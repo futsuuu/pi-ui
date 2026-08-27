@@ -55,7 +55,7 @@ const sendButtonStyle = cx(
     justifyContent: "center",
     padding: "1.5",
     _disabled: {
-      backgroundColor: "bg.disabled",
+      backgroundColor: "disabled.bg",
       cursor: "not-allowed",
     },
   }),
@@ -79,12 +79,12 @@ const selectTriggerStyle = css({
   paddingInline: "2.5",
   paddingBlock: "1",
   borderRadius: "full",
-  _hover: { backgroundColor: "wash.primary" },
+  _hover: { backgroundColor: "primary.wash" },
 });
 
 const selectContentStyle = css({
   zIndex: 50,
-  backgroundColor: "bg.card",
+  backgroundColor: "card.bg",
   borderWidth: "1px",
   borderColor: "border",
   borderRadius: "xl",
@@ -111,7 +111,7 @@ const selectItemStyle = css({
   cursor: "pointer",
   userSelect: "none",
   _highlighted: {
-    backgroundColor: "wash.accent",
+    backgroundColor: "accent.wash",
     color: "accent.fg",
   },
 });
@@ -127,7 +127,7 @@ const emptyMessageStyle = css({
   paddingInline: "3",
   paddingBlock: "2",
   textStyle: "sm",
-  color: "fg.muted",
+  color: "muted.fg",
 });
 
 const groupLabelStyle = css({
@@ -135,7 +135,7 @@ const groupLabelStyle = css({
   paddingBlock: "1.5",
   textStyle: "xs",
   fontWeight: "semibold",
-  color: "fg.muted",
+  color: "muted.fg",
   letterSpacing: "0.05em",
 });
 
@@ -325,7 +325,7 @@ function ModelListItems({
                 <Select.ItemText>
                   <div className={css({ display: "flex", flexDirection: "column" })}>
                     <span className={css({ fontWeight: "medium" })}>{m.name}</span>
-                    <span className={`${css({ textStyle: "xs", color: "fg.subtle" })} font-mono`}>
+                    <span className={`${css({ textStyle: "xs", color: "subtle.fg" })} font-mono`}>
                       {m.id}
                     </span>
                   </div>

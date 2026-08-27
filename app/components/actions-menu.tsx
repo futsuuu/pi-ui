@@ -5,19 +5,19 @@ import { css, cx } from "styled-system/css";
 
 const triggerStyle = css({
   borderRadius: "lg",
-  color: "fg.subtle",
+  color: "subtle.fg",
   transitionProperty: "colors",
   transitionDuration: "150ms",
   _hover: {
-    backgroundColor: "wash.subtle",
-    color: "fg.secondary",
+    backgroundColor: "subtle.wash",
+    color: "secondary.fg",
   },
 });
 
 const contentStyle = css({
   zIndex: 50,
   minWidth: "160px",
-  backgroundColor: "bg.card",
+  backgroundColor: "card.bg",
   borderWidth: "1px",
   borderColor: "border",
   borderRadius: "lg",
@@ -37,7 +37,7 @@ const deleteItemStyle = css({
   outline: "none",
   cursor: "pointer",
   _highlighted: {
-    backgroundColor: "wash.danger",
+    backgroundColor: "danger.wash",
     color: "danger.strong",
   },
   _disabled: {

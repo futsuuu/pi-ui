@@ -22,7 +22,7 @@ const panelStyle = css({
   borderRadius: "xl",
   paddingBlock: "3",
   width: "full",
-  color: "fg.secondary",
+  color: "secondary.fg",
   textStyle: "sm",
   borderWidth: "1px",
   borderColor: "border",
@@ -33,7 +33,7 @@ const summaryStyle = css({
   display: "flex",
   alignItems: "center",
   gap: "2",
-  color: "fg.secondary",
+  color: "secondary.fg",
   cursor: "pointer",
   userSelect: "none",
   listStyleType: "none",
@@ -46,15 +46,15 @@ const summaryTextStyle = css({
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
-  color: "fg.secondary",
+  color: "secondary.fg",
 });
 
 const argsStyle = css({
   padding: "2",
-  backgroundColor: "bg.subtle",
+  backgroundColor: "subtle.bg",
   borderRadius: "sm",
   textStyle: "xs",
-  color: "fg.muted",
+  color: "muted.fg",
 });
 
 const resultViewportClass = `${css({ whiteSpace: "pre" })} font-mono`;
@@ -123,9 +123,9 @@ export function ToolResultMessage({
           <details open={diff ? true : isStreaming || undefined}>
             <summary className={summaryStyle}>
               <WrenchIcon
-                className={css({ width: "3", height: "3", flexShrink: 0, color: "fg.subtle" })}
+                className={css({ width: "3", height: "3", flexShrink: 0, color: "subtle.fg" })}
               />
-              <span className={css({ fontWeight: "medium", flexShrink: 0, color: "fg.subtle" })}>
+              <span className={css({ fontWeight: "medium", flexShrink: 0, color: "subtle.fg" })}>
                 {toolName}
               </span>
               {summary ? (
@@ -139,7 +139,7 @@ export function ToolResultMessage({
                     marginLeft: "auto",
                     width: "4",
                     height: "4",
-                    color: "fg.subtle",
+                    color: "subtle.fg",
                     flexShrink: 0,
                     animation: "spin",
                   })}

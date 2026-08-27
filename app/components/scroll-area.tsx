@@ -53,10 +53,10 @@ const thumbStyle = css({
   transitionProperty: "opacity",
   transitionDuration: "150ms",
   _hover: { opacity: 0.5 },
-  backgroundColor: "bg.scroll",
+  backgroundColor: "scroll.bg",
 });
 
-const cornerStyle = css({ backgroundColor: "bg.subtle" });
+const cornerStyle = css({ backgroundColor: "subtle.bg" });
 
 /**
  * Finds a descendant element identified by a message key.

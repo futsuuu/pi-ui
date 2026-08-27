@@ -12,8 +12,8 @@ const bubbleStyle = css({
   whiteSpace: "pre-wrap",
   overflowWrap: "break-word",
   maxWidth: "80%",
-  backgroundColor: "bg.card",
-  color: "fg.primary",
+  backgroundColor: "card.bg",
+  color: "primary.fg",
   borderWidth: "1px",
   borderColor: "border",
 });

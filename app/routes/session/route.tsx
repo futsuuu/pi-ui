@@ -236,12 +236,12 @@ const sessionRow = cva({
   variants: {
     open: {
       true: {
-        backgroundColor: "wash.accent",
+        backgroundColor: "accent.wash",
         color: "accent.fg",
-        _hover: { backgroundColor: "wash.accent" },
+        _hover: { backgroundColor: "accent.wash" },
       },
       false: {
-        _hover: { backgroundColor: "wash.primary" },
+        _hover: { backgroundColor: "primary.wash" },
       },
     },
     deleting: {
@@ -265,19 +265,19 @@ const badgeBase = css.raw({
 
 const mainBadgeStyle = cx(
   css(badgeBase),
-  css({ backgroundColor: "wash.accent", color: "accent.fg" }),
+  css({ backgroundColor: "accent.wash", color: "accent.fg" }),
 );
 
 const detachedBadgeStyle = cx(
   css(badgeBase),
-  css({ backgroundColor: "bg.subtle", color: "fg.muted" }),
+  css({ backgroundColor: "subtle.bg", color: "muted.fg" }),
 );
 
 const newSessionLinkStyle = cx(iconButton({ emphasis: "onHover" }), css({ margin: "-1" }));
 
 const sectionStyle = css({
   borderTopWidth: "1px",
-  borderColor: "border.divider",
+  borderColor: "divider.border",
   paddingBlock: "1",
   paddingInline: "1",
 });
@@ -293,7 +293,7 @@ const overlayStyle = css({
   position: "fixed",
   inset: 0,
   zIndex: 30,
-  backgroundColor: "bg.overlay",
+  backgroundColor: "overlay.bg",
   lg: { display: "none" },
   transitionProperty: "opacity",
   transitionDuration: "200ms",
@@ -319,7 +319,7 @@ const sidebarStyle = css({
   height: "full",
   width: "full",
   flexDirection: "column",
-  backgroundColor: "bg.page",
+  backgroundColor: "page.bg",
   transitionProperty: "transform",
   transitionDuration: "200ms",
   sm: { width: "24rem" },
@@ -331,7 +331,7 @@ const sidebarStyle = css({
     visibility: "visible",
     pointerEvents: "auto",
     borderRightWidth: "1px",
-    borderColor: "border.panel",
+    borderColor: "panel.border",
   },
 });
 
@@ -348,9 +348,9 @@ const addWorktreeButton = css({
   display: "flex",
   alignItems: "center",
   gap: "1.5",
-  backgroundColor: "bg.subtle",
-  _hover: { backgroundColor: "wash.secondary" },
-  color: "fg.secondary",
+  backgroundColor: "subtle.bg",
+  _hover: { backgroundColor: "secondary.wash" },
+  color: "secondary.fg",
   _disabled: { opacity: 0.5, cursor: "not-allowed" },
 });
 
@@ -358,7 +358,7 @@ const errorBannerStyle = css({
   textStyle: "sm",
   color: "danger",
   marginBottom: "2",
-  backgroundColor: "wash.danger",
+  backgroundColor: "danger.wash",
   borderWidth: "1px",
   borderColor: "danger.border",
   borderRadius: "lg",
@@ -420,7 +420,7 @@ function SessionRow({
           className={css({
             fontWeight: "medium",
             textStyle: "sm",
-            color: open ? "accent.fg" : "fg.primary",
+            color: open ? "accent.fg" : "primary.fg",
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
@@ -431,7 +431,7 @@ function SessionRow({
         <p
           className={css({
             textStyle: "xs",
-            color: "fg.muted",
+            color: "muted.fg",
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
@@ -500,7 +500,7 @@ function WorktreeGroup({
             gap: "2",
             borderRadius: "lg",
             paddingBlock: "2",
-            _hover: { backgroundColor: "wash.primary" },
+            _hover: { backgroundColor: "primary.wash" },
           })}
         >
           <Collapsible.Trigger asChild>
@@ -521,7 +521,7 @@ function WorktreeGroup({
                   width: "4",
                   height: "4",
                   flexShrink: 0,
-                  color: "fg.subtle",
+                  color: "subtle.fg",
                   transitionProperty: "transform",
                   transitionDuration: "150ms",
                   transform: open ? "rotate(90deg)" : undefined,
@@ -531,7 +531,7 @@ function WorktreeGroup({
                 <p
                   className={`font-mono ${css({
                     textStyle: "sm",
-                    color: "fg.primary",
+                    color: "primary.fg",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
@@ -544,7 +544,7 @@ function WorktreeGroup({
                   {worktree.isMain && <span className={mainBadgeStyle}>main</span>}
                   {worktree.branch === null && <span className={detachedBadgeStyle}>detached</span>}
                 </p>
-                <p className={css({ textStyle: "xs", color: "fg.muted" })}>
+                <p className={css({ textStyle: "xs", color: "muted.fg" })}>
                   {worktree.sessions.length}{" "}
                   {worktree.sessions.length === 1 ? "session" : "sessions"}
                 </p>
@@ -738,7 +738,7 @@ export default function SessionLayout() {
           {!ready ? (
             <div className={css({ display: "flex", justifyContent: "center", paddingBlock: "10" })}>
               <Loader2Icon
-                className={css({ width: "6", height: "6", color: "fg.subtle", animation: "spin" })}
+                className={css({ width: "6", height: "6", color: "subtle.fg", animation: "spin" })}
               />
             </div>
           ) : (
@@ -756,7 +756,7 @@ export default function SessionLayout() {
                   className={css({
                     textStyle: "sm",
                     fontWeight: "medium",
-                    color: "fg.secondary",
+                    color: "secondary.fg",
                     display: "flex",
                     alignItems: "center",
                     gap: "2",
@@ -766,7 +766,7 @@ export default function SessionLayout() {
                     className={css({
                       width: "4",
                       height: "4",
-                      color: "success.DEFAULT",
+                      color: "success",
                     })}
                   />
                   Worktrees

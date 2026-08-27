@@ -76,42 +76,51 @@ export const amber = scale({
 
 export const colors = { gray, red, green, blue, amber };
 
-// One fixed alpha for every wash: foreground colors are never vanishingly
-// light, so this stays perceptible on any of the surfaces.
 const washAlpha = 10;
 const wash = (token: string) => `{colors.${token}/${washAlpha}}`;
 
-/**
- * Semantic color tokens. Components consume these instead of raw scales so a
- * palette change here propagates everywhere. Surfaces and marks are solid;
- * the wash namespace tints a background with an element's own foreground
- * color at a fixed alpha (the hover and diff-row rule), following both
- * themes through the referenced token.
- */
 export const semantic = {
-  bg: {
-    page: { value: { base: "{colors.gray.50}", _dark: "{colors.gray.950}" } },
-    card: { value: { base: "{colors.white}", _dark: "{colors.gray.800}" } },
-    panel: { value: { base: "{colors.white}", _dark: "{colors.gray.900}" } },
-    subtle: { value: { base: "{colors.gray.100}", _dark: "{colors.gray.800}" } },
-    disabled: { value: { base: "{colors.gray.300}", _dark: "{colors.gray.700}" } },
-    overlay: { value: { base: "{colors.black/40}" } },
-    scroll: { value: { base: "{colors.black}", _dark: "{colors.white}" } },
+  page: {
+    bg: { value: { base: "{colors.gray.50}", _dark: "{colors.gray.950}" } },
   },
-  fg: {
-    primary: { value: { base: "{colors.gray.800}", _dark: "{colors.gray.100}" } },
-    secondary: { value: { base: "{colors.gray.700}", _dark: "{colors.gray.300}" } },
-    muted: { value: { base: "{colors.gray.500}", _dark: "{colors.gray.400}" } },
-    subtle: { value: { base: "{colors.gray.400}", _dark: "{colors.gray.500}" } },
-    inverse: { value: { base: "{colors.white}", _dark: "{colors.white}" } },
+  primary: {
+    fg: { value: { base: "{colors.gray.800}", _dark: "{colors.gray.100}" } },
+    wash: { value: wash("primary.fg") },
   },
-  border: {
-    DEFAULT: { value: { base: "{colors.gray.200}", _dark: "{colors.gray.700}" } },
-    panel: { value: { base: "{colors.gray.200}", _dark: "{colors.gray.800}" } },
-    divider: { value: { base: "{colors.gray.100}", _dark: "{colors.gray.800}" } },
+  secondary: {
+    fg: { value: { base: "{colors.gray.700}", _dark: "{colors.gray.300}" } },
+    wash: { value: wash("secondary.fg") },
   },
   accent: {
     fg: { value: { base: "{colors.blue.700}", _dark: "{colors.blue.400}" } },
+    wash: { value: wash("accent.fg") },
+  },
+  subtle: {
+    bg: { value: { base: "{colors.gray.100}", _dark: "{colors.gray.800}" } },
+    fg: { value: { base: "{colors.gray.400}", _dark: "{colors.gray.500}" } },
+    wash: { value: wash("subtle.fg") },
+  },
+  muted: {
+    fg: { value: { base: "{colors.gray.500}", _dark: "{colors.gray.400}" } },
+    wash: { value: wash("muted.fg") },
+  },
+  disabled: {
+    bg: { value: { base: "{colors.gray.300}", _dark: "{colors.gray.700}" } },
+  },
+  inverse: {
+    fg: { value: { base: "{colors.white}", _dark: "{colors.white}" } },
+  },
+
+  action: {
+    DEFAULT: { value: { base: "{colors.blue.600}", _dark: "{colors.blue.600}" } },
+    hover: {
+      value: "color-mix(in srgb, var(--colors-action) 90%, white 10%)",
+    },
+  },
+  success: {
+    DEFAULT: { value: { base: "{colors.green.600}", _dark: "{colors.green.400}" } },
+    icon: { value: { base: "{colors.green.500}", _dark: "{colors.green.400}" } },
+    wash: { value: wash("success") },
   },
   danger: {
     DEFAULT: { value: { base: "{colors.red.600}", _dark: "{colors.red.400}" } },
@@ -122,32 +131,34 @@ export const semantic = {
       value: "color-mix(in srgb, var(--colors-danger-solid) 90%, white 10%)",
     },
     icon: { value: { base: "{colors.red.500}", _dark: "{colors.red.400}" } },
-  },
-  success: {
-    DEFAULT: { value: { base: "{colors.green.600}", _dark: "{colors.green.400}" } },
-    icon: { value: { base: "{colors.green.500}", _dark: "{colors.green.400}" } },
-  },
-  info: { DEFAULT: { value: { base: "{colors.blue.500}", _dark: "{colors.blue.400}" } } },
-  action: {
-    DEFAULT: { value: { base: "{colors.blue.600}", _dark: "{colors.blue.600}" } },
-    hover: {
-      value: "color-mix(in srgb, var(--colors-action) 90%, white 10%)",
-    },
+    wash: { value: wash("danger") },
   },
   warning: {
     DEFAULT: { value: { base: "{colors.amber.600}", _dark: "{colors.amber.400}" } },
     fg: { value: { base: "{colors.amber.800}", _dark: "{colors.amber.200}" } },
     strong: { value: { base: "{colors.amber.700}", _dark: "{colors.amber.300}" } },
     icon: { value: { base: "{colors.amber.500}", _dark: "{colors.amber.400}" } },
+    wash: { value: wash("warning") },
   },
-  wash: {
-    primary: { value: wash("fg.primary") },
-    secondary: { value: wash("fg.secondary") },
-    muted: { value: wash("fg.muted") },
-    subtle: { value: wash("fg.subtle") },
-    accent: { value: wash("accent.fg") },
-    danger: { value: wash("danger") },
-    success: { value: wash("success") },
-    warning: { value: wash("warning") },
+  info: { DEFAULT: { value: { base: "{colors.blue.500}", _dark: "{colors.blue.400}" } } },
+
+  border: {
+    DEFAULT: { value: { base: "{colors.gray.200}", _dark: "{colors.gray.700}" } },
+  },
+  panel: {
+    bg: { value: { base: "{colors.white}", _dark: "{colors.gray.900}" } },
+    border: { value: { base: "{colors.gray.200}", _dark: "{colors.gray.800}" } },
+  },
+  divider: {
+    border: { value: { base: "{colors.gray.100}", _dark: "{colors.gray.800}" } },
+  },
+  card: {
+    bg: { value: { base: "{colors.white}", _dark: "{colors.gray.800}" } },
+  },
+  overlay: {
+    bg: { value: { base: "{colors.black/40}" } },
+  },
+  scroll: {
+    bg: { value: { base: "{colors.black}", _dark: "{colors.white}" } },
   },
 };

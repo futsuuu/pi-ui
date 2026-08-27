@@ -21,7 +21,7 @@ const crumbLink = css({
   textStyle: "xs",
   borderRadius: "sm",
   flexShrink: 0,
-  _hover: { backgroundColor: "wash.primary" },
+  _hover: { backgroundColor: "primary.wash" },
 });
 
 const recentDirStyle = css({
@@ -34,13 +34,13 @@ const recentDirStyle = css({
   paddingBlock: "2.5",
   borderRadius: "lg",
   textStyle: "sm",
-  color: "fg.secondary",
+  color: "secondary.fg",
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
   transitionProperty: "colors",
   transitionDuration: "150ms",
-  _hover: { backgroundColor: "wash.secondary" },
+  _hover: { backgroundColor: "secondary.wash" },
 });
 
 const entryRowBase = {
@@ -56,21 +56,21 @@ const entryRowBase = {
 
 const dirRowStyle = css({
   ...entryRowBase,
-  _hover: { backgroundColor: "wash.primary" },
+  _hover: { backgroundColor: "primary.wash" },
 });
 
 const fileRowStyle = css({
   ...entryRowBase,
   cursor: "default",
-  color: "fg.muted",
+  color: "muted.fg",
 });
 
 const parentRowStyle = css({
   ...entryRowBase,
-  color: "fg.muted",
+  color: "muted.fg",
   borderBottomWidth: "1px",
-  borderColor: "border.divider",
-  _hover: { backgroundColor: "wash.muted" },
+  borderColor: "divider.border",
+  _hover: { backgroundColor: "muted.wash" },
 });
 
 const ctaStyle = cx(
@@ -150,7 +150,7 @@ export default function Home() {
       <div className={topbarClasses.root}>
         <div className={topbarClasses.inner}>
           <Layers className={css({ width: "5", height: "5", color: "info" })} />
-          <span className={css({ fontWeight: "semibold", color: "fg.primary" })}>
+          <span className={css({ fontWeight: "semibold", color: "primary.fg" })}>
             Select Working Directory
           </span>
           <div
@@ -179,7 +179,7 @@ export default function Home() {
               className={css({
                 textStyle: "sm",
                 fontWeight: "medium",
-                color: "fg.secondary",
+                color: "secondary.fg",
                 marginBottom: "2",
               })}
             >
@@ -227,21 +227,21 @@ export default function Home() {
               gap: "1",
               padding: "2",
               borderBottomWidth: "1px",
-              borderColor: "border.panel",
-              backgroundColor: "bg.subtle",
+              borderColor: "panel.border",
+              backgroundColor: "subtle.bg",
               overflowX: "auto",
             })}
           >
             <Link to={`/?dir=${encodeURIComponent(homeDir)}`} replace className={crumbLink}>
               ~
             </Link>
-            <span className={css({ color: "fg.subtle", flexShrink: 0 })}>/</span>
+            <span className={css({ color: "subtle.fg", flexShrink: 0 })}>/</span>
             {breadcrumbs.map((crumb, i) => (
               <span
                 key={crumb.path}
                 className={css({ display: "flex", alignItems: "center", gap: "1", flexShrink: 0 })}
               >
-                {i > 0 && <span className={css({ color: "fg.subtle" })}>/</span>}
+                {i > 0 && <span className={css({ color: "subtle.fg" })}>/</span>}
                 {i < breadcrumbs.length - 1 ? (
                   <Link
                     to={`/?dir=${encodeURIComponent(crumb.path)}`}
@@ -257,7 +257,7 @@ export default function Home() {
                       paddingBlock: "1",
                       textStyle: "xs",
                       fontWeight: "medium",
-                      color: "fg.primary",
+                      color: "primary.fg",
                     })}
                   >
                     {crumb.name}
@@ -293,7 +293,7 @@ export default function Home() {
               ) : (
                 <div key={entry.path} className={fileRowStyle}>
                   <File
-                    className={css({ width: "4", height: "4", color: "fg.subtle", flexShrink: 0 })}
+                    className={css({ width: "4", height: "4", color: "subtle.fg", flexShrink: 0 })}
                   />
                   <span className={truncateStyle}>{entry.name}</span>
                 </div>
@@ -305,7 +305,7 @@ export default function Home() {
                   paddingInline: "4",
                   paddingBlock: "8",
                   textAlign: "center",
-                  color: "fg.subtle",
+                  color: "subtle.fg",
                   textStyle: "sm",
                 })}
               >
@@ -318,8 +318,8 @@ export default function Home() {
             className={css({
               padding: "4",
               borderTopWidth: "1px",
-              borderColor: "border.panel",
-              backgroundColor: "bg.subtle",
+              borderColor: "panel.border",
+              backgroundColor: "subtle.bg",
             })}
           >
             <Link to={`/session?dir=${encodeURIComponent(currentDir)}`} className={ctaStyle}>
