@@ -33,11 +33,11 @@ const button = defineRecipe({
     color: {
       primary: {
         backgroundColor: "action",
-        _hover: { backgroundColor: "wash.inverse" },
+        _hover: { backgroundColor: "action.hover" },
       },
       danger: {
         backgroundColor: "danger.solid",
-        _hover: { backgroundColor: "wash.inverse" },
+        _hover: { backgroundColor: "danger.solidHover" },
       },
     },
   },

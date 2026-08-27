@@ -99,7 +99,7 @@ export const semantic = {
     scroll: { value: { base: "{colors.black}", _dark: "{colors.white}" } },
   },
   fg: {
-    primary: { value: { base: "{colors.gray.900}", _dark: "{colors.gray.100}" } },
+    primary: { value: { base: "{colors.gray.800}", _dark: "{colors.gray.100}" } },
     secondary: { value: { base: "{colors.gray.700}", _dark: "{colors.gray.300}" } },
     muted: { value: { base: "{colors.gray.500}", _dark: "{colors.gray.400}" } },
     subtle: { value: { base: "{colors.gray.400}", _dark: "{colors.gray.500}" } },
@@ -118,6 +118,9 @@ export const semantic = {
     strong: { value: { base: "{colors.red.700}", _dark: "{colors.red.300}" } },
     border: { value: { base: "{colors.red.200}", _dark: "{colors.red.800}" } },
     solid: { value: { base: "{colors.red.600}", _dark: "{colors.red.600}" } },
+    solidHover: {
+      value: "color-mix(in srgb, var(--colors-danger-solid) 90%, white 10%)",
+    },
     icon: { value: { base: "{colors.red.500}", _dark: "{colors.red.400}" } },
   },
   success: {
@@ -125,7 +128,12 @@ export const semantic = {
     icon: { value: { base: "{colors.green.500}", _dark: "{colors.green.400}" } },
   },
   info: { DEFAULT: { value: { base: "{colors.blue.500}", _dark: "{colors.blue.400}" } } },
-  action: { DEFAULT: { value: { base: "{colors.blue.600}", _dark: "{colors.blue.600}" } } },
+  action: {
+    DEFAULT: { value: { base: "{colors.blue.600}", _dark: "{colors.blue.600}" } },
+    hover: {
+      value: "color-mix(in srgb, var(--colors-action) 90%, white 10%)",
+    },
+  },
   warning: {
     DEFAULT: { value: { base: "{colors.amber.600}", _dark: "{colors.amber.400}" } },
     fg: { value: { base: "{colors.amber.800}", _dark: "{colors.amber.200}" } },
@@ -137,7 +145,6 @@ export const semantic = {
     secondary: { value: wash("fg.secondary") },
     muted: { value: wash("fg.muted") },
     subtle: { value: wash("fg.subtle") },
-    inverse: { value: wash("fg.inverse") },
     accent: { value: wash("accent.fg") },
     danger: { value: wash("danger") },
     success: { value: wash("success") },
