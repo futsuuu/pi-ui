@@ -1,6 +1,7 @@
 import { Layers, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
 import { ToggleGroup } from "radix-ui";
 import { css } from "styled-system/css";
+import { card, topbar } from "styled-system/recipes";
 
 import { useTheme, type Theme } from "~/contexts/theme";
 
@@ -9,6 +10,8 @@ import type { Route } from "./+types/route";
 export function meta(_: Route.MetaArgs) {
   return [{ title: "Pi UI - Settings" }];
 }
+
+const topbarClasses = topbar();
 
 const toggleGroupStyle = css({
   display: "inline-flex",
@@ -25,19 +28,7 @@ const THEME_OPTIONS: { value: Theme; label: string; icon: LucideIcon }[] = [
   { value: "dark", label: "Dark", icon: Moon },
 ];
 
-const topbarStyle = css({
-  backgroundColor: "bg.panel",
-  borderBottomWidth: "1px",
-  borderColor: "border.panel",
-});
-
-const cardStyle = css({
-  backgroundColor: "bg.panel",
-  borderWidth: "1px",
-  borderColor: "border.panel",
-  borderRadius: "xl",
-  padding: "4",
-});
+const cardStyle = card({ surface: "panel", padded: true });
 
 const toggleItemStyle = css({
   display: "flex",
@@ -53,10 +44,10 @@ const toggleItemStyle = css({
   _last: { borderRightWidth: 0 },
   backgroundColor: "bg.subtle",
   color: "fg.secondary",
-  _hover: { backgroundColor: { base: "gray.100", _dark: "gray.700" } },
+  _hover: { backgroundColor: "bg.hover" },
   "&[data-state=on]": {
-    backgroundColor: { base: "blue.50", _dark: "blue.900/40" },
-    color: { base: "blue.700", _dark: "blue.400" },
+    backgroundColor: "accent.soft",
+    color: "accent.fg",
   },
 });
 
@@ -66,19 +57,9 @@ export default function Settings() {
   return (
     <div className={css({ height: "full", display: "flex", flexDirection: "column" })}>
       {/* Top bar */}
-      <div className={topbarStyle}>
-        <div
-          className={css({
-            maxWidth: "3xl",
-            marginInline: "auto",
-            paddingInline: "4",
-            height: "14",
-            display: "flex",
-            alignItems: "center",
-            gap: "3",
-          })}
-        >
-          <Layers className={css({ width: "5", height: "5", color: "blue.500" })} />
+      <div className={topbarClasses.root}>
+        <div className={topbarClasses.inner}>
+          <Layers className={css({ width: "5", height: "5", color: "info" })} />
           <span className={css({ fontWeight: "semibold", color: "fg.primary" })}>Settings</span>
         </div>
       </div>
