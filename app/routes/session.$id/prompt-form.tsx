@@ -11,7 +11,7 @@ import { memo, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import { Await } from "react-router";
 import { css, cx } from "styled-system/css";
 import { flex } from "styled-system/patterns";
-import { button, card } from "styled-system/recipes";
+import { button, card, select } from "styled-system/recipes";
 
 const THINKING_LEVELS = [
   "off",
@@ -70,71 +70,7 @@ const abortButtonStyle = cx(
   }),
 );
 
-const selectTriggerStyle = css({
-  display: "inline-flex",
-  alignItems: "center",
-  gap: "1",
-  textStyle: "xs",
-  paddingInline: "2.5",
-  paddingBlock: "1",
-  borderRadius: "full",
-  _hover: { backgroundColor: "primary.wash" },
-});
-
-const selectContentStyle = css({
-  zIndex: 50,
-  backgroundColor: "card.bg",
-  borderWidth: "1px",
-  borderColor: "border",
-  borderRadius: "xl",
-  boxShadow: "lg",
-  overflow: "hidden",
-});
-
-const selectScrollButtonStyle = flex({
-  align: "center",
-  justify: "center",
-  height: "6",
-});
-
-const selectItemStyle = flex({
-  position: "relative",
-  align: "center",
-  paddingInline: "8",
-  paddingBlock: "2",
-  textStyle: "sm",
-  borderRadius: "lg",
-  outline: "none",
-  cursor: "pointer",
-  userSelect: "none",
-  _highlighted: {
-    backgroundColor: "accent.wash",
-    color: "accent.fg",
-  },
-});
-
-const itemIndicatorStyle = css({
-  position: "absolute",
-  left: "2",
-  display: "inline-flex",
-  alignItems: "center",
-});
-
-const emptyMessageStyle = css({
-  paddingInline: "3",
-  paddingBlock: "2",
-  textStyle: "sm",
-  color: "muted.fg",
-});
-
-const groupLabelStyle = css({
-  paddingInline: "2",
-  paddingBlock: "1.5",
-  textStyle: "xs",
-  fontWeight: "semibold",
-  color: "muted.fg",
-  letterSpacing: "0.05em",
-});
+const selectClasses = select();
 
 /** A model selection summarized by the parts the UI needs to render. */
 export interface SelectedModel {
@@ -246,7 +182,7 @@ function SelectPicker<T extends string>({
 }) {
   return (
     <Select.Root value={value} onValueChange={onValueChange}>
-      <Select.Trigger className={cx(selectTriggerStyle, triggerClassName)}>
+      <Select.Trigger className={cx(selectClasses.trigger, triggerClassName)}>
         {trigger}
         <ChevronDownIcon className={css({ width: "3", height: "3" })} />
       </Select.Trigger>
@@ -254,13 +190,13 @@ function SelectPicker<T extends string>({
         position="popper"
         side="top"
         align="start"
-        className={cx(selectContentStyle, contentClassName)}
+        className={cx(selectClasses.content, contentClassName)}
       >
-        <Select.ScrollUpButton className={selectScrollButtonStyle}>
+        <Select.ScrollUpButton className={selectClasses.scrollButton}>
           <ChevronUpIcon className={css({ width: "4", height: "4" })} />
         </Select.ScrollUpButton>
-        <Select.Viewport className={css({ padding: "1" })}>{children}</Select.Viewport>
-        <Select.ScrollDownButton className={selectScrollButtonStyle}>
+        <Select.Viewport className={selectClasses.viewport}>{children}</Select.Viewport>
+        <Select.ScrollDownButton className={selectClasses.scrollButton}>
           <ChevronDownIcon className={css({ width: "4", height: "4" })} />
         </Select.ScrollDownButton>
       </Select.Content>
@@ -289,7 +225,7 @@ function ModelListItems({
   }, [models, onResolved]);
 
   if (models.length === 0) {
-    return <div className={emptyMessageStyle}>No models available</div>;
+    return <div className={selectClasses.emptyMessage}>No models available</div>;
   }
 
   const groupedModels = models.reduce<Array<{ provider: string; models: readonly Model<Api>[] }>>(
@@ -309,7 +245,7 @@ function ModelListItems({
     <>
       {groupedModels.map((group) => (
         <Select.Group key={group.provider}>
-          <Select.Label className={groupLabelStyle}>{group.provider}</Select.Label>
+          <Select.Label className={selectClasses.groupLabel}>{group.provider}</Select.Label>
           {group.models.map((m) => {
             const value = serializeModelName({ provider: m.provider, modelId: m.id });
             return (
@@ -317,7 +253,7 @@ function ModelListItems({
                 key={value}
                 value={value}
                 onSelect={() => onSelect({ name: m.name, provider: m.provider, id: m.id })}
-                className={selectItemStyle}
+                className={selectClasses.item}
               >
                 <Select.ItemText>
                   <div className={flex({ direction: "column" })}>
@@ -327,7 +263,7 @@ function ModelListItems({
                     </span>
                   </div>
                 </Select.ItemText>
-                <Select.ItemIndicator className={itemIndicatorStyle}>
+                <Select.ItemIndicator className={selectClasses.itemIndicator}>
                   <CheckIcon className={css({ width: "4", height: "4" })} />
                 </Select.ItemIndicator>
               </Select.Item>
@@ -444,7 +380,7 @@ export const PromptForm = memo(function PromptForm({
       >
         <Suspense
           fallback={
-            <div className={emptyMessageStyle} aria-busy="true">
+            <div className={selectClasses.emptyMessage} aria-busy="true">
               Loading...
             </div>
           }
@@ -473,10 +409,10 @@ export const PromptForm = memo(function PromptForm({
           <Select.Item
             key={level}
             value={level}
-            className={cx(selectItemStyle, css({ textTransform: "capitalize" }))}
+            className={cx(selectClasses.item, css({ textTransform: "capitalize" }))}
           >
             <Select.ItemText>{level}</Select.ItemText>
-            <Select.ItemIndicator className={itemIndicatorStyle}>
+            <Select.ItemIndicator className={selectClasses.itemIndicator}>
               <CheckIcon className={css({ width: "4", height: "4" })} />
             </Select.ItemIndicator>
           </Select.Item>

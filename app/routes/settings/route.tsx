@@ -2,7 +2,7 @@ import { Layers, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
 import { ToggleGroup } from "radix-ui";
 import { css } from "styled-system/css";
 import { flex } from "styled-system/patterns";
-import { card, topbar } from "styled-system/recipes";
+import { card, toggleGroup, topbar } from "styled-system/recipes";
 
 import { useTheme, type Theme } from "~/contexts/theme";
 
@@ -14,14 +14,7 @@ export function meta(_: Route.MetaArgs) {
 
 const topbarClasses = topbar();
 
-const toggleGroupStyle = css({
-  display: "inline-flex",
-  alignItems: "stretch",
-  borderRadius: "lg",
-  borderWidth: "1px",
-  borderColor: "border",
-  overflow: "hidden",
-});
+const toggleGroupClasses = toggleGroup();
 
 const THEME_OPTIONS: { value: Theme; label: string; icon: LucideIcon }[] = [
   { value: "system", label: "System", icon: Monitor },
@@ -30,26 +23,6 @@ const THEME_OPTIONS: { value: Theme; label: string; icon: LucideIcon }[] = [
 ];
 
 const cardStyle = card({ surface: "panel", padded: true });
-
-const toggleItemStyle = flex({
-  align: "center",
-  gap: "1.5",
-  paddingInline: "3",
-  paddingBlock: "2",
-  textStyle: "sm",
-  transitionProperty: "colors",
-  transitionDuration: "150ms",
-  borderRightWidth: "1px",
-  borderRightColor: "border",
-  _last: { borderRightWidth: 0 },
-  backgroundColor: "subtle.bg",
-  color: "secondary.fg",
-  _hover: { backgroundColor: "secondary.wash" },
-  "&[data-state=on]": {
-    backgroundColor: "accent.wash",
-    color: "accent.fg",
-  },
-});
 
 export default function Settings() {
   const { theme, setTheme } = useTheme();
@@ -90,10 +63,10 @@ export default function Settings() {
                 if (value) setTheme(value as Theme);
               }}
               aria-label="Theme"
-              className={toggleGroupStyle}
+              className={toggleGroupClasses.root}
             >
               {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
-                <ToggleGroup.Item key={value} value={value} className={toggleItemStyle}>
+                <ToggleGroup.Item key={value} value={value} className={toggleGroupClasses.item}>
                   <Icon className={css({ width: "4", height: "4" })} />
                   {label}
                 </ToggleGroup.Item>

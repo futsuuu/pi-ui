@@ -26,7 +26,7 @@ import {
 } from "react-router";
 import { cva, css, cx } from "styled-system/css";
 import { flex } from "styled-system/patterns";
-import { card, iconButton } from "styled-system/recipes";
+import { badge, card, iconButton } from "styled-system/recipes";
 import * as v from "valibot";
 
 import { ActionsMenu, DeleteMenuItem } from "~/components/actions-menu";
@@ -252,27 +252,9 @@ const sessionRow = cva({
   },
 });
 
-const badgeBase = css.raw({
-  paddingInline: "1.5",
-  paddingBlock: "0.5",
-  borderRadius: "full",
-  fontSize: "10px",
-  fontFamily: "sans",
-  fontWeight: "medium",
-  textTransform: "uppercase",
-  letterSpacing: "0.025em",
-  flexShrink: 0,
-});
+const mainBadgeStyle = badge({ tone: "main" });
 
-const mainBadgeStyle = cx(
-  css(badgeBase),
-  css({ backgroundColor: "accent.wash", color: "accent.fg" }),
-);
-
-const detachedBadgeStyle = cx(
-  css(badgeBase),
-  css({ backgroundColor: "subtle.bg", color: "muted.fg" }),
-);
+const detachedBadgeStyle = badge({ tone: "detached" });
 
 const newSessionLinkStyle = cx(iconButton({ emphasis: "onHover" }), css({ margin: "-1" }));
 
