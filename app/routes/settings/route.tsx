@@ -44,9 +44,9 @@ const toggleItemStyle = css({
   _last: { borderRightWidth: 0 },
   backgroundColor: "bg.subtle",
   color: "fg.secondary",
-  _hover: { backgroundColor: "bg.hover" },
+  _hover: { backgroundColor: "wash.secondary" },
   "&[data-state=on]": {
-    backgroundColor: "accent.soft",
+    backgroundColor: "wash.accent",
     color: "accent.fg",
   },
 });
