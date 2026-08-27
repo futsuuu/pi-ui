@@ -25,6 +25,7 @@ import {
   useParams,
 } from "react-router";
 import { cva, css, cx } from "styled-system/css";
+import { card, iconButton } from "styled-system/recipes";
 import * as v from "valibot";
 
 import { ActionsMenu, DeleteMenuItem } from "~/components/actions-menu";
@@ -235,11 +236,11 @@ const sessionRow = cva({
   variants: {
     open: {
       true: {
-        backgroundColor: { base: "blue.50", _dark: "blue.900/20" },
-        _hover: { backgroundColor: { base: "blue.100", _dark: "blue.900/30" } },
+        backgroundColor: "accent.soft",
+        _hover: { backgroundColor: "accent.softHover" },
       },
       false: {
-        _hover: { backgroundColor: { base: "gray.50", _dark: "gray.800/60" } },
+        _hover: { backgroundColor: "bg.hoverSubtle" },
       },
     },
     deleting: {
@@ -263,10 +264,7 @@ const badgeBase = css.raw({
 
 const mainBadgeStyle = cx(
   css(badgeBase),
-  css({
-    backgroundColor: { base: "blue.100", _dark: "blue.900/40" },
-    color: { base: "blue.700", _dark: "blue.400" },
-  }),
+  css({ backgroundColor: "accent.softHover", color: "accent.fg" }),
 );
 
 const detachedBadgeStyle = cx(
@@ -274,18 +272,7 @@ const detachedBadgeStyle = cx(
   css({ backgroundColor: "bg.subtle", color: "fg.muted" }),
 );
 
-const newSessionLinkStyle = css({
-  padding: "2",
-  margin: "-1",
-  borderRadius: "lg",
-  color: "fg.muted",
-  transitionProperty: "colors",
-  transitionDuration: "150ms",
-  _hover: {
-    color: "fg.primary",
-    backgroundColor: { base: "gray.100", _dark: "gray.800" },
-  },
-});
+const newSessionLinkStyle = cx(iconButton({ emphasis: "onHover" }), css({ margin: "-1" }));
 
 const sectionStyle = css({
   borderTopWidth: "1px",
@@ -294,35 +281,33 @@ const sectionStyle = css({
   paddingInline: "1",
 });
 
-const worktreeCardStyle = css({
-  overflow: "hidden",
-  borderRadius: "xl",
-  borderWidth: "1px",
-  borderColor: "border.panel",
-  backgroundColor: "bg.panel",
-});
+const worktreeCardStyle = cx(
+  card(),
+  css({
+    overflow: "hidden",
+  }),
+);
 
 const overlayStyle = css({
   position: "fixed",
   inset: 0,
   zIndex: 30,
-  backgroundColor: "black/40",
+  backgroundColor: "bg.overlay",
   lg: { display: "none" },
   transitionProperty: "opacity",
   transitionDuration: "200ms",
 });
 
-const sidebarToggleStyle = css({
-  position: "fixed",
-  left: "2",
-  top: "2.5",
-  zIndex: 50,
-  borderRadius: "lg",
-  padding: "2",
-  color: "fg.muted",
-  _hover: { backgroundColor: { base: "gray.100", _dark: "gray.800" } },
-  lg: { display: "none" },
-});
+const sidebarToggleStyle = cx(
+  iconButton(),
+  css({
+    position: "fixed",
+    left: "2",
+    top: "2.5",
+    zIndex: 50,
+    lg: { display: "none" },
+  }),
+);
 
 const sidebarStyle = css({
   position: "fixed",
@@ -349,14 +334,7 @@ const sidebarStyle = css({
   },
 });
 
-const ghostIconButton = css({
-  padding: "2",
-  borderRadius: "lg",
-  color: "fg.muted",
-  transitionProperty: "colors",
-  transitionDuration: "150ms",
-  _hover: { backgroundColor: { base: "gray.100", _dark: "gray.800" } },
-});
+const ghostIconButton = iconButton();
 
 const addWorktreeButton = css({
   paddingInline: "3",
@@ -370,7 +348,7 @@ const addWorktreeButton = css({
   alignItems: "center",
   gap: "1.5",
   backgroundColor: "bg.subtle",
-  _hover: { backgroundColor: { base: "gray.200", _dark: "gray.700" } },
+  _hover: { backgroundColor: "bg.hoverStrong" },
   color: "fg.secondary",
   _disabled: { opacity: 0.5, cursor: "not-allowed" },
 });
@@ -521,7 +499,7 @@ function WorktreeGroup({
             gap: "2",
             borderRadius: "lg",
             paddingBlock: "2",
-            _hover: { backgroundColor: { base: "gray.50", _dark: "gray.800/60" } },
+            _hover: { backgroundColor: "bg.hoverSubtle" },
           })}
         >
           <Collapsible.Trigger asChild>
@@ -759,7 +737,7 @@ export default function SessionLayout() {
           {!ready ? (
             <div className={css({ display: "flex", justifyContent: "center", paddingBlock: "10" })}>
               <Loader2Icon
-                className={css({ width: "6", height: "6", color: "gray.400", animation: "spin" })}
+                className={css({ width: "6", height: "6", color: "fg.subtle", animation: "spin" })}
               />
             </div>
           ) : (
@@ -787,7 +765,7 @@ export default function SessionLayout() {
                     className={css({
                       width: "4",
                       height: "4",
-                      color: { base: "green.600", _dark: "green.500" },
+                      color: "success.DEFAULT",
                     })}
                   />
                   Worktrees
