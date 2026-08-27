@@ -10,6 +10,7 @@ import { Select } from "radix-ui";
 import { memo, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Await } from "react-router";
 import { css, cx } from "styled-system/css";
+import { button, card } from "styled-system/recipes";
 
 const THINKING_LEVELS = [
   "off",
@@ -33,14 +34,7 @@ const inputShellStyle = css({
   paddingTop: "2",
 });
 
-const cardStyle = css({
-  backgroundColor: "bg.card",
-  borderRadius: "xl",
-  boxShadow: "overlay",
-  borderWidth: "1px",
-  borderColor: "border",
-  padding: "4",
-});
+const cardStyle = card({ surface: "elevated", padded: true });
 
 const textareaStyle = css({
   width: "full",
@@ -53,29 +47,29 @@ const textareaStyle = css({
   maxHeight: "15rem",
 });
 
-const sendButtonStyle = css({
-  backgroundColor: "action",
-  color: "white",
-  borderRadius: "lg",
-  padding: "1.5",
-  transitionProperty: "colors",
-  transitionDuration: "150ms",
-  _hover: { backgroundColor: "action.hover" },
-  _disabled: {
-    backgroundColor: { base: "gray.300", _dark: "gray.700" },
-    cursor: "not-allowed",
-  },
-});
+const sendButtonStyle = cx(
+  button(),
+  css({
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "1.5",
+    _disabled: {
+      backgroundColor: "bg.disabled",
+      cursor: "not-allowed",
+    },
+  }),
+);
 
-const abortButtonStyle = css({
-  backgroundColor: { base: "red.600", _dark: "red.600" },
-  color: "white",
-  borderRadius: "lg",
-  padding: "1.5",
-  transitionProperty: "colors",
-  transitionDuration: "150ms",
-  _hover: { backgroundColor: { base: "red.700", _dark: "red.700" } },
-});
+const abortButtonStyle = cx(
+  button({ color: "danger" }),
+  css({
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "1.5",
+  }),
+);
 
 const selectTriggerStyle = css({
   display: "inline-flex",
@@ -85,7 +79,7 @@ const selectTriggerStyle = css({
   paddingInline: "2.5",
   paddingBlock: "1",
   borderRadius: "full",
-  _hover: { backgroundColor: { base: "gray.100", _dark: "gray.700" } },
+  _hover: { backgroundColor: "bg.hover" },
 });
 
 const selectContentStyle = css({
@@ -117,8 +111,8 @@ const selectItemStyle = css({
   cursor: "pointer",
   userSelect: "none",
   _highlighted: {
-    backgroundColor: { base: "blue.100", _dark: "blue.900/50" },
-    color: { base: "blue.700", _dark: "blue.300" },
+    backgroundColor: "accent.softHover",
+    color: "accent.fg",
   },
 });
 
@@ -133,7 +127,7 @@ const emptyMessageStyle = css({
   paddingInline: "3",
   paddingBlock: "2",
   textStyle: "sm",
-  color: "gray.500",
+  color: "fg.muted",
 });
 
 const groupLabelStyle = css({

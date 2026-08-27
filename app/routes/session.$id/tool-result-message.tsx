@@ -46,7 +46,7 @@ const summaryTextStyle = css({
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
-  color: { base: "gray.600", _dark: "gray.300" },
+  color: "fg.secondary",
 });
 
 const argsStyle = css({
@@ -54,7 +54,7 @@ const argsStyle = css({
   backgroundColor: "bg.subtle",
   borderRadius: "sm",
   textStyle: "xs",
-  color: { base: "gray.500", _dark: "gray.200" },
+  color: "fg.muted",
 });
 
 const resultViewportClass = `${css({ whiteSpace: "pre" })} font-mono`;
@@ -151,7 +151,7 @@ export function ToolResultMessage({
                       marginLeft: "auto",
                       width: "4",
                       height: "4",
-                      color: { base: "red.500", _dark: "red.400" },
+                      color: "danger.icon",
                       flexShrink: 0,
                     })}
                   />
@@ -161,7 +161,7 @@ export function ToolResultMessage({
                       marginLeft: "auto",
                       width: "4",
                       height: "4",
-                      color: { base: "green.500", _dark: "green.400" },
+                      color: "success.icon",
                       flexShrink: 0,
                     })}
                   />

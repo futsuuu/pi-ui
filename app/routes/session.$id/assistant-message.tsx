@@ -24,16 +24,16 @@ const summaryStyle = css({
   color: "warning",
   cursor: "pointer",
   userSelect: "none",
-  _hover: { color: { base: "amber.700", _dark: "amber.300" } },
+  _hover: { color: "warning.strong" },
 });
 
 const thinkingStyle = css({
   marginTop: "1",
   padding: "2",
-  backgroundColor: { base: "amber.50", _dark: "amber.900/20" },
+  backgroundColor: "warning.soft",
   borderRadius: "sm",
   textStyle: "xs",
-  color: { base: "amber.800", _dark: "amber.200" },
+  color: "warning.fg",
   whiteSpace: "pre-wrap",
 });
 
@@ -42,7 +42,7 @@ const errorStyle = css({
   padding: "2",
   borderRadius: "sm",
   textStyle: "sm",
-  color: { base: "red.700", _dark: "red.400" },
+  color: "danger.strong",
   whiteSpace: "pre-wrap",
   overflowWrap: "break-word",
 });

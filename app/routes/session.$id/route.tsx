@@ -6,6 +6,7 @@ import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { data, useFetcher, useRevalidator } from "react-router";
 import { css } from "styled-system/css";
+import { topbar } from "styled-system/recipes";
 
 import { mergedSessionMessages } from "~/agent-session-container";
 import { ScrollArea } from "~/components/scroll-area";
@@ -460,6 +461,7 @@ function Chat({
     dispatch({ type: "abort" });
   }
 
+  const topbarClasses = topbar({ wide: true });
   return (
     <div
       className={css({
@@ -470,33 +472,15 @@ function Chat({
       })}
     >
       {/* Top bar — fixed at top */}
-      <div
-        className={css({
-          flexShrink: 0,
-          backgroundColor: "bg.panel",
-          borderBottomWidth: "1px",
-          borderColor: "border.panel",
-        })}
-      >
-        <div
-          className={css({
-            maxWidth: "5xl",
-            marginInline: "auto",
-            paddingInlineStart: "14",
-            paddingInlineEnd: "4",
-            lg: { paddingInline: "4" },
-            height: "14",
-            display: "flex",
-            alignItems: "center",
-          })}
-        >
+      <div className={topbarClasses.root}>
+        <div className={topbarClasses.inner}>
           <div className={css({ display: "flex", alignItems: "center", gap: "2" })}>
             <span
               className={css({
                 width: "2",
                 height: "2",
                 borderRadius: "full",
-                backgroundColor: connected ? "green.500" : "red.500",
+                backgroundColor: connected ? "success.icon" : "danger.icon",
               })}
             />
             <span className={css({ textStyle: "xs", color: "fg.muted" })}>
