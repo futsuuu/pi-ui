@@ -8,22 +8,22 @@ const RESTORE_GRACE_MS = 2000;
 
 const rootStyle = css({
   flex: "1",
-  minWidth: 0,
-  minHeight: 0,
-  width: "100%",
-  height: "100%",
+  minWidth: "0",
+  minHeight: "0",
+  width: "full",
+  height: "full",
   overflow: "hidden",
 });
 
 const viewportStyle = css({
-  width: "100%",
-  height: "100%",
-  minWidth: 0,
-  minHeight: 0,
+  width: "full",
+  height: "full",
+  minWidth: "0",
+  minHeight: "0",
 });
 
 const confinementStyle = css({
-  width: "100%",
+  width: "full",
   contain: "inline-size",
 });
 
@@ -34,8 +34,8 @@ const scrollbar = cva({
     touchAction: "none",
     padding: "0.5",
     transitionProperty: "colors",
-    transitionDuration: "150ms",
-    transitionTimingFunction: "ease-out",
+    transitionDuration: "fast",
+    transitionTimingFunction: "out",
   },
   variants: {
     orientation: {
@@ -51,7 +51,7 @@ const thumbStyle = css({
   borderRadius: "full",
   opacity: 0.3,
   transitionProperty: "opacity",
-  transitionDuration: "150ms",
+  transitionDuration: "fast",
   _hover: { opacity: 0.5 },
   backgroundColor: "scroll.bg",
 });

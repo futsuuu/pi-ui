@@ -1,6 +1,7 @@
 import { defineConfig, defineRecipe, defineSlotRecipe } from "@pandacss/dev";
 
 import { colors, semantic } from "./app/theme/colors";
+import { lineHeights, sizes } from "./app/theme/layout";
 
 const iconButton = defineRecipe({
   className: "iconButton",
@@ -9,7 +10,7 @@ const iconButton = defineRecipe({
     borderRadius: "lg",
     color: "muted.fg",
     transitionProperty: "colors",
-    transitionDuration: "150ms",
+    transitionDuration: "fast",
     _hover: { backgroundColor: "muted.wash" },
   },
   variants: {
@@ -27,7 +28,7 @@ const button = defineRecipe({
     borderRadius: "lg",
     color: "inverse.fg",
     transitionProperty: "colors",
-    transitionDuration: "150ms",
+    transitionDuration: "fast",
   },
   variants: {
     color: {
@@ -130,7 +131,7 @@ const toggleGroup = defineSlotRecipe({
       paddingBlock: "2",
       textStyle: "sm",
       transitionProperty: "colors",
-      transitionDuration: "150ms",
+      transitionDuration: "fast",
       borderRightWidth: "1px",
       borderRightColor: "border",
       _last: { borderRightWidth: 0 },
@@ -219,7 +220,19 @@ const select = defineSlotRecipe({
 
 export default defineConfig({
   preflight: true,
+  strictTokens: true,
+  strictPropertyValues: true,
   include: ["./app/**/*.{ts,tsx}"],
+  utilities: {
+    extend: {
+      transitionProperty: {
+        values: {
+          transform: "transform",
+          opacity: "opacity",
+        },
+      },
+    },
+  },
   exclude: [],
   outdir: "styled-system",
   globalCss: {
@@ -253,6 +266,8 @@ export default defineConfig({
       },
       semanticTokens: {
         colors: semantic,
+        sizes,
+        lineHeights,
       },
       textStyles: {
         sm: { value: { fontSize: "0.875rem", lineHeight: "calc(1.25 / 0.875)" } },

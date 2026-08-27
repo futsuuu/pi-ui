@@ -25,10 +25,10 @@ const THINKING_LEVELS = [
 
 const inputShellStyle = css({
   position: "absolute",
-  bottom: 0,
-  left: 0,
-  right: 0,
-  maxWidth: "5xl",
+  bottom: "0",
+  left: "0",
+  right: "0",
+  maxWidth: "agentMessage.maxWidth",
   marginInline: "auto",
   paddingInline: "4",
   paddingBottom: "4",
@@ -45,7 +45,7 @@ const textareaStyle = css({
   _focus: { outline: "none" },
   _disabled: { opacity: 0.5, cursor: "not-allowed" },
   overflow: "hidden",
-  maxHeight: "15rem",
+  maxHeight: "prompt.maxHeight",
 });
 
 const sendButtonStyle = cx(
@@ -376,7 +376,7 @@ export const PromptForm = memo(function PromptForm({
           handleSelectModel({ name: spec?.name ?? modelId, provider, id: modelId });
         }}
         trigger={<Select.Value>{selectedModel ? selectedModel.name : "Select Model"}</Select.Value>}
-        contentClassName={css({ maxHeight: "16rem" })}
+        contentClassName={css({ maxHeight: "prompt.picker.maxHeight" })}
       >
         <Suspense
           fallback={
@@ -403,7 +403,7 @@ export const PromptForm = memo(function PromptForm({
         onValueChange={setSelectedThinkingLevel}
         trigger={<Select.Value />}
         triggerClassName={css({ textTransform: "capitalize" })}
-        contentClassName={css({ minWidth: "7rem" })}
+        contentClassName={css({ minWidth: "prompt.picker.minWidth" })}
       >
         {availableThinkingLevels.map((level) => (
           <Select.Item

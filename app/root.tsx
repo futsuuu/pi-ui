@@ -48,7 +48,7 @@ const bodyStyle = flex({
   direction: "column",
 });
 
-const wrapperStyle = flex({ flex: "1", minHeight: 0, direction: "column" });
+const wrapperStyle = flex({ flex: "1", minHeight: "0", direction: "column" });
 
 // Mirrors Tailwind's `container` utility: full width capped per breakpoint,
 // centered, with the page's own padding.
@@ -56,12 +56,12 @@ const errorMainStyle = css({
   padding: "4",
   paddingTop: "16",
   marginInline: "auto",
-  width: "100%",
-  sm: { maxWidth: "40rem" },
-  md: { maxWidth: "48rem" },
-  lg: { maxWidth: "64rem" },
-  xl: { maxWidth: "80rem" },
-  "2xl": { maxWidth: "96rem" },
+  width: "full",
+  sm: { maxWidth: "container.sm" },
+  md: { maxWidth: "container.md" },
+  lg: { maxWidth: "container.lg" },
+  xl: { maxWidth: "container.xl" },
+  "2xl": { maxWidth: "container.2xl" },
 });
 
 const errorStackStyle = css({ width: "full", padding: "4", overflowX: "auto" });

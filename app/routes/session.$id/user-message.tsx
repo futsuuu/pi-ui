@@ -12,7 +12,7 @@ const bubbleStyle = css({
   paddingBlock: "3",
   whiteSpace: "pre-wrap",
   overflowWrap: "break-word",
-  maxWidth: "80%",
+  maxWidth: "agentMessage.maxWidth.user",
   backgroundColor: "card.bg",
   color: "primary.fg",
   borderWidth: "1px",

@@ -204,14 +204,14 @@ const lineNumberStyle = css({
 });
 const contentCellStyle = css({ paddingRight: "2", whiteSpace: "pre" });
 const tableStyle = css({
-  width: "100%",
+  width: "full",
   borderCollapse: "collapse",
   fontFamily: "mono",
   textStyle: "xs",
-  lineHeight: "1.25rem",
+  lineHeight: "diff.lineHeight",
   fontVariantNumeric: "tabular-nums",
 });
-const wrapperStyle = css({ borderRadius: "lg", overflow: "auto", maxHeight: "20rem" });
+const wrapperStyle = css({ borderRadius: "lg", overflow: "auto", maxHeight: "diff.maxHeight" });
 
 function classNames(...parts: Array<string | undefined>): string[] {
   return parts.filter((part): part is string => part !== undefined && part !== "");

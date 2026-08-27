@@ -498,18 +498,18 @@ function Chat({
         restoreTarget={restoreTarget}
         onRestoreComplete={handleRestoreComplete}
         disableHorizontalScroll
-        viewportClassName={css({ paddingBottom: "9rem" })}
+        viewportClassName={css({ paddingBottom: "36" })}
       >
         <div
           ref={messagesContainerRef}
           className={css({
-            maxWidth: "5xl",
+            maxWidth: "agentMessage.maxWidth",
             width: "full",
             marginInline: "auto",
             paddingInline: "4",
             paddingBlock: "4",
             minHeight: "full",
-            minWidth: 0,
+            minWidth: "0",
             "& > :not([hidden]) ~ :not([hidden])": { marginTop: "4" },
           })}
         >

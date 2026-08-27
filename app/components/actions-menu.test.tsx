@@ -24,7 +24,7 @@ describe("ActionsMenu", () => {
       <ActionsMenu
         ariaLabel="Worktree actions"
         trigger={<span>menu</span>}
-        triggerClassName={css({ padding: "2", margin: "-0.25rem" })}
+        triggerClassName={css({ padding: "2", margin: "-1" })}
       >
         <DeleteMenuItem onSelect={() => {}} label="Delete Worktree" />
       </ActionsMenu>,

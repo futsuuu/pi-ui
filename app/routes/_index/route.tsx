@@ -7,6 +7,7 @@ import { Link, useLoaderData } from "react-router";
 import { css, cx } from "styled-system/css";
 import { flex } from "styled-system/patterns";
 import { button, card, iconButton, topbar } from "styled-system/recipes";
+import type { SystemStyleObject } from "styled-system/types";
 
 import { projectRepositoryContext } from "~/router-contexts";
 
@@ -39,11 +40,11 @@ const recentDirStyle = flex({
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
   transitionProperty: "colors",
-  transitionDuration: "150ms",
+  transitionDuration: "fast",
   _hover: { backgroundColor: "secondary.wash" },
 });
 
-const entryRowBase = {
+const entryRowBase: SystemStyleObject = {
   display: "flex",
   alignItems: "center",
   gap: "2",
@@ -260,7 +261,7 @@ export default function Home() {
             ))}
           </div>
 
-          <div className={css({ maxHeight: "20rem", overflowY: "auto" })}>
+          <div className={css({ maxHeight: "directoryList.maxHeight", overflowY: "auto" })}>
             <Link to={`/?dir=${encodeURIComponent(parentDir)}`} replace className={parentRowStyle}>
               <ArrowLeft className={css({ width: "4", height: "4" })} />
               ..

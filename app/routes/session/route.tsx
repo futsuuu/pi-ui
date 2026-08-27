@@ -232,7 +232,7 @@ const sessionRow = cva({
     alignItems: "center",
     borderRadius: "lg",
     transitionProperty: "colors",
-    transitionDuration: "150ms",
+    transitionDuration: "fast",
   },
   variants: {
     open: {
@@ -274,12 +274,12 @@ const worktreeCardStyle = cx(
 
 const overlayStyle = css({
   position: "fixed",
-  inset: 0,
+  inset: "0",
   zIndex: 30,
   backgroundColor: "overlay.bg",
   lg: { display: "none" },
   transitionProperty: "opacity",
-  transitionDuration: "200ms",
+  transitionDuration: "normal",
 });
 
 const sidebarToggleStyle = cx(
@@ -295,19 +295,19 @@ const sidebarToggleStyle = cx(
 
 const sidebarStyle = flex({
   position: "fixed",
-  insetBlock: 0,
-  left: 0,
+  insetBlock: "0",
+  left: "0",
   zIndex: 40,
   height: "full",
   width: "full",
   direction: "column",
   backgroundColor: "page.bg",
   transitionProperty: "transform",
-  transitionDuration: "200ms",
-  sm: { width: "24rem" },
+  transitionDuration: "normal",
+  sm: { width: "sidebar.width" },
   lg: {
     position: "static",
-    width: "24rem",
+    width: "sidebar.width",
     flexShrink: 0,
     transform: "translateX(0)",
     visibility: "visible",
@@ -326,7 +326,7 @@ const addWorktreeButton = flex({
   textStyle: "sm",
   fontWeight: "medium",
   transitionProperty: "colors",
-  transitionDuration: "150ms",
+  transitionDuration: "fast",
   align: "center",
   gap: "1.5",
   backgroundColor: "subtle.bg",
@@ -394,7 +394,7 @@ function SessionRow({
       </span>
       <Link
         to={`/session/${encodeURIComponent(session.id)}`}
-        className={css({ minWidth: 0, flex: "1", paddingBlock: "2", textAlign: "left" })}
+        className={css({ minWidth: "0", flex: "1", paddingBlock: "2", textAlign: "left" })}
       >
         <p
           className={css({
@@ -486,7 +486,7 @@ function WorktreeGroup({
             <button
               type="button"
               className={flex({
-                minWidth: 0,
+                minWidth: "0",
                 flex: "1",
                 align: "center",
                 gap: "1",
@@ -501,11 +501,11 @@ function WorktreeGroup({
                   flexShrink: 0,
                   color: "subtle.fg",
                   transitionProperty: "transform",
-                  transitionDuration: "150ms",
+                  transitionDuration: "fast",
                   transform: open ? "rotate(90deg)" : undefined,
                 })}
               />
-              <div className={css({ minWidth: 0 })}>
+              <div className={css({ minWidth: "0" })}>
                 <p
                   className={`font-mono ${flex({
                     textStyle: "sm",
@@ -779,7 +779,7 @@ export default function SessionLayout() {
         </ScrollArea>
       </aside>
 
-      <main className={css({ flex: "1", minWidth: 0, height: "full", overflow: "hidden" })}>
+      <main className={css({ flex: "1", minWidth: "0", height: "full", overflow: "hidden" })}>
         <Outlet />
       </main>
     </div>

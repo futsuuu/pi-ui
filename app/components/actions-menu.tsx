@@ -8,7 +8,7 @@ const triggerStyle = css({
   borderRadius: "lg",
   color: "subtle.fg",
   transitionProperty: "colors",
-  transitionDuration: "150ms",
+  transitionDuration: "fast",
   _hover: {
     backgroundColor: "subtle.wash",
     color: "secondary.fg",
@@ -17,7 +17,7 @@ const triggerStyle = css({
 
 const contentStyle = css({
   zIndex: 50,
-  minWidth: "160px",
+  minWidth: "40",
   backgroundColor: "card.bg",
   borderWidth: "1px",
   borderColor: "border",
