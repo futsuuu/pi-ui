@@ -5,6 +5,7 @@ import path from "node:path";
 import { Folder, ArrowLeft, File, Layers, Settings, ArrowRight } from "lucide-react";
 import { Link, useLoaderData } from "react-router";
 import { css, cx } from "styled-system/css";
+import { flex } from "styled-system/patterns";
 import { button, card, iconButton, topbar } from "styled-system/recipes";
 
 import { projectRepositoryContext } from "~/router-contexts";
@@ -24,9 +25,8 @@ const crumbLink = css({
   _hover: { backgroundColor: "primary.wash" },
 });
 
-const recentDirStyle = css({
-  display: "flex",
-  alignItems: "center",
+const recentDirStyle = flex({
+  align: "center",
   gap: "2",
   width: "full",
   textAlign: "left",
@@ -75,10 +75,9 @@ const parentRowStyle = css({
 
 const ctaStyle = cx(
   button(),
-  css({
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
+  flex({
+    align: "center",
+    justify: "center",
     gap: "2",
     width: "full",
     fontWeight: "medium",
@@ -145,7 +144,7 @@ export default function Home() {
   const parentDir = currentDir.substring(0, currentDir.lastIndexOf("/")) || "/";
 
   return (
-    <div className={css({ height: "full", display: "flex", flexDirection: "column" })}>
+    <div className={flex({ height: "full", direction: "column" })}>
       {/* Top bar */}
       <div className={topbarClasses.root}>
         <div className={topbarClasses.inner}>
@@ -153,9 +152,7 @@ export default function Home() {
           <span className={css({ fontWeight: "semibold", color: "primary.fg" })}>
             Select Working Directory
           </span>
-          <div
-            className={css({ marginLeft: "auto", display: "flex", alignItems: "center", gap: "2" })}
-          >
+          <div className={flex({ marginLeft: "auto", align: "center", gap: "2" })}>
             <Link to="/settings" aria-label="Settings" className={iconGhostButton}>
               <Settings className={css({ width: "5", height: "5" })} />
             </Link>
@@ -221,9 +218,8 @@ export default function Home() {
           )}
         >
           <div
-            className={css({
-              display: "flex",
-              alignItems: "center",
+            className={flex({
+              align: "center",
               gap: "1",
               padding: "2",
               borderBottomWidth: "1px",
@@ -237,10 +233,7 @@ export default function Home() {
             </Link>
             <span className={css({ color: "subtle.fg", flexShrink: 0 })}>/</span>
             {breadcrumbs.map((crumb, i) => (
-              <span
-                key={crumb.path}
-                className={css({ display: "flex", alignItems: "center", gap: "1", flexShrink: 0 })}
-              >
+              <span key={crumb.path} className={flex({ align: "center", gap: "1", flexShrink: 0 })}>
                 {i > 0 && <span className={css({ color: "subtle.fg" })}>/</span>}
                 {i < breadcrumbs.length - 1 ? (
                   <Link

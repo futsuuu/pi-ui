@@ -2,6 +2,7 @@ import type { ToolResultMessage as Data, TextContent } from "@earendil-works/pi-
 import type { EditToolDetails } from "@earendil-works/pi-coding-agent";
 import { CheckIcon, Loader2Icon, WrenchIcon, XIcon } from "lucide-react";
 import { css } from "styled-system/css";
+import { flex } from "styled-system/patterns";
 
 import { DiffView } from "~/components/diff-view";
 import { ScrollArea } from "~/components/scroll-area";
@@ -16,7 +17,7 @@ export type Props = Pick<Data, "role" | "content" | "toolName" | "toolCallId" | 
   isStreaming?: boolean;
 };
 
-const outerStyle = css({ display: "flex", justifyContent: "flex-start" });
+const outerStyle = flex({ justify: "flex-start" });
 
 const panelStyle = css({
   borderRadius: "xl",
@@ -29,9 +30,8 @@ const panelStyle = css({
   paddingInline: "4",
 });
 
-const summaryStyle = css({
-  display: "flex",
-  alignItems: "center",
+const summaryStyle = flex({
+  align: "center",
   gap: "2",
   color: "secondary.fg",
   cursor: "pointer",

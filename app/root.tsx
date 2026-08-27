@@ -8,6 +8,7 @@ import {
   ScrollRestoration,
 } from "react-router";
 import { css } from "styled-system/css";
+import { flex } from "styled-system/patterns";
 
 import type { Route } from "./+types/root";
 import { SessionEventProvider } from "./contexts/session-events";
@@ -42,13 +43,12 @@ export const middleware: Route.MiddlewareFunction[] = [
   },
 ];
 
-const bodyStyle = css({
+const bodyStyle = flex({
   height: "var(--visual-viewport-height, 100dvh)",
-  display: "flex",
-  flexDirection: "column",
+  direction: "column",
 });
 
-const wrapperStyle = css({ flex: "1", minHeight: 0, display: "flex", flexDirection: "column" });
+const wrapperStyle = flex({ flex: "1", minHeight: 0, direction: "column" });
 
 // Mirrors Tailwind's `container` utility: full width capped per breakpoint,
 // centered, with the page's own padding.

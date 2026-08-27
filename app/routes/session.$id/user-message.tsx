@@ -1,9 +1,10 @@
 import type { UserMessage as Data, TextContent } from "@earendil-works/pi-ai";
 import { css } from "styled-system/css";
+import { flex } from "styled-system/patterns";
 
 export type Props = Pick<Data, "role" | "content">;
 
-const outerStyle = css({ display: "flex", justifyContent: "flex-end" });
+const outerStyle = flex({ justify: "flex-end" });
 
 const bubbleStyle = css({
   borderRadius: "xl",

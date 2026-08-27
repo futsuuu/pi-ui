@@ -1,6 +1,7 @@
 import { Layers, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
 import { ToggleGroup } from "radix-ui";
 import { css } from "styled-system/css";
+import { flex } from "styled-system/patterns";
 import { card, topbar } from "styled-system/recipes";
 
 import { useTheme, type Theme } from "~/contexts/theme";
@@ -30,9 +31,8 @@ const THEME_OPTIONS: { value: Theme; label: string; icon: LucideIcon }[] = [
 
 const cardStyle = card({ surface: "panel", padded: true });
 
-const toggleItemStyle = css({
-  display: "flex",
-  alignItems: "center",
+const toggleItemStyle = flex({
+  align: "center",
   gap: "1.5",
   paddingInline: "3",
   paddingBlock: "2",
@@ -55,7 +55,7 @@ export default function Settings() {
   const { theme, setTheme } = useTheme();
 
   return (
-    <div className={css({ height: "full", display: "flex", flexDirection: "column" })}>
+    <div className={flex({ height: "full", direction: "column" })}>
       {/* Top bar */}
       <div className={topbarClasses.root}>
         <div className={topbarClasses.inner}>
@@ -75,10 +75,9 @@ export default function Settings() {
       >
         <div className={cardStyle}>
           <div
-            className={css({
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
+            className={flex({
+              align: "center",
+              justify: "space-between",
             })}
           >
             <h2 className={css({ textStyle: "sm", fontWeight: "medium", color: "secondary.fg" })}>

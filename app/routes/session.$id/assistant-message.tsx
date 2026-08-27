@@ -1,6 +1,7 @@
 import type { AssistantMessage as Data, TextContent, ThinkingContent } from "@earendil-works/pi-ai";
 import { CircleSlashIcon, CircleXIcon } from "lucide-react";
 import { css } from "styled-system/css";
+import { flex } from "styled-system/patterns";
 
 import { Markdown } from "~/components/markdown";
 
@@ -10,7 +11,7 @@ export interface Props extends Pick<Data, "role" | "content" | "errorMessage"> {
   stopReason?: Data["stopReason"];
 }
 
-const outerStyle = css({ display: "flex", justifyContent: "flex-start" });
+const outerStyle = flex({ justify: "flex-start" });
 
 const bodyStyle = css({
   borderRadius: "xl",
@@ -87,9 +88,8 @@ export function AssistantMessage({ content, stopReason, errorMessage }: Props) {
         {(isError || errorMessage) && (
           <div className={errorStyle}>
             <div
-              className={css({
-                display: "flex",
-                alignItems: "center",
+              className={flex({
+                align: "center",
                 gap: "1.5",
                 fontWeight: "medium",
                 marginBottom: "1",

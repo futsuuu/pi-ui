@@ -25,6 +25,7 @@ import {
   useParams,
 } from "react-router";
 import { cva, css, cx } from "styled-system/css";
+import { flex } from "styled-system/patterns";
 import { card, iconButton } from "styled-system/recipes";
 import * as v from "valibot";
 
@@ -310,15 +311,14 @@ const sidebarToggleStyle = cx(
   }),
 );
 
-const sidebarStyle = css({
+const sidebarStyle = flex({
   position: "fixed",
   insetBlock: 0,
   left: 0,
   zIndex: 40,
-  display: "flex",
   height: "full",
   width: "full",
-  flexDirection: "column",
+  direction: "column",
   backgroundColor: "page.bg",
   transitionProperty: "transform",
   transitionDuration: "200ms",
@@ -337,7 +337,7 @@ const sidebarStyle = css({
 
 const ghostIconButton = iconButton();
 
-const addWorktreeButton = css({
+const addWorktreeButton = flex({
   paddingInline: "3",
   paddingBlock: "1.5",
   borderRadius: "lg",
@@ -345,8 +345,7 @@ const addWorktreeButton = css({
   fontWeight: "medium",
   transitionProperty: "colors",
   transitionDuration: "150ms",
-  display: "flex",
-  alignItems: "center",
+  align: "center",
   gap: "1.5",
   backgroundColor: "subtle.bg",
   _hover: { backgroundColor: "secondary.wash" },
@@ -389,12 +388,11 @@ function SessionRow({
       )}
     >
       <span
-        className={css({
+        className={flex({
           width: "6",
           height: "4",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
+          align: "center",
+          justify: "center",
           flexShrink: 0,
         })}
       >
@@ -493,10 +491,9 @@ function WorktreeGroup({
     >
       <div className={css({ padding: "1" })}>
         <div
-          className={css({
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
+          className={flex({
+            align: "center",
+            justify: "space-between",
             gap: "2",
             borderRadius: "lg",
             paddingBlock: "2",
@@ -506,11 +503,10 @@ function WorktreeGroup({
           <Collapsible.Trigger asChild>
             <button
               type="button"
-              className={css({
-                display: "flex",
+              className={flex({
                 minWidth: 0,
                 flex: "1",
-                alignItems: "center",
+                align: "center",
                 gap: "1",
                 paddingInlineStart: "1",
                 textAlign: "left",
@@ -529,14 +525,13 @@ function WorktreeGroup({
               />
               <div className={css({ minWidth: 0 })}>
                 <p
-                  className={`font-mono ${css({
+                  className={`font-mono ${flex({
                     textStyle: "sm",
                     color: "primary.fg",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
-                    display: "flex",
-                    alignItems: "center",
+                    align: "center",
                     gap: "2",
                   })}`}
                 >
@@ -551,7 +546,7 @@ function WorktreeGroup({
               </div>
             </button>
           </Collapsible.Trigger>
-          <div className={css({ display: "flex", alignItems: "center", gap: "1", flexShrink: 0 })}>
+          <div className={flex({ align: "center", gap: "1", flexShrink: 0 })}>
             <Link
               to={`/session/new?dir=${encodeURIComponent(worktree.path)}`}
               title="New Session"
@@ -685,7 +680,7 @@ export default function SessionLayout() {
   }
 
   return (
-    <div className={css({ height: "full", display: "flex" })}>
+    <div className={flex({ height: "full" })}>
       <div
         className={cx(
           overlayStyle,
@@ -720,13 +715,12 @@ export default function SessionLayout() {
         )}
       >
         <div
-          className={css({
+          className={flex({
             flexShrink: 0,
             height: "14",
             paddingInline: "3",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "flex-end",
+            align: "center",
+            justify: "flex-end",
           })}
         >
           <Link to="/settings" aria-label="Settings" className={ghostIconButton}>
@@ -736,7 +730,7 @@ export default function SessionLayout() {
 
         <ScrollArea disableHorizontalScroll viewportClassName={viewportStyle}>
           {!ready ? (
-            <div className={css({ display: "flex", justifyContent: "center", paddingBlock: "10" })}>
+            <div className={flex({ justify: "center", paddingBlock: "10" })}>
               <Loader2Icon
                 className={css({ width: "6", height: "6", color: "subtle.fg", animation: "spin" })}
               />
@@ -744,21 +738,19 @@ export default function SessionLayout() {
           ) : (
             <>
               <div
-                className={css({
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
+                className={flex({
+                  align: "center",
+                  justify: "space-between",
                   marginBottom: "2",
                   paddingInlineStart: "1",
                 })}
               >
                 <h2
-                  className={css({
+                  className={flex({
                     textStyle: "sm",
                     fontWeight: "medium",
                     color: "secondary.fg",
-                    display: "flex",
-                    alignItems: "center",
+                    align: "center",
                     gap: "2",
                   })}
                 >

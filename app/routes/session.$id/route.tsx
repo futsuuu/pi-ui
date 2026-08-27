@@ -6,6 +6,7 @@ import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { data, useFetcher, useRevalidator } from "react-router";
 import { css } from "styled-system/css";
+import { flex } from "styled-system/patterns";
 import { topbar } from "styled-system/recipes";
 
 import { mergedSessionMessages } from "~/agent-session-container";
@@ -464,17 +465,16 @@ function Chat({
   const topbarClasses = topbar({ wide: true });
   return (
     <div
-      className={css({
+      className={flex({
         height: "full",
-        display: "flex",
-        flexDirection: "column",
+        direction: "column",
         position: "relative",
       })}
     >
       {/* Top bar — fixed at top */}
       <div className={topbarClasses.root}>
         <div className={topbarClasses.inner}>
-          <div className={css({ display: "flex", alignItems: "center", gap: "2" })}>
+          <div className={flex({ align: "center", gap: "2" })}>
             <span
               className={css({
                 width: "2",

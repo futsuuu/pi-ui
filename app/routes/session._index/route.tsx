@@ -1,5 +1,6 @@
 import { redirect } from "react-router";
 import { css } from "styled-system/css";
+import { flex } from "styled-system/patterns";
 
 import { projectRepositoryContext, worktreeRepositoryContext } from "~/router-contexts";
 
@@ -33,11 +34,10 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 export default function NoSessionSelected() {
   return (
     <div
-      className={css({
+      className={flex({
         height: "full",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        align: "center",
+        justify: "center",
         paddingInline: "4",
       })}
     >

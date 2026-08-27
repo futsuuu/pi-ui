@@ -2,6 +2,7 @@ import { Trash2 } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { Children, type ReactNode } from "react";
 import { css, cx } from "styled-system/css";
+import { flex } from "styled-system/patterns";
 
 const triggerStyle = css({
   borderRadius: "lg",
@@ -25,9 +26,8 @@ const contentStyle = css({
   padding: "1",
 });
 
-const deleteItemStyle = css({
-  display: "flex",
-  alignItems: "center",
+const deleteItemStyle = flex({
+  align: "center",
   gap: "2",
   paddingInline: "2.5",
   paddingBlock: "1.5",

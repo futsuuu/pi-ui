@@ -10,6 +10,7 @@ import { Select } from "radix-ui";
 import { memo, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Await } from "react-router";
 import { css, cx } from "styled-system/css";
+import { flex } from "styled-system/patterns";
 import { button, card } from "styled-system/recipes";
 
 const THINKING_LEVELS = [
@@ -49,10 +50,9 @@ const textareaStyle = css({
 
 const sendButtonStyle = cx(
   button(),
-  css({
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
+  flex({
+    align: "center",
+    justify: "center",
     padding: "1.5",
     _disabled: {
       backgroundColor: "disabled.bg",
@@ -63,10 +63,9 @@ const sendButtonStyle = cx(
 
 const abortButtonStyle = cx(
   button({ color: "danger" }),
-  css({
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
+  flex({
+    align: "center",
+    justify: "center",
     padding: "1.5",
   }),
 );
@@ -92,17 +91,15 @@ const selectContentStyle = css({
   overflow: "hidden",
 });
 
-const selectScrollButtonStyle = css({
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
+const selectScrollButtonStyle = flex({
+  align: "center",
+  justify: "center",
   height: "6",
 });
 
-const selectItemStyle = css({
+const selectItemStyle = flex({
   position: "relative",
-  display: "flex",
-  alignItems: "center",
+  align: "center",
   paddingInline: "8",
   paddingBlock: "2",
   textStyle: "sm",
@@ -203,7 +200,7 @@ function MessageInput({
             el.style.height = el.scrollHeight + "px";
           }}
         />
-        <div className={css({ display: "flex", alignItems: "center", gap: "2", marginTop: "3" })}>
+        <div className={flex({ align: "center", gap: "2", marginTop: "3" })}>
           {children}
           <div className={css({ marginLeft: "auto" })}>
             {isStreaming ? (
@@ -323,7 +320,7 @@ function ModelListItems({
                 className={selectItemStyle}
               >
                 <Select.ItemText>
-                  <div className={css({ display: "flex", flexDirection: "column" })}>
+                  <div className={flex({ direction: "column" })}>
                     <span className={css({ fontWeight: "medium" })}>{m.name}</span>
                     <span className={`${css({ textStyle: "xs", color: "subtle.fg" })} font-mono`}>
                       {m.id}
