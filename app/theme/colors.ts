@@ -76,11 +76,17 @@ export const amber = scale({
 
 export const colors = { gray, red, green, blue, amber };
 
+// One fixed alpha for every wash: foreground colors are never vanishingly
+// light, so this stays perceptible on any of the surfaces.
+const washAlpha = 10;
+const wash = (token: string) => `{colors.${token}/${washAlpha}}`;
+
 /**
  * Semantic color tokens. Components consume these instead of raw scales so a
- * palette change here propagates everywhere. Alpha values are kept only where
- * a layer must blend with whatever is behind it (the sidebar overlay, the
- * neutral ghost hover that adapts to any surface); surface colors are solid.
+ * palette change here propagates everywhere. Surfaces and marks are solid;
+ * the wash namespace tints a background with an element's own foreground
+ * color at a fixed alpha (the hover and diff-row rule), following both
+ * themes through the referenced token.
  */
 export const semantic = {
   bg: {
@@ -88,12 +94,8 @@ export const semantic = {
     card: { value: { base: "{colors.white}", _dark: "{colors.gray.800}" } },
     panel: { value: { base: "{colors.white}", _dark: "{colors.gray.900}" } },
     subtle: { value: { base: "{colors.gray.100}", _dark: "{colors.gray.800}" } },
-    hover: { value: { base: "{colors.gray.100}", _dark: "{colors.gray.800}" } },
-    hoverStrong: { value: { base: "{colors.gray.200}", _dark: "{colors.gray.700}" } },
-    hoverSubtle: { value: { base: "{colors.gray.50}", _dark: "{colors.gray.800}" } },
-    hoverTransparent: { value: { base: "rgba(0,0,0,0.1)", _dark: "rgba(255,255,255,0.1)" } },
     disabled: { value: { base: "{colors.gray.300}", _dark: "{colors.gray.700}" } },
-    overlay: { value: { base: "rgba(0,0,0,0.4)" } },
+    overlay: { value: { base: "{colors.black/40}" } },
     scroll: { value: { base: "{colors.black}", _dark: "{colors.white}" } },
   },
   fg: {
@@ -109,34 +111,36 @@ export const semantic = {
     divider: { value: { base: "{colors.gray.100}", _dark: "{colors.gray.800}" } },
   },
   accent: {
-    soft: { value: { base: "{colors.blue.50}", _dark: "{colors.blue.950}" } },
-    softHover: { value: { base: "{colors.blue.100}", _dark: "{colors.blue.900}" } },
     fg: { value: { base: "{colors.blue.700}", _dark: "{colors.blue.400}" } },
   },
   danger: {
     DEFAULT: { value: { base: "{colors.red.600}", _dark: "{colors.red.400}" } },
     strong: { value: { base: "{colors.red.700}", _dark: "{colors.red.300}" } },
-    soft: { value: { base: "{colors.red.50}", _dark: "{colors.red.950}" } },
     border: { value: { base: "{colors.red.200}", _dark: "{colors.red.800}" } },
     solid: { value: { base: "{colors.red.600}", _dark: "{colors.red.600}" } },
-    solidHover: { value: { base: "{colors.red.700}", _dark: "{colors.red.700}" } },
     icon: { value: { base: "{colors.red.500}", _dark: "{colors.red.400}" } },
   },
   success: {
     DEFAULT: { value: { base: "{colors.green.600}", _dark: "{colors.green.400}" } },
-    soft: { value: { base: "{colors.green.50}", _dark: "{colors.green.950}" } },
     icon: { value: { base: "{colors.green.500}", _dark: "{colors.green.400}" } },
   },
   info: { DEFAULT: { value: { base: "{colors.blue.500}", _dark: "{colors.blue.400}" } } },
-  action: {
-    DEFAULT: { value: { base: "{colors.blue.600}", _dark: "{colors.blue.600}" } },
-    hover: { value: { base: "{colors.blue.700}", _dark: "{colors.blue.700}" } },
-  },
+  action: { DEFAULT: { value: { base: "{colors.blue.600}", _dark: "{colors.blue.600}" } } },
   warning: {
     DEFAULT: { value: { base: "{colors.amber.600}", _dark: "{colors.amber.400}" } },
-    soft: { value: { base: "{colors.amber.50}", _dark: "{colors.amber.950}" } },
     fg: { value: { base: "{colors.amber.800}", _dark: "{colors.amber.200}" } },
     strong: { value: { base: "{colors.amber.700}", _dark: "{colors.amber.300}" } },
     icon: { value: { base: "{colors.amber.500}", _dark: "{colors.amber.400}" } },
+  },
+  wash: {
+    primary: { value: wash("fg.primary") },
+    secondary: { value: wash("fg.secondary") },
+    muted: { value: wash("fg.muted") },
+    subtle: { value: wash("fg.subtle") },
+    inverse: { value: wash("fg.inverse") },
+    accent: { value: wash("accent.fg") },
+    danger: { value: wash("danger") },
+    success: { value: wash("success") },
+    warning: { value: wash("warning") },
   },
 };

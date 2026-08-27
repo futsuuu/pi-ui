@@ -10,12 +10,12 @@ const iconButton = defineRecipe({
     color: "fg.muted",
     transitionProperty: "colors",
     transitionDuration: "150ms",
-    _hover: { backgroundColor: "bg.hover" },
+    _hover: { backgroundColor: "wash.muted" },
   },
   variants: {
     emphasis: {
       onHover: {
-        _hover: { color: "fg.primary", backgroundColor: "bg.hover" },
+        _hover: { color: "fg.primary", backgroundColor: "wash.muted" },
       },
     },
   },
@@ -33,11 +33,11 @@ const button = defineRecipe({
     color: {
       primary: {
         backgroundColor: "action",
-        _hover: { backgroundColor: "action.hover" },
+        _hover: { backgroundColor: "wash.inverse" },
       },
       danger: {
         backgroundColor: "danger.solid",
-        _hover: { backgroundColor: "danger.solidHover" },
+        _hover: { backgroundColor: "wash.inverse" },
       },
     },
   },
