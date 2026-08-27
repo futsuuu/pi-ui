@@ -236,11 +236,11 @@ const sessionRow = cva({
   variants: {
     open: {
       true: {
-        backgroundColor: "accent.soft",
-        _hover: { backgroundColor: "accent.softHover" },
+        backgroundColor: "wash.accent",
+        _hover: { backgroundColor: "wash.accent" },
       },
       false: {
-        _hover: { backgroundColor: "bg.hoverSubtle" },
+        _hover: { backgroundColor: "wash.primary" },
       },
     },
     deleting: {
@@ -264,7 +264,7 @@ const badgeBase = css.raw({
 
 const mainBadgeStyle = cx(
   css(badgeBase),
-  css({ backgroundColor: "accent.softHover", color: "accent.fg" }),
+  css({ backgroundColor: "wash.accent", color: "accent.fg" }),
 );
 
 const detachedBadgeStyle = cx(
@@ -348,7 +348,7 @@ const addWorktreeButton = css({
   alignItems: "center",
   gap: "1.5",
   backgroundColor: "bg.subtle",
-  _hover: { backgroundColor: "bg.hoverStrong" },
+  _hover: { backgroundColor: "wash.secondary" },
   color: "fg.secondary",
   _disabled: { opacity: 0.5, cursor: "not-allowed" },
 });
@@ -357,7 +357,7 @@ const errorBannerStyle = css({
   textStyle: "sm",
   color: "danger",
   marginBottom: "2",
-  backgroundColor: "danger.soft",
+  backgroundColor: "wash.danger",
   borderWidth: "1px",
   borderColor: "danger.border",
   borderRadius: "lg",
@@ -499,7 +499,7 @@ function WorktreeGroup({
             gap: "2",
             borderRadius: "lg",
             paddingBlock: "2",
-            _hover: { backgroundColor: "bg.hoverSubtle" },
+            _hover: { backgroundColor: "wash.primary" },
           })}
         >
           <Collapsible.Trigger asChild>
