@@ -4,36 +4,16 @@ import path from "node:path";
 
 import { Folder, ArrowLeft, File, Layers, Settings, ArrowRight } from "lucide-react";
 import { Link, useLoaderData } from "react-router";
-import { css } from "styled-system/css";
+import { css, cx } from "styled-system/css";
+import { button, card, iconButton, topbar } from "styled-system/recipes";
 
 import { projectRepositoryContext } from "~/router-contexts";
 
 import type { Route } from "./+types/route";
 
-const topbarStyle = css({
-  backgroundColor: "bg.panel",
-  borderBottomWidth: "1px",
-  borderColor: "border.panel",
-});
+const topbarClasses = topbar();
 
-const topbarInnerStyle = css({
-  maxWidth: "3xl",
-  marginInline: "auto",
-  paddingInline: "4",
-  height: "14",
-  display: "flex",
-  alignItems: "center",
-  gap: "3",
-});
-
-const iconGhostButton = css({
-  padding: "2",
-  borderRadius: "lg",
-  color: "fg.muted",
-  transitionProperty: "colors",
-  transitionDuration: "150ms",
-  _hover: { backgroundColor: { base: "gray.100", _dark: "gray.800" } },
-});
+const iconGhostButton = iconButton();
 
 const crumbLink = css({
   paddingInline: "2",
@@ -41,7 +21,7 @@ const crumbLink = css({
   textStyle: "xs",
   borderRadius: "sm",
   flexShrink: 0,
-  _hover: { backgroundColor: { base: "gray.200", _dark: "gray.700" } },
+  _hover: { backgroundColor: "bg.hoverStrong" },
 });
 
 const recentDirStyle = css({
@@ -60,7 +40,7 @@ const recentDirStyle = css({
   whiteSpace: "nowrap",
   transitionProperty: "colors",
   transitionDuration: "150ms",
-  _hover: { backgroundColor: { base: "gray.100", _dark: "gray.800" } },
+  _hover: { backgroundColor: "bg.hover" },
 });
 
 const entryRowBase = {
@@ -76,40 +56,37 @@ const entryRowBase = {
 
 const dirRowStyle = css({
   ...entryRowBase,
-  _hover: { backgroundColor: { base: "gray.100", _dark: "gray.800" } },
+  _hover: { backgroundColor: "bg.hover" },
 });
 
 const fileRowStyle = css({
   ...entryRowBase,
   cursor: "default",
-  color: "gray.500",
+  color: "fg.muted",
 });
 
 const parentRowStyle = css({
   ...entryRowBase,
   color: "fg.muted",
   borderBottomWidth: "1px",
-  borderColor: { base: "gray.100", _dark: "gray.800" },
-  _hover: { backgroundColor: { base: "gray.100", _dark: "gray.800" } },
+  borderColor: "border.divider",
+  _hover: { backgroundColor: "bg.hover" },
 });
 
-const ctaStyle = css({
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: "2",
-  width: "full",
-  backgroundColor: "action",
-  color: "white",
-  fontWeight: "medium",
-  paddingBlock: "2.5",
-  paddingInline: "4",
-  borderRadius: "lg",
-  textStyle: "sm",
-  transitionProperty: "colors",
-  transitionDuration: "150ms",
-  _hover: { backgroundColor: "action.hover" },
-});
+const ctaStyle = cx(
+  button(),
+  css({
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "2",
+    width: "full",
+    fontWeight: "medium",
+    paddingBlock: "2.5",
+    paddingInline: "4",
+    textStyle: "sm",
+  }),
+);
 
 const truncateStyle = css({
   overflow: "hidden",
@@ -170,9 +147,9 @@ export default function Home() {
   return (
     <div className={css({ height: "full", display: "flex", flexDirection: "column" })}>
       {/* Top bar */}
-      <div className={topbarStyle}>
-        <div className={topbarInnerStyle}>
-          <Layers className={css({ width: "5", height: "5", color: "blue.500" })} />
+      <div className={topbarClasses.root}>
+        <div className={topbarClasses.inner}>
+          <Layers className={css({ width: "5", height: "5", color: "info" })} />
           <span className={css({ fontWeight: "semibold", color: "fg.primary" })}>
             Select Working Directory
           </span>
@@ -220,7 +197,12 @@ export default function Home() {
                   className={recentDirStyle}
                 >
                   <Folder
-                    className={css({ width: "4", height: "4", flexShrink: 0, color: "amber.500" })}
+                    className={css({
+                      width: "4",
+                      height: "4",
+                      flexShrink: 0,
+                      color: "warning.icon",
+                    })}
                   />
                   <span className={truncateStyle}>{dir.path}</span>
                 </Link>
@@ -231,13 +213,12 @@ export default function Home() {
 
         {/* Directory Picker */}
         <div
-          className={css({
-            backgroundColor: "bg.panel",
-            borderWidth: "1px",
-            borderColor: "border.panel",
-            borderRadius: "xl",
-            overflow: "hidden",
-          })}
+          className={cx(
+            card(),
+            css({
+              overflow: "hidden",
+            }),
+          )}
         >
           <div
             className={css({
@@ -247,20 +228,20 @@ export default function Home() {
               padding: "2",
               borderBottomWidth: "1px",
               borderColor: "border.panel",
-              backgroundColor: { base: "gray.50", _dark: "gray.900" },
+              backgroundColor: "bg.subtle",
               overflowX: "auto",
             })}
           >
             <Link to={`/?dir=${encodeURIComponent(homeDir)}`} replace className={crumbLink}>
               ~
             </Link>
-            <span className={css({ color: "gray.400", flexShrink: 0 })}>/</span>
+            <span className={css({ color: "fg.subtle", flexShrink: 0 })}>/</span>
             {breadcrumbs.map((crumb, i) => (
               <span
                 key={crumb.path}
                 className={css({ display: "flex", alignItems: "center", gap: "1", flexShrink: 0 })}
               >
-                {i > 0 && <span className={css({ color: "gray.400" })}>/</span>}
+                {i > 0 && <span className={css({ color: "fg.subtle" })}>/</span>}
                 {i < breadcrumbs.length - 1 ? (
                   <Link
                     to={`/?dir=${encodeURIComponent(crumb.path)}`}
@@ -300,14 +281,19 @@ export default function Home() {
                   className={dirRowStyle}
                 >
                   <Folder
-                    className={css({ width: "4", height: "4", color: "amber.500", flexShrink: 0 })}
+                    className={css({
+                      width: "4",
+                      height: "4",
+                      color: "warning.icon",
+                      flexShrink: 0,
+                    })}
                   />
                   <span className={truncateStyle}>{entry.name}</span>
                 </Link>
               ) : (
                 <div key={entry.path} className={fileRowStyle}>
                   <File
-                    className={css({ width: "4", height: "4", color: "gray.400", flexShrink: 0 })}
+                    className={css({ width: "4", height: "4", color: "fg.subtle", flexShrink: 0 })}
                   />
                   <span className={truncateStyle}>{entry.name}</span>
                 </div>
@@ -319,7 +305,7 @@ export default function Home() {
                   paddingInline: "4",
                   paddingBlock: "8",
                   textAlign: "center",
-                  color: "gray.400",
+                  color: "fg.subtle",
                   textStyle: "sm",
                 })}
               >
@@ -333,7 +319,7 @@ export default function Home() {
               padding: "4",
               borderTopWidth: "1px",
               borderColor: "border.panel",
-              backgroundColor: { base: "gray.50", _dark: "gray.900" },
+              backgroundColor: "bg.subtle",
             })}
           >
             <Link to={`/session?dir=${encodeURIComponent(currentDir)}`} className={ctaStyle}>
