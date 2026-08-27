@@ -79,7 +79,7 @@ const selectTriggerStyle = css({
   paddingInline: "2.5",
   paddingBlock: "1",
   borderRadius: "full",
-  _hover: { backgroundColor: "bg.hover" },
+  _hover: { backgroundColor: "wash.primary" },
 });
 
 const selectContentStyle = css({
@@ -111,7 +111,7 @@ const selectItemStyle = css({
   cursor: "pointer",
   userSelect: "none",
   _highlighted: {
-    backgroundColor: "accent.softHover",
+    backgroundColor: "wash.accent",
     color: "accent.fg",
   },
 });

@@ -30,7 +30,7 @@ const summaryStyle = css({
 const thinkingStyle = css({
   marginTop: "1",
   padding: "2",
-  backgroundColor: "warning.soft",
+  backgroundColor: "wash.warning",
   borderRadius: "sm",
   textStyle: "xs",
   color: "warning.fg",

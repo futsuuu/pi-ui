@@ -518,7 +518,7 @@ function Chat({
               className={css({
                 textStyle: "sm",
                 color: "danger",
-                backgroundColor: "danger.soft",
+                backgroundColor: "wash.danger",
                 borderWidth: "1px",
                 borderColor: "danger.border",
                 borderRadius: "lg",
