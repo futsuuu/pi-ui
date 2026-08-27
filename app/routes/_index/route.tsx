@@ -21,7 +21,7 @@ const crumbLink = css({
   textStyle: "xs",
   borderRadius: "sm",
   flexShrink: 0,
-  _hover: { backgroundColor: "bg.hoverStrong" },
+  _hover: { backgroundColor: "wash.primary" },
 });
 
 const recentDirStyle = css({
@@ -40,7 +40,7 @@ const recentDirStyle = css({
   whiteSpace: "nowrap",
   transitionProperty: "colors",
   transitionDuration: "150ms",
-  _hover: { backgroundColor: "bg.hover" },
+  _hover: { backgroundColor: "wash.secondary" },
 });
 
 const entryRowBase = {
@@ -56,7 +56,7 @@ const entryRowBase = {
 
 const dirRowStyle = css({
   ...entryRowBase,
-  _hover: { backgroundColor: "bg.hover" },
+  _hover: { backgroundColor: "wash.primary" },
 });
 
 const fileRowStyle = css({
@@ -70,7 +70,7 @@ const parentRowStyle = css({
   color: "fg.muted",
   borderBottomWidth: "1px",
   borderColor: "border.divider",
-  _hover: { backgroundColor: "bg.hover" },
+  _hover: { backgroundColor: "wash.muted" },
 });
 
 const ctaStyle = cx(
