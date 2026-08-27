@@ -237,6 +237,7 @@ const sessionRow = cva({
     open: {
       true: {
         backgroundColor: "wash.accent",
+        color: "accent.fg",
         _hover: { backgroundColor: "wash.accent" },
       },
       false: {
@@ -419,7 +420,7 @@ function SessionRow({
           className={css({
             fontWeight: "medium",
             textStyle: "sm",
-            color: "fg.primary",
+            color: open ? "accent.fg" : "fg.primary",
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
