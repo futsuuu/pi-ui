@@ -51,7 +51,7 @@ export interface Props {
 /** Render assistant message text as GitHub-flavored Markdown with Shiki highlighting. */
 export function Markdown({ children }: Props) {
   return (
-    <div className="prose dark:prose-invert max-w-none break-words">
+    <div className="prose">
       <MarkdownHooks
         remarkPlugins={[remarkGfm]}
         rehypePlugins={rehypePlugins}
