@@ -3,14 +3,16 @@ import { homedir } from "node:os";
 import type { AgentMessage as SessionMessage } from "@earendil-works/pi-agent-core";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import { Menu } from "lucide-react";
 import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
-import { data, useFetcher, useRevalidator } from "react-router";
+import { data, useFetcher, useOutletContext, useRevalidator } from "react-router";
 
 import { mergedSessionMessages } from "~/agent-session-container";
 import { ScrollArea } from "~/components/scroll-area";
 import { useSessionStream } from "~/contexts/session-events";
 import { agentSessionContainerContext } from "~/router-contexts";
 
+import type { SessionOutletContext } from "../session/route";
 import type { Route } from "./+types/route";
 import type { ActionInput, action } from "./action";
 import { AgentMessage } from "./agent-message";
@@ -171,6 +173,7 @@ function Chat({
   // provider only delivers events for the subscribed session, so no
   // filtering is needed.
   const { info, viewState, connected, subscribe } = useSessionStream(sessionId);
+  const { openSidebar } = useOutletContext<SessionOutletContext>();
 
   // Close the [loader read -> subscription] window and [disconnect ->
   // reconnect] outages with one revalidation per session, guarded against a
@@ -463,7 +466,15 @@ function Chat({
     <div className="h-full flex flex-col relative">
       {/* Top bar — fixed at top */}
       <div className="flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
-        <div className="max-w-5xl mx-auto pl-14 pr-4 lg:px-4 h-14 flex items-center">
+        <div className="max-w-5xl mx-auto px-4 h-14 flex items-center gap-2">
+          <button
+            type="button"
+            aria-label="Open sidebar"
+            onClick={openSidebar}
+            className="rounded-lg p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 lg:hidden"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
           <div className="flex items-center gap-2">
             <span className={`w-2 h-2 rounded-full ${connected ? "bg-green-500" : "bg-red-500"}`} />
             <span className="text-xs text-gray-500 dark:text-gray-400">

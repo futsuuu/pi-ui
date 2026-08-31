@@ -2,7 +2,12 @@ import { redirect } from "react-router";
 
 import { projectRepositoryContext, worktreeRepositoryContext } from "~/router-contexts";
 
+import type { SessionHandle } from "../session/route";
 import type { Route } from "./+types/route";
+
+export const handle: SessionHandle = {
+  hideSidebarCloseButton: true,
+};
 
 export function meta(_: Route.MetaArgs) {
   return [{ title: "Pi UI - Sessions" }];
