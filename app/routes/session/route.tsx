@@ -5,7 +5,6 @@ import {
   Dot,
   GitBranch,
   Loader2Icon,
-  Menu,
   MessageCirclePlus,
   MoreVertical,
   Plus,
@@ -21,6 +20,7 @@ import {
   redirect,
   useFetcher,
   useLoaderData,
+  useMatches,
   useNavigate,
   useParams,
 } from "react-router";
@@ -368,15 +368,19 @@ function WorktreeGroup({
   );
 }
 
-/**
- * Layout for `/session` routes: the session list sidebar plus the selected
- * route's content. Wide viewports show the sidebar persistently; narrower
- * ones toggle it over the content through a hamburger button (full-screen on
- * mobile).
- */
+export interface SessionOutletContext {
+  openSidebar: () => void;
+}
+
+export type SessionHandle = { hideSidebarCloseButton?: boolean };
+
 export default function SessionLayout() {
   const { worktrees, cwd } = useLoaderData<typeof loader>();
   const { ready } = useSessionEventsContext();
+  const matches = useMatches();
+  const hideSidebarCloseButton = matches.some(
+    (match) => (match.handle as SessionHandle | undefined)?.hideSidebarCloseButton,
+  );
   const fetcher = useFetcher<typeof action>();
   const navigate = useNavigate();
   const { id: openSessionId } = useParams();
@@ -474,23 +478,24 @@ export default function SessionLayout() {
         onClick={() => setSidebarOpen(false)}
       />
 
-      <button
-        type="button"
-        aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
-        onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="fixed left-2 top-2.5 z-50 rounded-lg p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 lg:hidden"
-      >
-        {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-      </button>
-
       <aside
         className={`fixed inset-y-0 left-0 z-40 flex h-full w-full flex-col bg-gray-50 dark:bg-gray-950 transition-transform duration-200 sm:w-96 lg:static lg:w-96 lg:shrink-0 lg:translate-x-0 lg:visible lg:pointer-events-auto lg:border-r lg:border-gray-200 dark:lg:border-gray-800 ${sidebarOpen ? "translate-x-0 visible" : "-translate-x-full invisible pointer-events-none"}`}
       >
-        <div className="flex-shrink-0 h-14 px-3 flex items-center justify-end">
+        <div className="flex-shrink-0 h-14 px-4 flex items-center">
+          {!hideSidebarCloseButton && (
+            <button
+              type="button"
+              aria-label="Close sidebar"
+              onClick={() => setSidebarOpen(false)}
+              className="rounded-lg p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 lg:hidden"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
           <Link
             to="/settings"
             aria-label="Settings"
-            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-500 dark:text-gray-400"
+            className="ml-auto p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-500 dark:text-gray-400"
           >
             <Settings className="w-5 h-5" />
           </Link>
@@ -541,7 +546,7 @@ export default function SessionLayout() {
       </aside>
 
       <main className="flex-1 min-w-0 h-full overflow-hidden">
-        <Outlet />
+        <Outlet context={{ openSidebar: () => setSidebarOpen(true) }} />
       </main>
     </div>
   );
