@@ -7,7 +7,7 @@ import {
   type AgentSessionEvent,
   type CreateAgentSessionRuntimeFactory,
 } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   AgentSessionContainer,
@@ -482,6 +482,52 @@ describe("AgentSessionContainer.currentInfo", () => {
       });
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("AgentSessionContainer idle disposal", () => {
+  it("disposes a runtime after fifteen minutes without use", async () => {
+    vi.useFakeTimers();
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        const { id } = createSession(cwd);
+        const container = AgentSessionContainer.withFactory(realFactory);
+
+        await container.get(id, { cwd });
+        await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+
+        expect(await container.currentInfo(id)).toBeNull();
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      vi.useRealTimers();
+    }
+  });
+
+  it("resets the idle timeout when a runtime is used", async () => {
+    vi.useFakeTimers();
+    const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-session-"));
+    try {
+      await withAgentDir(root, async () => {
+        const cwd = path.join(root, "cwd");
+        mkdirSync(cwd, { recursive: true });
+        const { id } = createSession(cwd);
+        const container = AgentSessionContainer.withFactory(realFactory);
+
+        await container.get(id, { cwd });
+        await vi.advanceTimersByTimeAsync(14 * 60 * 1000);
+        await container.get(id, { cwd });
+        await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
+
+        expect(await container.currentInfo(id)).not.toBeNull();
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      vi.useRealTimers();
     }
   });
 });
