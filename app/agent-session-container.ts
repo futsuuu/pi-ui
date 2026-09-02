@@ -90,6 +90,7 @@ export type ContainerEvent =
 
 /** Stable empty buffer shared by idle sessions (no current turn in flight). */
 const EMPTY_TURN_EVENTS: AgentSessionEvent[] = [];
+const SESSION_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 
 /**
  * Fold one session event into the current turn's buffer. Returns the new
@@ -200,6 +201,7 @@ export class AgentSessionContainer {
    * `agent_settled`, deletion, and runtime disposal.
    */
   private turnBuffers: Map<string, AgentSessionEvent[]> = new Map();
+  private idleDisposalTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
   private constructor(
     private createRuntimeFactory: CreateAgentSessionRuntimeFactory,
@@ -224,6 +226,7 @@ export class AgentSessionContainer {
   public async findSessionCwd(sessionId: string): Promise<string | null> {
     const runtime = this.runtimes.get(sessionId);
     if (runtime) {
+      this.refreshIdleDisposal(sessionId);
       const loaded = await runtime.catch(() => null);
       if (loaded) return loaded.session.sessionManager.getCwd();
     }
@@ -260,6 +263,7 @@ export class AgentSessionContainer {
 
   /** Keep the per-session turn buffer in sync with the session's events. */
   private handleSessionEvent(sessionId: string, event: AgentSessionEvent) {
+    this.refreshIdleDisposal(sessionId);
     const next = applyTurnEvent(this.turnBuffers.get(sessionId), event);
     if (next) this.turnBuffers.set(sessionId, next);
     else this.turnBuffers.delete(sessionId);
@@ -318,7 +322,9 @@ export class AgentSessionContainer {
       sessionManager,
     });
     const sessionId = runtime.session.sessionId;
-    this.runtimes.set(sessionId, Promise.resolve(runtime));
+    const promise = Promise.resolve(runtime);
+    this.runtimes.set(sessionId, promise);
+    this.scheduleIdleDisposal(sessionId, promise);
     runtime.session.subscribe((event) => this.handleSessionEvent(sessionId, event));
     return runtime.session;
   }
@@ -331,15 +337,28 @@ export class AgentSessionContainer {
   private getRuntime(sessionId: string, hints: { cwd?: string } = {}) {
     const existing = this.runtimes.get(sessionId);
     if (existing) {
+      this.refreshIdleDisposal(sessionId);
       return existing;
     }
     const promise = this.getRuntimeInner(sessionId, hints);
     this.runtimes.set(sessionId, promise);
-    void promise.catch(() => {
-      if (this.runtimes.get(sessionId) === promise) {
-        this.runtimes.delete(sessionId);
-      }
-    });
+    void promise.then(
+      (runtime) => {
+        if (this.runtimes.get(sessionId) !== promise) return;
+        if (runtime) {
+          this.scheduleIdleDisposal(sessionId, promise);
+        } else {
+          this.runtimes.delete(sessionId);
+          this.clearIdleDisposal(sessionId);
+        }
+      },
+      () => {
+        if (this.runtimes.get(sessionId) === promise) {
+          this.runtimes.delete(sessionId);
+          this.clearIdleDisposal(sessionId);
+        }
+      },
+    );
     return promise;
   }
 
@@ -407,6 +426,7 @@ export class AgentSessionContainer {
   public async currentInfo(sessionId: string): Promise<SessionInfo | null> {
     const runtime = this.runtimes.get(sessionId);
     if (!runtime) return null;
+    this.refreshIdleDisposal(sessionId);
     const loaded = await runtime.catch(() => null);
     return loaded ? this.loadedInfo(sessionId, loaded.session) : null;
   }
@@ -427,8 +447,50 @@ export class AgentSessionContainer {
     };
   }
 
+  private refreshIdleDisposal(sessionId: string) {
+    const promise = this.runtimes.get(sessionId);
+    if (promise) this.scheduleIdleDisposal(sessionId, promise);
+  }
+
+  private clearIdleDisposal(sessionId: string) {
+    const timer = this.idleDisposalTimers.get(sessionId);
+    if (timer !== undefined) clearTimeout(timer);
+    this.idleDisposalTimers.delete(sessionId);
+  }
+
+  private scheduleIdleDisposal(sessionId: string, promise: Promise<AgentSessionRuntime | null>) {
+    this.clearIdleDisposal(sessionId);
+    const timer = setTimeout(() => {
+      if (this.idleDisposalTimers.get(sessionId) !== timer) return;
+      this.idleDisposalTimers.delete(sessionId);
+      void this.disposeIfIdle(sessionId, promise).catch(() => undefined);
+    }, SESSION_IDLE_TIMEOUT_MS);
+    timer.unref?.();
+    this.idleDisposalTimers.set(sessionId, timer);
+  }
+
+  private async disposeIfIdle(sessionId: string, promise: Promise<AgentSessionRuntime | null>) {
+    if (this.runtimes.get(sessionId) !== promise || this.idleDisposalTimers.has(sessionId)) {
+      return;
+    }
+    const runtime = await promise;
+    if (this.runtimes.get(sessionId) !== promise || this.idleDisposalTimers.has(sessionId)) {
+      return;
+    }
+    if (
+      runtime?.session.isStreaming ||
+      runtime?.session.isCompacting ||
+      this.turnBuffers.has(sessionId)
+    ) {
+      this.scheduleIdleDisposal(sessionId, promise);
+      return;
+    }
+    await this.dispose(sessionId);
+  }
+
   public async dispose(sessionId: string) {
     const promise = this.runtimes.get(sessionId);
+    this.clearIdleDisposal(sessionId);
     if (!promise) return;
     this.runtimes.delete(sessionId);
     this.turnBuffers.delete(sessionId);
@@ -512,6 +574,7 @@ export class AgentSessionContainer {
   ): Promise<string[] | null> {
     const runtime = this.runtimes.get(sessionId);
     if (runtime) {
+      this.refreshIdleDisposal(sessionId);
       const loaded = await runtime.catch(() => null);
       if (loaded) {
         return orderedDisplayKeys(
