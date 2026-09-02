@@ -500,6 +500,11 @@ export class AgentSessionContainer {
     }
   }
 
+  public async disposeAll() {
+    await Promise.allSettled([...this.runtimes.keys()].map((sessionId) => this.dispose(sessionId)));
+    this.listeners.clear();
+  }
+
   /**
    * Delete a session: moves its file to the OS trash when the `trash` CLI is
    * available, otherwise deletes it directly. Any loaded runtime is disposed
