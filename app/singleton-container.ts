@@ -63,11 +63,14 @@ if (!globalThis.__singletonContainerCleanupRegistered__) {
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => {
       const exitCode = SHUTDOWN_EXIT_CODES[signal];
-      // An unref'd timer still fires while any handle keeps the loop alive, so
-      // a hung extension shutdown handler can no longer block process exit.
+      // The deadline timer keeps the loop alive while cleanup is pending, so a
+      // hung runtime dispose cannot block exit beyond the grace period and the
+      // exit still carries the signal's expected status.
       const forceExit = setTimeout(() => process.exit(exitCode), SHUTDOWN_GRACE_MS);
-      forceExit.unref();
-      void disposeSingletonContainer().finally(() => process.exit(exitCode));
+      void disposeSingletonContainer().finally(() => {
+        clearTimeout(forceExit);
+        process.exit(exitCode);
+      });
     });
   }
 }
