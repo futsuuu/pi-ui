@@ -31,12 +31,39 @@
           pnpm = pkgs.pnpm.override { inherit nodejs-slim; };
           pnpmDeps = pkgs.fetchPnpmDeps {
             pname = "pnpm-deps";
+            version = "0";
             src = ./.;
             fetcherVersion = 4;
-            hash = "sha256-BWbV5/4EatIUPbmesofRMlj4CqMvReblwxYFEE+2Bbk=";
+            hash = "sha256-gzjHfltIAYg6dOxEJjhx00LEWfuc/sT1voxnfhOcjGg=";
           };
         in
         {
+          packages = {
+            pnpm-deps = pnpmDeps;
+          };
+
+          apps = {
+            update-pnpm-hash =
+              let
+                app = pkgs.writeShellApplication {
+                  name = "update-pnpm-hash";
+                  runtimeInputs = [
+                    pnpm
+                    pkgs.nix-update
+                  ];
+                  text = ''
+                    pnpm pkg set "devDependencies.playwright=${pkgs.playwright-driver.version}"
+                    pnpm install --lockfile-only --ignore-scripts
+                    nix-update pnpm-deps --flake --version=skip
+                  '';
+                };
+              in
+              {
+                type = "app";
+                program = "${app}/bin/update-pnpm-hash";
+              };
+          };
+
           checks = {
             fmt = pkgs.stdenv.mkDerivation {
               inherit pnpmDeps;
@@ -96,7 +123,7 @@
                 export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=true
 
                 playwright_driver_version=${pkgs.playwright-driver.version}
-                playwright_library_version=$(pnpm list --json --lockfile-only | ${pkgs.jq}/bin/jq --raw-output '.[0].devDependencies.playwright.version')
+                playwright_library_version=$(pnpm pkg get "devDependencies.playwright")
                 if [ "$playwright_driver_version" != "$playwright_library_version" ]; then
                   echo "playwright driver version ($playwright_driver_version) does not match library version ($playwright_library_version)"
                   exit 1
