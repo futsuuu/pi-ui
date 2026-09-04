@@ -240,11 +240,11 @@ function Chat({
   // Reflect the streamed session state into the local state.
   useEffect(() => {
     if (info) {
-      setState({
-        model: info.model,
+      setState((current) => ({
+        model: info.model ?? current.model,
         thinkingLevel: info.thinkingLevel,
         isStreaming: info.isStreaming,
-      });
+      }));
     }
   }, [info]);
 
