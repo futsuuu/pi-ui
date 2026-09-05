@@ -48,6 +48,7 @@ function info(overrides: Partial<SessionInfo> = {}): SessionInfo {
     thinkingLevel: "medium",
     isStreaming: false,
     isCompacting: false,
+    contextUsage: null,
     lastDisplayedMessageKey: null,
     latestMessageKey: null,
     isRead: true,

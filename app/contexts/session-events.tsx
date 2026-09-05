@@ -199,6 +199,7 @@ function sameSessionInfo(a: SessionInfo, b: SessionInfo): boolean {
     a.thinkingLevel === b.thinkingLevel &&
     a.isStreaming === b.isStreaming &&
     a.isCompacting === b.isCompacting &&
+    sameContextUsage(a.contextUsage, b.contextUsage) &&
     a.lastDisplayedMessageKey === b.lastDisplayedMessageKey &&
     a.latestMessageKey === b.latestMessageKey &&
     a.isRead === b.isRead &&
@@ -208,6 +209,17 @@ function sameSessionInfo(a: SessionInfo, b: SessionInfo): boolean {
         a.model.name === b.model.name &&
         a.model.provider === b.model.provider &&
         a.model.id === b.model.id))
+  );
+}
+
+function sameContextUsage(a: SessionInfo["contextUsage"], b: SessionInfo["contextUsage"]): boolean {
+  return (
+    a === b ||
+    (a != null &&
+      b != null &&
+      a.tokens === b.tokens &&
+      a.contextWindow === b.contextWindow &&
+      a.percent === b.percent)
   );
 }
 
