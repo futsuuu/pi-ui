@@ -18,6 +18,7 @@ import type { ActionInput, action } from "./action";
 import { AgentMessage } from "./agent-message";
 import { createChatState, chatReducer, chatDisplayKeys } from "./chat-reducer";
 import { useChatSync } from "./chat-sync";
+import { ContextUsageIndicator } from "./context-usage";
 import { isForwardKey, selectReportedKey } from "./display-tracker";
 import { entryKeyOf, messageKeyOf } from "./message-key";
 import { PathDisplayProvider } from "./path-display-context";
@@ -106,6 +107,7 @@ export async function loader({ context }: Route.LoaderArgs) {
         : null,
       thinkingLevel: session.thinkingLevel,
       isStreaming: session.isStreaming,
+      contextUsage: session.getContextUsage() ?? null,
     },
     messages,
     turnEvents,
@@ -244,6 +246,7 @@ function Chat({
         model: info.model ?? current.model,
         thinkingLevel: info.thinkingLevel,
         isStreaming: info.isStreaming,
+        contextUsage: info.contextUsage ?? current.contextUsage,
       }));
     }
   }, [info]);
@@ -481,6 +484,7 @@ function Chat({
               {connected ? "Connected" : "Disconnected"}
             </span>
           </div>
+          <ContextUsageIndicator usage={state.contextUsage} />
         </div>
       </div>
 

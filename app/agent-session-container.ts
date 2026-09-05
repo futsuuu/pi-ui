@@ -413,6 +413,7 @@ export class AgentSessionContainer {
       thinkingLevel: "medium",
       isStreaming: false,
       isCompacting: false,
+      contextUsage: null,
       lastDisplayedMessageKey: lastDisplayed,
       latestMessageKey: latest,
       isRead: isReadState(stored, latest),
@@ -663,6 +664,7 @@ function sessionInfo(
     thinkingLevel: session.thinkingLevel,
     isStreaming: session.isStreaming,
     isCompacting: session.isCompacting,
+    contextUsage: session.getContextUsage() ?? null,
   };
 }
 
