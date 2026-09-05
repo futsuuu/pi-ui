@@ -46,6 +46,7 @@ function info(
     thinkingLevel: "medium",
     isStreaming: false,
     isCompacting: false,
+    contextUsage: null,
     lastDisplayedMessageKey: null,
     latestMessageKey: null,
     isRead: true,

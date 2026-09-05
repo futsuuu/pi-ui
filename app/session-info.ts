@@ -1,4 +1,5 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { ContextUsage } from "@earendil-works/pi-coding-agent";
 
 /**
  * Current info for one session as carried by the global `/events` SSE stream.
@@ -17,6 +18,7 @@ export interface SessionInfo {
   thinkingLevel: ThinkingLevel;
   isStreaming: boolean;
   isCompacting: boolean;
+  contextUsage: ContextUsage | null;
   /** Newest message key any client has displayed in a viewport, or null. */
   lastDisplayedMessageKey: string | null;
   /** Newest renderable message key of the current projection, or null. */
