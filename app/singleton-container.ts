@@ -1,3 +1,5 @@
+import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+
 import { AgentSessionContainer } from "./agent-session-container";
 import { ProjectRepository } from "./project-repository";
 import { SessionViewStateRepository } from "./session-view-state";
@@ -5,6 +7,7 @@ import { WorktreeRepository } from "./worktree-repository";
 
 interface SingletonContainer {
   agentSessionContainer: AgentSessionContainer;
+  modelRuntime: ModelRuntime;
   projectRepository: ProjectRepository;
   worktreeRepository: WorktreeRepository;
 }
@@ -15,9 +18,16 @@ interface SingletonContainer {
  * @returns The initialized singleton container
  */
 async function createContainer(): Promise<SingletonContainer> {
+  const modelRuntime = await ModelRuntime.create({
+    allowModelNetwork: true,
+  });
   const sessionViewStateRepository = new SessionViewStateRepository();
   return {
-    agentSessionContainer: await AgentSessionContainer.create(sessionViewStateRepository),
+    agentSessionContainer: await AgentSessionContainer.create(
+      sessionViewStateRepository,
+      modelRuntime,
+    ),
+    modelRuntime,
     projectRepository: new ProjectRepository(),
     worktreeRepository: new WorktreeRepository(),
   };
