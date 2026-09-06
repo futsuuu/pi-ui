@@ -9,12 +9,12 @@ import {
   createAgentSessionRuntime,
   createAgentSessionServices,
   getAgentDir,
-  ModelRuntime,
   SessionManager,
   type AgentSession,
   type AgentSessionEvent,
   type AgentSessionRuntime,
   type CreateAgentSessionRuntimeFactory,
+  type ModelRuntime,
   type SessionEntry,
   type SessionInfo as PersistedSessionInfo,
   type SessionMessageEntry,
@@ -283,10 +283,8 @@ export class AgentSessionContainer {
 
   public static async create(
     viewStateRepository: SessionViewStateRepository = new SessionViewStateRepository(),
+    modelRuntime: ModelRuntime,
   ) {
-    const modelRuntime = await ModelRuntime.create({
-      allowModelNetwork: true,
-    });
     return new AgentSessionContainer(async ({ cwd, sessionManager, sessionStartEvent }) => {
       const services = await createAgentSessionServices({ cwd, modelRuntime });
       const result = await createAgentSessionFromServices({
