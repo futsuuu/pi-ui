@@ -2,12 +2,14 @@ import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 import { AgentSessionContainer } from "./agent-session-container";
 import { ProjectRepository } from "./project-repository";
+import { ProviderAuthManager } from "./provider-auth-manager";
 import { SessionViewStateRepository } from "./session-view-state";
 import { WorktreeRepository } from "./worktree-repository";
 
 interface SingletonContainer {
   agentSessionContainer: AgentSessionContainer;
   modelRuntime: ModelRuntime;
+  providerAuthManager: ProviderAuthManager;
   projectRepository: ProjectRepository;
   worktreeRepository: WorktreeRepository;
 }
@@ -21,6 +23,7 @@ async function createContainer(): Promise<SingletonContainer> {
   const modelRuntime = await ModelRuntime.create({
     allowModelNetwork: true,
   });
+  const providerAuthManager = new ProviderAuthManager(modelRuntime);
   const sessionViewStateRepository = new SessionViewStateRepository();
   return {
     agentSessionContainer: await AgentSessionContainer.create(
@@ -28,6 +31,7 @@ async function createContainer(): Promise<SingletonContainer> {
       modelRuntime,
     ),
     modelRuntime,
+    providerAuthManager,
     projectRepository: new ProjectRepository(),
     worktreeRepository: new WorktreeRepository(),
   };
@@ -58,7 +62,10 @@ export function getSingletonContainer(): Promise<SingletonContainer> {
 
 export function disposeSingletonContainer(): Promise<void> {
   cleanupPromise ??= container
-    .then(({ agentSessionContainer }) => agentSessionContainer.disposeAll())
+    .then(({ agentSessionContainer, providerAuthManager }) => {
+      providerAuthManager.dispose();
+      return agentSessionContainer.disposeAll();
+    })
     .catch(() => undefined);
   return cleanupPromise;
 }

@@ -16,6 +16,7 @@ import {
   agentSessionContainerContext,
   modelRuntimeContext,
   projectRepositoryContext,
+  providerAuthManagerContext,
   worktreeRepositoryContext,
 } from "./router-contexts";
 import { getSingletonContainer } from "./singleton-container";
@@ -36,6 +37,7 @@ export const middleware: Route.MiddlewareFunction[] = [
     const container = await getSingletonContainer();
     context.set(agentSessionContainerContext, container.agentSessionContainer);
     context.set(modelRuntimeContext, container.modelRuntime);
+    context.set(providerAuthManagerContext, container.providerAuthManager);
     context.set(projectRepositoryContext, container.projectRepository);
     context.set(worktreeRepositoryContext, container.worktreeRepository);
   },
