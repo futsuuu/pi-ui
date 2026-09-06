@@ -14,6 +14,7 @@ import { SessionEventProvider } from "./contexts/session-events";
 import { ThemeProvider, ThemeScript } from "./contexts/theme";
 import {
   agentSessionContainerContext,
+  modelRuntimeContext,
   projectRepositoryContext,
   worktreeRepositoryContext,
 } from "./router-contexts";
@@ -34,6 +35,7 @@ export const middleware: Route.MiddlewareFunction[] = [
   async ({ context }) => {
     const container = await getSingletonContainer();
     context.set(agentSessionContainerContext, container.agentSessionContainer);
+    context.set(modelRuntimeContext, container.modelRuntime);
     context.set(projectRepositoryContext, container.projectRepository);
     context.set(worktreeRepositoryContext, container.worktreeRepository);
   },
