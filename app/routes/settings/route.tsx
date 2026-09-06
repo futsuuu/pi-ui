@@ -1,12 +1,80 @@
 import { Layers, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
 import { ToggleGroup } from "radix-ui";
+import { data, redirect } from "react-router";
+import * as v from "valibot";
 
 import { useTheme, type Theme } from "~/contexts/theme";
+import { providerAuthManagerContext } from "~/router-contexts";
 
 import type { Route } from "./+types/route";
+import { isJsonContentRequest, isSameOriginRequest } from "./auth-guards";
 
 export function meta(_: Route.MetaArgs) {
   return [{ title: "Pi UI - Settings" }];
+}
+
+const SettingsActionSchema = v.variant("type", [
+  v.object({
+    type: v.literal("start_login"),
+    providerId: v.pipe(v.string(), v.minLength(1)),
+    authType: v.picklist(["api_key", "oauth"]),
+  }),
+  v.object({
+    type: v.literal("start_removal"),
+    providerId: v.pipe(v.string(), v.minLength(1)),
+    confirmed: v.literal(true),
+  }),
+]);
+
+export async function loader({ request, context }: Route.LoaderArgs) {
+  const manager = context.get(providerAuthManagerContext);
+  const providers = await manager.listProviders();
+  const operationId = new URL(request.url).searchParams.get("authOperation");
+  if (!operationId) return { providers, operation: null };
+  const operation = manager.getSnapshot(operationId);
+  if (!operation) throw redirect("/settings");
+  return { providers, operation };
+}
+
+export async function action({ request, context }: Route.ActionArgs) {
+  if (!isSameOriginRequest(request)) {
+    return data({ error: "Forbidden" }, { status: 403 });
+  }
+  if (!isJsonContentRequest(request)) {
+    return data({ error: "Unsupported media type" }, { status: 415 });
+  }
+  let parsed: unknown;
+  try {
+    parsed = await request.json();
+  } catch {
+    return data({ error: "Invalid request" }, { status: 400 });
+  }
+  const result = v.safeParse(SettingsActionSchema, parsed);
+  if (!result.success) {
+    return data({ error: "Invalid request" }, { status: 400 });
+  }
+  const manager = context.get(providerAuthManagerContext);
+  if (result.output.type === "start_login") {
+    const started = await manager.startLogin(result.output.providerId, result.output.authType);
+    if (!started.ok) {
+      if (started.error === "conflict") {
+        return data({ error: "conflict", operationId: started.operationId }, { status: 409 });
+      }
+      if (started.error === "unknown_provider") {
+        return data({ error: "unknown_provider" }, { status: 404 });
+      }
+      return data({ error: "unsupported_auth" }, { status: 400 });
+    }
+    throw redirect(`/settings?authOperation=${encodeURIComponent(started.operationId)}`);
+  }
+  const started = await manager.startRemoval(result.output.providerId);
+  if (!started.ok) {
+    if (started.error === "conflict") {
+      return data({ error: "conflict", operationId: started.operationId }, { status: 409 });
+    }
+    return data({ error: "no_stored_credential" }, { status: 404 });
+  }
+  throw redirect(`/settings?authOperation=${encodeURIComponent(started.operationId)}`);
 }
 
 const THEME_OPTIONS: { value: Theme; label: string; icon: LucideIcon }[] = [
