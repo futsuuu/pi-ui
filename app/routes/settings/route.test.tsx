@@ -3,7 +3,7 @@ import { render } from "vitest-browser-react";
 
 import { ThemeProvider } from "~/contexts/theme";
 
-import Settings from "./route";
+import { ThemePanel } from "./route";
 
 /** Stub the OS preference so a "system" theme resolves deterministically. */
 function installSystemDark(initialMatches: boolean) {
@@ -22,7 +22,7 @@ function installSystemDark(initialMatches: boolean) {
 function renderSettings() {
   return render(
     <ThemeProvider>
-      <Settings />
+      <ThemePanel />
     </ThemeProvider>,
   );
 }
