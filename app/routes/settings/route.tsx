@@ -1,6 +1,6 @@
 import { Layers, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
 import { ToggleGroup } from "radix-ui";
-import { data, redirect } from "react-router";
+import { data, replace, useLoaderData } from "react-router";
 import * as v from "valibot";
 
 import { useTheme, type Theme } from "~/contexts/theme";
@@ -8,6 +8,7 @@ import { providerAuthManagerContext } from "~/router-contexts";
 
 import type { Route } from "./+types/route";
 import { isJsonContentRequest, isSameOriginRequest } from "./auth-guards";
+import { SettingsAuthUI } from "./provider-auth";
 
 export function meta(_: Route.MetaArgs) {
   return [{ title: "Pi UI - Settings" }];
@@ -32,7 +33,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const operationId = new URL(request.url).searchParams.get("authOperation");
   if (!operationId) return { providers, operation: null };
   const operation = manager.getSnapshot(operationId);
-  if (!operation) throw redirect("/settings");
+  if (!operation) throw replace("/settings");
   return { providers, operation };
 }
 
@@ -65,7 +66,7 @@ export async function action({ request, context }: Route.ActionArgs) {
       }
       return data({ error: "unsupported_auth" }, { status: 400 });
     }
-    throw redirect(`/settings?authOperation=${encodeURIComponent(started.operationId)}`);
+    throw replace(`/settings?authOperation=${encodeURIComponent(started.operationId)}`);
   }
   const started = await manager.startRemoval(result.output.providerId);
   if (!started.ok) {
@@ -74,7 +75,7 @@ export async function action({ request, context }: Route.ActionArgs) {
     }
     return data({ error: "no_stored_credential" }, { status: 404 });
   }
-  throw redirect(`/settings?authOperation=${encodeURIComponent(started.operationId)}`);
+  throw replace(`/settings?authOperation=${encodeURIComponent(started.operationId)}`);
 }
 
 const THEME_OPTIONS: { value: Theme; label: string; icon: LucideIcon }[] = [
@@ -83,8 +84,39 @@ const THEME_OPTIONS: { value: Theme; label: string; icon: LucideIcon }[] = [
   { value: "dark", label: "Dark", icon: Moon },
 ];
 
-export default function Settings() {
+export function ThemePanel() {
   const { theme, setTheme } = useTheme();
+  return (
+    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">Theme</h2>
+        <ToggleGroup.Root
+          type="single"
+          value={theme}
+          onValueChange={(value) => {
+            if (value) setTheme(value as Theme);
+          }}
+          aria-label="Theme"
+          className="inline-flex items-stretch rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden"
+        >
+          {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
+            <ToggleGroup.Item
+              key={value}
+              value={value}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm transition-colors border-r last:border-r-0 border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 data-[state=on]:bg-blue-50 dark:data-[state=on]:bg-blue-900/40 data-[state=on]:text-blue-700 dark:data-[state=on]:text-blue-400"
+            >
+              <Icon className="w-4 h-4" />
+              {label}
+            </ToggleGroup.Item>
+          ))}
+        </ToggleGroup.Root>
+      </div>
+    </div>
+  );
+}
+
+export default function Settings() {
+  const { providers, operation } = useLoaderData<typeof loader>();
 
   return (
     <div className="h-full flex flex-col">
@@ -97,31 +129,8 @@ export default function Settings() {
       </div>
 
       <div className="flex-1 max-w-3xl mx-auto w-full p-6">
-        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">Theme</h2>
-            <ToggleGroup.Root
-              type="single"
-              value={theme}
-              onValueChange={(value) => {
-                if (value) setTheme(value as Theme);
-              }}
-              aria-label="Theme"
-              className="inline-flex items-stretch rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden"
-            >
-              {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
-                <ToggleGroup.Item
-                  key={value}
-                  value={value}
-                  className="flex items-center gap-1.5 px-3 py-2 text-sm transition-colors border-r last:border-r-0 border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 data-[state=on]:bg-blue-50 dark:data-[state=on]:bg-blue-900/40 data-[state=on]:text-blue-700 dark:data-[state=on]:text-blue-400"
-                >
-                  <Icon className="w-4 h-4" />
-                  {label}
-                </ToggleGroup.Item>
-              ))}
-            </ToggleGroup.Root>
-          </div>
-        </div>
+        <ThemePanel />
+        <SettingsAuthUI providers={providers} initialOperation={operation} />
       </div>
     </div>
   );
