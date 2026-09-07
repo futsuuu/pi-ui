@@ -1,7 +1,14 @@
-import { useEffect, useState } from "react";
+import { ArrowRight, ExternalLink } from "lucide-react";
+import { Dialog, RadioGroup } from "radix-ui";
+import { useEffect, useRef, useState } from "react";
 import { Link, useFetcher, useNavigate, useRevalidator } from "react-router";
 
-import type { AuthTypeDto, OperationSnapshot, ProviderStatusDto } from "~/provider-auth-manager";
+import type {
+  AuthTypeDto,
+  OperationSnapshot,
+  PromptSnapshot,
+  ProviderStatusDto,
+} from "~/provider-auth-manager";
 
 export function isSafeHttpUrl(url: string): boolean {
   try {
@@ -204,6 +211,130 @@ export function ProviderAuthSection({
   );
 }
 
+function AuthDialogFrame({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <Dialog.Root open modal onOpenChange={() => {}}>
+      <Dialog.Portal>
+        <Dialog.Overlay
+          className="fixed inset-0 z-50 bg-black/40"
+          onClick={(event) => event.preventDefault()}
+        />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+          <Dialog.Content
+            aria-describedby={undefined}
+            onInteractOutside={(event) => event.preventDefault()}
+            onEscapeKeyDown={(event) => event.preventDefault()}
+            className="pointer-events-auto w-full max-w-lg max-h-[85vh] overflow-y-auto bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-xl p-5"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <Dialog.Title className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                {title}
+              </Dialog.Title>
+            </div>
+            <div className="mt-3">{children}</div>
+          </Dialog.Content>
+        </div>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+function PromptForm({
+  prompt,
+  answerPending,
+  cancelPending,
+  onAnswer,
+  onCancel,
+}: {
+  prompt: PromptSnapshot;
+  answerPending: boolean;
+  cancelPending: boolean;
+  onAnswer: (promptId: number, answer: string) => void;
+  onCancel: () => void;
+}) {
+  const [textValue, setTextValue] = useState("");
+  const [selectValue, setSelectValue] = useState(
+    prompt.type === "select" ? (prompt.options?.[0]?.id ?? "") : "",
+  );
+  return (
+    <form
+      onSubmit={(formEvent) => {
+        formEvent.preventDefault();
+        const value = prompt.type === "select" ? selectValue : textValue;
+        if (!value) return;
+        onAnswer(prompt.id, value);
+        setTextValue("");
+      }}
+    >
+      <div>
+        <p className="text-xs font-medium text-gray-600 dark:text-gray-400">{prompt.message}</p>
+        {prompt.type === "select" ? (
+          <RadioGroup.Root
+            aria-label={prompt.message}
+            value={selectValue}
+            onValueChange={setSelectValue}
+            className="mt-2 space-y-2"
+          >
+            {prompt.options?.map((option) => (
+              <label key={option.id} className="flex cursor-pointer items-start gap-2 py-1 text-sm">
+                <RadioGroup.Item
+                  value={option.id}
+                  id={`prompt-${prompt.id}-${option.id}`}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded-full border border-gray-300 dark:border-gray-600 data-[state=checked]:border-blue-600"
+                >
+                  <RadioGroup.Indicator className="flex h-full w-full items-center justify-center after:block after:h-2 after:w-2 after:rounded-full after:bg-blue-600" />
+                </RadioGroup.Item>
+                <span>
+                  <span className="block">{option.label}</span>
+                  {option.description ? (
+                    <span className="block text-xs text-gray-500">{option.description}</span>
+                  ) : null}
+                </span>
+              </label>
+            ))}
+          </RadioGroup.Root>
+        ) : prompt.type === "secret" ? (
+          <input
+            type="password"
+            aria-label={prompt.message}
+            value={textValue}
+            placeholder={prompt.placeholder}
+            onChange={(event) => setTextValue(event.target.value)}
+            className="mt-1 block w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-1.5 text-sm"
+          />
+        ) : (
+          <input
+            type="text"
+            aria-label={prompt.message}
+            value={textValue}
+            placeholder={prompt.placeholder}
+            onChange={(event) => setTextValue(event.target.value)}
+            className="mt-1 block w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-1.5 text-sm"
+          />
+        )}
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          type="button"
+          disabled={cancelPending}
+          onClick={onCancel}
+          className="w-20 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          aria-label="Submit"
+          disabled={answerPending || (prompt.type === "select" ? !selectValue : !textValue)}
+          className="flex w-20 items-center justify-center rounded-lg bg-blue-600 px-3 py-1.5 text-white disabled:opacity-50"
+        >
+          <ArrowRight className="h-4 w-4" />
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export function AuthDialogView({
   snapshot,
   answerPending,
@@ -219,24 +350,18 @@ export function AuthDialogView({
   onCancel: () => void;
   onDismiss: () => void;
 }) {
-  const [textValue, setTextValue] = useState("");
-  const [selectValue, setSelectValue] = useState("");
-  const promptId =
-    snapshot.kind === "login" && snapshot.phase === "running" ? snapshot.prompt?.id : undefined;
-  useEffect(() => {
-    setTextValue("");
-    setSelectValue("");
-  }, [promptId, snapshot.operationId]);
   if (snapshot.kind === "removal") {
     if (snapshot.phase === "running") {
       return (
-        <div role="dialog" aria-label={`Remove ${snapshot.providerName}`} className="mt-4">
-          <p className="text-sm">Removing stored credential for {snapshot.providerName}…</p>
-        </div>
+        <AuthDialogFrame title={`Remove ${snapshot.providerName}`}>
+          <p className="text-sm text-gray-700 dark:text-gray-300">
+            Removing stored credential for {snapshot.providerName}…
+          </p>
+        </AuthDialogFrame>
       );
     }
     return (
-      <div role="dialog" aria-label={`Remove ${snapshot.providerName}`} className="mt-4">
+      <AuthDialogFrame title={`Remove ${snapshot.providerName}`}>
         {snapshot.outcome === "success" ? (
           <p className="text-sm">Stored credential removed.</p>
         ) : null}
@@ -254,179 +379,116 @@ export function AuthDialogView({
             variable, runtime override, or models.json is providing authentication.
           </p>
         ) : null}
-        <button
-          type="button"
-          onClick={onDismiss}
-          className="mt-2 rounded-lg border px-3 py-1.5 text-sm"
-        >
-          Close
-        </button>
-      </div>
+        <div className="mt-3 flex justify-end">
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+          >
+            Close
+          </button>
+        </div>
+      </AuthDialogFrame>
     );
   }
-  const events = snapshot.phase === "terminal" ? snapshot.events : snapshot.events;
+  const events = snapshot.events;
   return (
-    <div
-      role="dialog"
-      aria-label={`Sign in to ${snapshot.providerName}`}
-      className="mt-4 rounded-lg border p-3"
-    >
+    <AuthDialogFrame title={`Sign in to ${snapshot.providerName}`}>
       <div className="space-y-2">
-        {events.map((event, index) => {
-          switch (event.type) {
-            case "info":
-              return (
-                <div key={index} className="text-sm">
-                  <p>{event.message}</p>
-                  {event.links?.map((link) =>
-                    isSafeHttpUrl(link.url) ? (
-                      <a
-                        key={link.url}
-                        href={link.url}
-                        target="_blank"
-                        rel="noreferrer noopener"
-                        className="underline"
-                      >
-                        {link.label ?? link.url}
-                      </a>
-                    ) : null,
-                  )}
-                </div>
-              );
-            case "auth_url":
-              return (
-                <div key={index} className="text-sm">
-                  {event.instructions ? <p>{event.instructions}</p> : null}
-                  {isSafeHttpUrl(event.url) ? (
-                    <a
-                      href={event.url}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                      className="underline"
-                    >
-                      Open authorization link
-                    </a>
-                  ) : null}
-                </div>
-              );
-            case "device_code":
-              return (
-                <div key={index} className="text-sm">
-                  <p>
-                    Verification URL:{" "}
-                    {isSafeHttpUrl(event.verificationUri) ? (
-                      <a
-                        href={event.verificationUri}
-                        target="_blank"
-                        rel="noreferrer noopener"
-                        className="underline"
-                      >
-                        {event.verificationUri}
-                      </a>
-                    ) : (
-                      event.verificationUri
-                    )}
-                  </p>
-                  <p>
-                    User code: <code>{event.userCode}</code>{" "}
-                    <button
-                      type="button"
-                      onClick={() => void navigator.clipboard?.writeText(event.userCode)}
-                      className="underline"
-                    >
-                      Copy code
-                    </button>
-                  </p>
-                </div>
-              );
-            case "progress":
-              return (
-                <p key={index} className="text-sm text-gray-500">
-                  {event.message}
-                </p>
-              );
-          }
-        })}
+        {snapshot.phase === "terminal"
+          ? null
+          : events.map((event, index) => {
+              switch (event.type) {
+                case "info":
+                  return (
+                    <div key={index} className="text-sm">
+                      <p>{event.message}</p>
+                      {event.links?.map((link) =>
+                        isSafeHttpUrl(link.url) ? (
+                          <a
+                            key={link.url}
+                            href={link.url}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            className="inline-flex items-center gap-1 underline"
+                          >
+                            {link.label ?? link.url}
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        ) : null,
+                      )}
+                    </div>
+                  );
+                case "auth_url":
+                  return (
+                    <div key={index} className="text-sm">
+                      {event.instructions ? <p>{event.instructions}</p> : null}
+                      {isSafeHttpUrl(event.url) ? (
+                        <a
+                          href={event.url}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className="inline-flex items-center gap-1 underline"
+                        >
+                          Open authorization link
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ) : null}
+                    </div>
+                  );
+                case "device_code":
+                  return (
+                    <div key={index} className="space-y-1 text-sm">
+                      <p>
+                        User code: <code>{event.userCode}</code>
+                      </p>
+                      {isSafeHttpUrl(event.verificationUri) ? (
+                        <a
+                          href={event.verificationUri}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className="inline-flex items-center gap-1 underline"
+                        >
+                          Open verification link
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ) : (
+                        <p>{event.verificationUri}</p>
+                      )}
+                    </div>
+                  );
+                case "progress":
+                  return (
+                    <p key={index} className="text-sm text-gray-500">
+                      {event.message}
+                    </p>
+                  );
+              }
+            })}
       </div>
       {snapshot.phase === "running" ? (
         <div className="mt-3">
           {snapshot.prompt ? (
-            <form
-              onSubmit={(formEvent) => {
-                formEvent.preventDefault();
-                if (!snapshot.prompt) return;
-                const value = snapshot.prompt.type === "select" ? selectValue : textValue;
-                if (!value) return;
-                onAnswer(snapshot.prompt.id, value);
-                setTextValue("");
-                setSelectValue("");
-              }}
-            >
-              <label className="block text-sm">
-                {snapshot.prompt.message}
-                {snapshot.prompt.type === "select" ? (
-                  <select
-                    aria-label={snapshot.prompt.message}
-                    value={selectValue}
-                    onChange={(event) => setSelectValue(event.target.value)}
-                    className="mt-1 block w-full rounded border px-2 py-1.5"
-                  >
-                    <option value="">Select…</option>
-                    {snapshot.prompt.options?.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                ) : snapshot.prompt.type === "secret" ? (
-                  <input
-                    type="password"
-                    aria-label={snapshot.prompt.message}
-                    value={textValue}
-                    placeholder={snapshot.prompt.placeholder}
-                    onChange={(event) => setTextValue(event.target.value)}
-                    className="mt-1 block w-full rounded border px-2 py-1.5"
-                  />
-                ) : (
-                  <input
-                    type="text"
-                    aria-label={snapshot.prompt.message}
-                    value={textValue}
-                    placeholder={snapshot.prompt.placeholder}
-                    onChange={(event) => setTextValue(event.target.value)}
-                    className="mt-1 block w-full rounded border px-2 py-1.5"
-                  />
-                )}
-              </label>
-              <div className="mt-2 flex gap-2">
-                <button
-                  type="submit"
-                  disabled={
-                    answerPending || (snapshot.prompt.type === "select" ? !selectValue : !textValue)
-                  }
-                  className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-                >
-                  Submit
-                </button>
-                <button
-                  type="button"
-                  disabled={cancelPending}
-                  onClick={onCancel}
-                  className="rounded border px-3 py-1.5 text-sm disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
+            <PromptForm
+              key={snapshot.prompt.id}
+              prompt={snapshot.prompt}
+              answerPending={answerPending}
+              cancelPending={cancelPending}
+              onAnswer={onAnswer}
+              onCancel={onCancel}
+            />
           ) : (
-            <button
-              type="button"
-              disabled={cancelPending}
-              onClick={onCancel}
-              className="rounded border px-3 py-1.5 text-sm disabled:opacity-50"
-            >
-              Cancel
-            </button>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-gray-500">Waiting for the provider…</p>
+              <button
+                type="button"
+                disabled={cancelPending}
+                onClick={onCancel}
+                className="w-20 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
           )}
         </div>
       ) : null}
@@ -447,55 +509,99 @@ export function AuthDialogView({
             </p>
           ) : null}
           {snapshot.outcome === "cancelled" ? (
-            <p className="text-sm">Sign-in was cancelled.</p>
+            <p className="text-sm text-gray-700 dark:text-gray-300">Sign-in was cancelled.</p>
           ) : null}
-          {snapshot.outcome === "timeout" ? <p className="text-sm">Sign-in timed out.</p> : null}
-          <button
-            type="button"
-            onClick={onDismiss}
-            className="mt-2 rounded border px-3 py-1.5 text-sm"
-          >
-            Close
-          </button>
+          {snapshot.outcome === "timeout" ? (
+            <p className="text-sm text-gray-700 dark:text-gray-300">Sign-in timed out.</p>
+          ) : null}
+          <div className="mt-3 flex justify-end">
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+            >
+              Close
+            </button>
+          </div>
         </div>
       ) : null}
-    </div>
+    </AuthDialogFrame>
   );
 }
 
-export function AuthOperationDialog({ initial }: { initial: OperationSnapshot }) {
+function snapshotSignature(snapshot: OperationSnapshot): string {
+  if (snapshot.kind === "removal") {
+    return snapshot.phase === "terminal"
+      ? `${snapshot.kind}:${snapshot.phase}:${snapshot.outcome}`
+      : `${snapshot.kind}:${snapshot.phase}`;
+  }
+  const prompt = snapshot.phase === "running" ? (snapshot.prompt?.id ?? "none") : "";
+  const outcome = snapshot.phase === "terminal" ? snapshot.outcome : "";
+  return `${snapshot.kind}:${snapshot.phase}:${prompt}:${outcome}:${snapshot.events.length}`;
+}
+
+export function AuthOperationDialog({
+  initial,
+  onDismiss,
+}: {
+  initial: OperationSnapshot;
+  onDismiss: () => void;
+}) {
   const [snapshot, setSnapshot] = useState(initial);
-  const navigate = useNavigate();
   const revalidator = useRevalidator();
   const pollFetcher = useFetcher<{ operation: OperationSnapshot }>();
   const answerFetcher = useFetcher();
   const cancelFetcher = useFetcher();
+  const revalidatedOperation = useRef<string | null>(null);
+  const lastAnswerData = useRef<unknown>(null);
+  const live = useRef({ pollFetcher, revalidator });
   useEffect(() => {
-    setSnapshot(initial);
+    live.current = { pollFetcher, revalidator };
+  });
+  useEffect(() => {
+    setSnapshot((previous) =>
+      previous.operationId === initial.operationId &&
+      snapshotSignature(previous) === snapshotSignature(initial)
+        ? previous
+        : initial,
+    );
   }, [initial]);
   const phase = snapshot.phase;
   const kind = snapshot.kind;
   useEffect(() => {
     if (phase === "terminal") {
-      void revalidator.revalidate();
+      if (revalidatedOperation.current !== snapshot.operationId) {
+        revalidatedOperation.current = snapshot.operationId;
+        void live.current.revalidator.revalidate();
+      }
       return;
     }
+    const operationId = snapshot.operationId;
     const timer = setInterval(() => {
-      void pollFetcher.load(`/settings/auth/${snapshot.operationId}`);
+      void live.current.pollFetcher.load(`/settings/auth/${operationId}`);
     }, 1000);
     return () => clearInterval(timer);
-  }, [snapshot.operationId, phase, kind, pollFetcher, revalidator]);
+  }, [snapshot.operationId, phase, kind]);
   useEffect(() => {
     const next = (pollFetcher.data as { operation?: OperationSnapshot } | undefined)?.operation;
-    if (next && next.operationId === snapshot.operationId) {
+    if (
+      next &&
+      next.operationId === snapshot.operationId &&
+      snapshotSignature(next) !== snapshotSignature(snapshot)
+    ) {
       setSnapshot(next);
     }
-  }, [pollFetcher.data, snapshot.operationId]);
+  }, [pollFetcher.data, snapshot]);
   useEffect(() => {
-    if (answerFetcher.state === "idle" && answerFetcher.data) {
+    if (
+      answerFetcher.state === "idle" &&
+      answerFetcher.data &&
+      lastAnswerData.current !== answerFetcher.data
+    ) {
+      lastAnswerData.current = answerFetcher.data;
       void pollFetcher.load(`/settings/auth/${snapshot.operationId}`);
     }
-  }, [answerFetcher.state, answerFetcher.data, snapshot.operationId, pollFetcher]);
+  }, [answerFetcher, pollFetcher, snapshot.operationId]);
   return (
     <AuthDialogView
       snapshot={snapshot}
@@ -520,10 +626,9 @@ export function AuthOperationDialog({ initial }: { initial: OperationSnapshot })
             encType: "application/json",
           },
         );
+        onDismiss();
       }}
-      onDismiss={() => {
-        void navigate("/settings", { replace: true });
-      }}
+      onDismiss={onDismiss}
     />
   );
 }
@@ -536,6 +641,7 @@ export function SettingsAuthUI({
   initialOperation: OperationSnapshot | null;
 }) {
   const startFetcher = useFetcher<{ error?: string; operationId?: string }>();
+  const navigate = useNavigate();
   const [activeSnapshot, setActiveSnapshot] = useState<OperationSnapshot | null>(initialOperation);
   useEffect(() => {
     setActiveSnapshot(initialOperation);
@@ -565,7 +671,15 @@ export function SettingsAuthUI({
           );
         }}
       />
-      {activeSnapshot ? <AuthOperationDialog initial={activeSnapshot} /> : null}
+      {activeSnapshot ? (
+        <AuthOperationDialog
+          initial={activeSnapshot}
+          onDismiss={() => {
+            setActiveSnapshot(null);
+            void navigate("/settings", { replace: true });
+          }}
+        />
+      ) : null}
     </>
   );
 }
