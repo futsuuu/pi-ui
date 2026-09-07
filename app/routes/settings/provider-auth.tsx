@@ -51,107 +51,214 @@ export function filterProviders(
   );
 }
 
+function MethodChooserDialog({
+  providerName,
+  methods,
+  startPending,
+  onConfirm,
+  onDismiss,
+}: {
+  providerName: string;
+  methods: readonly { type: AuthTypeDto; label: string }[];
+  startPending: string | null;
+  onConfirm: (authType: AuthTypeDto) => void;
+  onDismiss: () => void;
+}) {
+  const [selected, setSelected] = useState(methods[0]?.type ?? "api_key");
+  return (
+    <Dialog.Root open modal onOpenChange={() => {}}>
+      <Dialog.Portal>
+        <Dialog.Overlay
+          className="fixed inset-0 z-50 bg-black/40"
+          onClick={(event) => event.preventDefault()}
+        />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+          <Dialog.Content
+            aria-describedby={undefined}
+            onInteractOutside={(event) => event.preventDefault()}
+            onEscapeKeyDown={(event) => event.preventDefault()}
+            className="pointer-events-auto w-full max-w-lg max-h-[85vh] overflow-y-auto bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-xl p-5"
+          >
+            <Dialog.Title className="text-base font-semibold text-gray-900 dark:text-gray-100">
+              Sign in to {providerName}
+            </Dialog.Title>
+            <div className="mt-3">
+              <p className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                Authentication method
+              </p>
+              <RadioGroup.Root
+                aria-label="Authentication method"
+                value={selected}
+                onValueChange={(value) => setSelected(value as AuthTypeDto)}
+                className="mt-2 space-y-2"
+              >
+                {methods.map((method) => (
+                  <label
+                    key={method.type}
+                    className="flex cursor-pointer items-start gap-2 py-1 text-sm"
+                  >
+                    <RadioGroup.Item
+                      value={method.type}
+                      className="mt-0.5 h-4 w-4 shrink-0 rounded-full border border-gray-300 dark:border-gray-600 data-[state=checked]:border-blue-600"
+                    >
+                      <RadioGroup.Indicator className="flex h-full w-full items-center justify-center after:block after:h-2 after:w-2 after:rounded-full after:bg-blue-600" />
+                    </RadioGroup.Item>
+                    <span className="block">{method.label}</span>
+                  </label>
+                ))}
+              </RadioGroup.Root>
+              <div className="mt-3 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={onDismiss}
+                  className="w-20 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  aria-label="Submit"
+                  disabled={startPending !== null}
+                  onClick={() => onConfirm(selected)}
+                  className="flex w-20 items-center justify-center rounded-lg bg-blue-600 px-3 py-1.5 text-white disabled:opacity-50"
+                >
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </Dialog.Content>
+        </div>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
 export function ProviderList({
   providers,
   onStartLogin,
   onStartRemoval,
   startPending,
+  operationActive,
+  conflictOperationId,
 }: {
   providers: readonly ProviderStatusDto[];
   onStartLogin: (providerId: string, authType: AuthTypeDto) => void;
   onStartRemoval: (providerId: string) => void;
   startPending: string | null;
+  operationActive: boolean;
+  conflictOperationId: string | null;
 }) {
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [choosing, setChoosing] = useState<string | null>(null);
+  useEffect(() => {
+    if (operationActive || conflictOperationId) setChoosing(null);
+  }, [operationActive, conflictOperationId]);
+  const choosingProvider = choosing ? providers.find((entry) => entry.id === choosing) : undefined;
   return (
-    <ul className="mt-3 space-y-3">
-      {providers.map((provider) => {
-        const configured =
-          provider.registration === "registered" && provider.effectiveAuth !== null;
-        const source = describeSource(provider);
-        const stored = provider.storedCredential;
-        const isConfirming = confirming === provider.id;
-        return (
-          <li
-            key={provider.id}
-            className="rounded-lg border border-gray-200 dark:border-gray-700 p-3"
-          >
-            <div className="flex items-baseline justify-between gap-2">
-              <div>
-                <span className="text-sm font-medium">{provider.name}</span>{" "}
-                <span className="text-xs text-gray-500">{provider.id}</span>
+    <>
+      <ul className="mt-3 space-y-3">
+        {providers.map((provider) => {
+          const configured =
+            provider.registration === "registered" && provider.effectiveAuth !== null;
+          const source = describeSource(provider);
+          const stored = provider.storedCredential;
+          const isConfirming = confirming === provider.id;
+          return (
+            <li
+              key={provider.id}
+              className="rounded-lg border border-gray-200 dark:border-gray-700 p-3"
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <div>
+                  <span className="text-sm font-medium">{provider.name}</span>{" "}
+                  <span className="text-xs text-gray-500">{provider.id}</span>
+                </div>
+                <span className="text-xs">{configured ? "Configured" : "Not configured"}</span>
               </div>
-              <span className="text-xs">{configured ? "Configured" : "Not configured"}</span>
-            </div>
-            {source ? <p className="mt-1 text-xs text-gray-500">{source}</p> : null}
-            <p className="mt-1 text-xs text-gray-500">
-              {stored
-                ? `Stored: ${stored.type === "oauth" ? "OAuth" : "API key"}`
-                : "No stored credential"}
-            </p>
-            {provider.registration === "registered" && provider.methods.length > 0 ? (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {provider.methods.map((method) => (
-                  <button
-                    key={method.type}
-                    type="button"
-                    disabled={startPending !== null}
-                    onClick={() => onStartLogin(provider.id, method.type)}
-                    className="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-sm disabled:opacity-50"
-                  >
-                    {method.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            {provider.registration === "orphaned" ? (
+              {source ? <p className="mt-1 text-xs text-gray-500">{source}</p> : null}
               <p className="mt-1 text-xs text-gray-500">
-                Provider is no longer registered. The stored credential can still be removed.
+                {stored
+                  ? `Stored: ${stored.type === "oauth" ? "OAuth" : "API key"}`
+                  : "No stored credential"}
               </p>
-            ) : null}
-            {stored ? (
-              <div className="mt-2">
-                {isConfirming ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs text-gray-600 dark:text-gray-400">
-                      Remove the stored credential? Environment variables, cloud credentials, and
-                      models.json are not affected.
-                    </span>
+              {provider.registration === "registered" && provider.methods.length > 0 ? (
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    disabled={startPending !== null && choosing === null}
+                    onClick={() => {
+                      if (provider.methods.length === 1) {
+                        onStartLogin(provider.id, provider.methods[0].type);
+                      } else {
+                        setChoosing(provider.id);
+                      }
+                    }}
+                    className="w-20 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-sm disabled:opacity-50"
+                  >
+                    Login
+                  </button>
+                </div>
+              ) : null}
+              {provider.registration === "orphaned" ? (
+                <p className="mt-1 text-xs text-gray-500">
+                  Provider is no longer registered. The stored credential can still be removed.
+                </p>
+              ) : null}
+              {stored ? (
+                <div className="mt-2">
+                  {isConfirming ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-gray-600 dark:text-gray-400">
+                        Remove the stored credential? Environment variables, cloud credentials, and
+                        models.json are not affected.
+                      </span>
+                      <button
+                        type="button"
+                        disabled={startPending !== null}
+                        onClick={() => {
+                          setConfirming(null);
+                          onStartRemoval(provider.id);
+                        }}
+                        className="rounded-lg bg-red-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                      >
+                        Confirm remove
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirming(null)}
+                        className="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-sm"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
                     <button
                       type="button"
                       disabled={startPending !== null}
-                      onClick={() => {
-                        setConfirming(null);
-                        onStartRemoval(provider.id);
-                      }}
-                      className="rounded-lg bg-red-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                      onClick={() => setConfirming(provider.id)}
+                      className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-700 disabled:opacity-50"
                     >
-                      Confirm remove
+                      Remove
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirming(null)}
-                      className="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-sm"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={startPending !== null}
-                    onClick={() => setConfirming(provider.id)}
-                    className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-700 disabled:opacity-50"
-                  >
-                    Remove
-                  </button>
-                )}
-              </div>
-            ) : null}
-          </li>
-        );
-      })}
-    </ul>
+                  )}
+                </div>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+      {choosingProvider && choosingProvider.registration === "registered" ? (
+        <MethodChooserDialog
+          providerName={choosingProvider.name}
+          methods={choosingProvider.methods}
+          startPending={startPending}
+          onConfirm={(authType) => {
+            onStartLogin(choosingProvider.id, authType);
+          }}
+          onDismiss={() => setChoosing(null)}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -161,12 +268,14 @@ export function ProviderAuthSection({
   onStartRemoval,
   startPending,
   conflictOperationId,
+  operationActive,
 }: {
   providers: readonly ProviderStatusDto[];
   onStartLogin: (providerId: string, authType: AuthTypeDto) => void;
   onStartRemoval: (providerId: string) => void;
   startPending: string | null;
   conflictOperationId: string | null;
+  operationActive: boolean;
 }) {
   const [query, setQuery] = useState("");
   const filtered = filterProviders(providers, query);
@@ -202,6 +311,8 @@ export function ProviderAuthSection({
           onStartLogin={onStartLogin}
           onStartRemoval={onStartRemoval}
           startPending={startPending}
+          operationActive={operationActive}
+          conflictOperationId={conflictOperationId}
         />
         {filtered.length === 0 ? (
           <p className="mt-3 text-sm text-gray-500">No providers match.</p>
@@ -658,16 +769,27 @@ export function SettingsAuthUI({
         providers={providers}
         startPending={startFetcher.state !== "idle" ? "pending" : null}
         conflictOperationId={conflictOperationId}
+        operationActive={activeSnapshot !== null}
         onStartLogin={(providerId, authType) => {
           void startFetcher.submit(
             { type: "start_login", providerId, authType },
-            { method: "post", action: "/settings", encType: "application/json" },
+            {
+              method: "post",
+              action: "/settings",
+              encType: "application/json",
+              preventScrollReset: true,
+            },
           );
         }}
         onStartRemoval={(providerId) => {
           void startFetcher.submit(
             { type: "start_removal", providerId, confirmed: true },
-            { method: "post", action: "/settings", encType: "application/json" },
+            {
+              method: "post",
+              action: "/settings",
+              encType: "application/json",
+              preventScrollReset: true,
+            },
           );
         }}
       />
@@ -676,7 +798,7 @@ export function SettingsAuthUI({
           initial={activeSnapshot}
           onDismiss={() => {
             setActiveSnapshot(null);
-            void navigate("/settings", { replace: true });
+            void navigate("/settings", { replace: true, preventScrollReset: true });
           }}
         />
       ) : null}
