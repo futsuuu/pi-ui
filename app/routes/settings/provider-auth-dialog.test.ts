@@ -33,15 +33,14 @@ describe("filterProviders", () => {
 });
 
 describe("prompt controls", () => {
-  it("uses password controls, select options, and safe new-tab links", async () => {
+  it("uses password controls, radio options, and safe new-tab links", async () => {
     const source = await readFile(new URL("./provider-auth.tsx", import.meta.url), "utf8");
     expect(source).toContain('type="password"');
-    expect(source).toContain("<select");
-    expect(source).toContain("<option");
+    expect(source).toContain("RadioGroup");
     expect(source).toContain('target="_blank"');
     expect(source).toContain('rel="noreferrer noopener"');
     expect(source).toContain("isSafeHttpUrl");
     expect(source).toContain('setTextValue("")');
-    expect(source).toContain('setSelectValue("")');
+    expect(source).toContain("options?.[0]?.id");
   });
 });

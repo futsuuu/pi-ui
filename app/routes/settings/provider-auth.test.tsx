@@ -53,7 +53,6 @@ function renderList(overrides: Partial<Parameters<typeof ProviderList>[0]> = {})
 
 describe("Provider authentication settings", () => {
   beforeEach(() => {
-    document.body.innerHTML = "";
     vi.unstubAllGlobals();
   });
 
@@ -115,6 +114,68 @@ describe("Provider authentication settings", () => {
       .toBeInTheDocument();
   });
 
+  it("renders select prompts as radio options", async () => {
+    const snapshot: Extract<OperationSnapshot, { kind: "login"; phase: "running" }> = {
+      operationId: "op-1",
+      kind: "login",
+      providerId: "bedrock",
+      providerName: "Bedrock",
+      authType: "api_key",
+      phase: "running",
+      prompt: {
+        id: 1,
+        type: "select",
+        message: "Choose a region",
+        options: [
+          { id: "us-east-1", label: "US East" },
+          { id: "ap-northeast-1", label: "Tokyo", description: "Asia Pacific" },
+        ],
+      },
+      events: [],
+    };
+    const screen = await render(
+      <AuthDialogView
+        snapshot={snapshot}
+        answerPending={false}
+        cancelPending={false}
+        onAnswer={() => {}}
+        onCancel={() => {}}
+        onDismiss={() => {}}
+      />,
+    );
+    await expect.element(screen.getByRole("radiogroup")).toBeInTheDocument();
+    await expect.element(screen.getByRole("radio", { name: /US East/ })).toBeInTheDocument();
+    await expect.element(screen.getByRole("radio", { name: /Tokyo/ })).toBeInTheDocument();
+  });
+
+  it("hides stale provider links once the operation ends", async () => {
+    const snapshot: Extract<OperationSnapshot, { kind: "login"; phase: "terminal" }> = {
+      operationId: "op-1",
+      kind: "login",
+      providerId: "anthropic",
+      providerName: "Anthropic",
+      authType: "oauth",
+      phase: "terminal",
+      outcome: "cancelled",
+      message: "Login was cancelled.",
+      events: [{ type: "auth_url", url: "https://example.com/auth", instructions: "Open this" }],
+    };
+    const screen = await render(
+      <AuthDialogView
+        snapshot={snapshot}
+        answerPending={false}
+        cancelPending={false}
+        onAnswer={() => {}}
+        onCancel={() => {}}
+        onDismiss={() => {}}
+      />,
+    );
+    await expect.element(screen.getByText(/Sign-in was cancelled/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Open authorization link" }).query(),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders authorization links, device codes, progress, and terminal states", async () => {
     const snapshot: Extract<OperationSnapshot, { kind: "login"; phase: "running" }> = {
       operationId: "op-1",
@@ -150,11 +211,13 @@ describe("Provider authentication settings", () => {
     await expect.element(authLink).toHaveAttribute("target", "_blank");
     await expect.element(authLink).toHaveAttribute("rel", "noreferrer noopener");
     await expect.element(screen.getByText("ABCD-1234", { exact: true })).toBeInTheDocument();
-    await expect.element(screen.getByRole("button", { name: "Copy code" })).toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("link", { name: "Open verification link" }))
+      .toBeInTheDocument();
     await expect.element(screen.getByText("Waiting…", { exact: true })).toBeInTheDocument();
   });
 
-  it("prevents duplicate submission while pending", async () => {
+  it("disables cancel while a cancel is pending", async () => {
     const snapshot: Extract<OperationSnapshot, { kind: "login"; phase: "running" }> = {
       operationId: "op-1",
       kind: "login",
@@ -197,7 +260,7 @@ describe("Provider authentication settings", () => {
       />,
     );
     expect(screen.getByRole("button", { name: "Cancel" }).query()).not.toBeInTheDocument();
-    document.body.innerHTML = "";
+    await screen.unmount();
     const done: Extract<OperationSnapshot, { kind: "removal"; phase: "terminal" }> = {
       ...running,
       phase: "terminal",
@@ -245,7 +308,7 @@ describe("Provider authentication settings", () => {
       />,
     );
     await expect.element(screen.getByText(/Signed in with a warning/)).toBeInTheDocument();
-    document.body.innerHTML = "";
+    await screen.unmount();
     const failure: Extract<OperationSnapshot, { kind: "login"; phase: "terminal" }> = {
       ...warning,
       outcome: "failure",
