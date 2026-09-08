@@ -27,8 +27,8 @@ async function createContainer(): Promise<SingletonContainer> {
   const sessionViewStateRepository = new SessionViewStateRepository();
   return {
     agentSessionContainer: await AgentSessionContainer.create(
-      sessionViewStateRepository,
       modelRuntime,
+      sessionViewStateRepository,
     ),
     modelRuntime,
     providerAuthManager,
