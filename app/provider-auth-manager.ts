@@ -248,6 +248,7 @@ export class ProviderAuthManager {
   private readonly loginIdleTimeoutMs: number;
   private readonly terminalTtlMs: number;
   private readonly catalogRefreshTimeoutMs: number;
+  private readonly removalTimeoutMs: number;
 
   constructor(
     private readonly runtime: RuntimePort,
@@ -255,11 +256,13 @@ export class ProviderAuthManager {
       loginIdleTimeoutMs?: number;
       terminalTtlMs?: number;
       catalogRefreshTimeoutMs?: number;
+      removalTimeoutMs?: number;
     },
   ) {
     this.loginIdleTimeoutMs = options?.loginIdleTimeoutMs ?? 5 * 60 * 1000;
     this.terminalTtlMs = options?.terminalTtlMs ?? 2 * 60 * 1000;
     this.catalogRefreshTimeoutMs = options?.catalogRefreshTimeoutMs ?? 30_000;
+    this.removalTimeoutMs = options?.removalTimeoutMs ?? 30_000;
   }
 
   async listProviders(): Promise<ProviderStatusDto[]> {
@@ -402,6 +405,7 @@ export class ProviderAuthManager {
     };
     operation.done.catch(() => undefined);
     this.current = operation;
+    this.armRemovalTimer(operation);
     void this.runRemoval(operation);
     return { ok: true, operationId };
   }
@@ -562,6 +566,19 @@ export class ProviderAuthManager {
   private resetIdleTimer(operation: LoginRunning): void {
     if (this.current !== operation || operation.phase !== "running") return;
     this.armIdleTimer(operation);
+  }
+
+  private armRemovalTimer(operation: RemovalRunning): void {
+    this.clearTimer(operation);
+    const timer = setTimeout(() => {
+      if (this.current !== operation || operation.phase !== "running") return;
+      try {
+        operation.controller.abort(new Error("Removal timed out"));
+      } catch {}
+      this.toRemovalTerminal(operation, "failure", "Removal timed out.");
+    }, this.removalTimeoutMs);
+    timer.unref?.();
+    operation.timer = timer;
   }
 
   private armTerminalTimer(operation: CurrentOperation): void {
