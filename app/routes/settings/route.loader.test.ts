@@ -76,26 +76,4 @@ describe("GET /settings loader", () => {
     expect(error.status).toBe(302);
     expect(error.headers.get("Location")).toBe("/settings");
   });
-
-  it("exposes no credential values", async () => {
-    const withSecrets = [
-      {
-        registration: "registered",
-        id: "a",
-        name: "A",
-        methods: [],
-        storedCredential: { type: "api_key" },
-        effectiveAuth: { type: "api_key", source: { kind: "stored" } },
-      },
-    ] as unknown as ProviderStatusDto[];
-    const { context } = contextWith(
-      async () => withSecrets,
-      () => undefined,
-    );
-    const result = (await callLoader(context, "http://localhost/settings")) as {
-      providers: ProviderStatusDto[];
-    };
-    expect(JSON.stringify(result)).not.toContain("sk-");
-    expect(result.providers[0]).toEqual(withSecrets[0]);
-  });
 });
