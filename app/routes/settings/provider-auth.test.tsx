@@ -40,6 +40,31 @@ function providersFixture(): ProviderStatusDto[] {
   ];
 }
 
+function unauthenticatedSingle(): ProviderStatusDto {
+  return {
+    registration: "registered",
+    id: "newapi",
+    name: "NewAPI",
+    methods: [{ type: "api_key", label: "NewAPI key" }],
+    storedCredential: null,
+    effectiveAuth: null,
+  };
+}
+
+function unauthenticatedMulti(): ProviderStatusDto {
+  return {
+    registration: "registered",
+    id: "multi",
+    name: "Multi",
+    methods: [
+      { type: "api_key", label: "Multi API key" },
+      { type: "oauth", label: "Sign in with Multi" },
+    ],
+    storedCredential: null,
+    effectiveAuth: null,
+  };
+}
+
 function renderList(overrides: Partial<Parameters<typeof ProviderList>[0]> = {}) {
   return render(
     <ProviderList
@@ -58,59 +83,78 @@ describe("Provider authentication settings", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows runtime status, auth methods, and removal", async () => {
+  it("shows status icons and removal without badges", async () => {
     const screen = await renderList();
     await expect.element(screen.getByText("Anthropic", { exact: true })).toBeInTheDocument();
     await expect.element(screen.getByText("anthropic", { exact: true })).toBeInTheDocument();
-    await expect.element(screen.getByText("Not configured", { exact: true })).toBeInTheDocument();
     await expect
-      .element(screen.getByText("Stored credential", { exact: true }))
+      .element(screen.getByRole("img", { name: "Authenticated" }).first())
       .toBeInTheDocument();
-    await expect.element(screen.getByText("Stored: API key", { exact: true })).toBeInTheDocument();
-    await expect.element(screen.getByText("Stored: OAuth", { exact: true })).toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("img", { name: "Not authenticated" }))
+      .toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("button", { name: "Logout", exact: true }).first())
+      .toBeInTheDocument();
+    expect(screen.getByText("OPENAI_API_KEY").query()).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Login", exact: true }).query(),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides login for authenticated providers and shows it otherwise", async () => {
+    const authenticated = await renderList({ providers: [providersFixture()[0]] });
+    expect(
+      authenticated.getByRole("button", { name: "Login", exact: true }).query(),
+    ).not.toBeInTheDocument();
+    await authenticated.unmount();
+    const unauthenticated = await renderList({ providers: [unauthenticatedSingle()] });
+    await expect
+      .element(unauthenticated.getByRole("button", { name: "Login", exact: true }))
+      .toBeInTheDocument();
   });
 
   it("starts login directly for single-method providers", async () => {
     const onStartLogin = vi.fn();
     const screen = await renderList({
       onStartLogin,
-      providers: [providersFixture()[0]],
+      providers: [unauthenticatedSingle()],
     });
     await screen.getByRole("button", { name: "Login", exact: true }).click();
-    expect(onStartLogin).toHaveBeenCalledWith("anthropic", "api_key");
+    expect(onStartLogin).toHaveBeenCalledWith("newapi", "api_key");
   });
 
   it("shows a method chooser for multi-method providers", async () => {
     const onStartLogin = vi.fn();
-    const openai = providersFixture()[1];
-    const screen = await renderList({ onStartLogin, providers: [openai] });
+    const multi = unauthenticatedMulti();
+    const screen = await renderList({ onStartLogin, providers: [multi] });
     await screen.getByRole("button", { name: "Login", exact: true }).click();
     expect(onStartLogin).not.toHaveBeenCalled();
     await expect.element(screen.getByRole("radiogroup")).toBeInTheDocument();
-    await expect.element(screen.getByRole("radio", { name: /OpenAI API key/ })).toBeInTheDocument();
+    await expect.element(screen.getByRole("radio", { name: /Multi API key/ })).toBeInTheDocument();
     await expect
-      .element(screen.getByRole("radio", { name: /Sign in with OpenAI/ }))
+      .element(screen.getByRole("radio", { name: /Sign in with Multi/ }))
       .toBeInTheDocument();
-    await screen.getByRole("radio", { name: /Sign in with OpenAI/ }).click();
+    await screen.getByRole("radio", { name: /Sign in with Multi/ }).click();
     await screen.getByRole("button", { name: "Submit" }).click();
-    expect(onStartLogin).toHaveBeenCalledWith("openai", "oauth");
+    expect(onStartLogin).toHaveBeenCalledWith("multi", "oauth");
   });
 
   it("keeps the chooser open until the login prompt appears", async () => {
     const onStartLogin = vi.fn();
-    const openai = providersFixture()[1];
-    const screen = await renderList({ onStartLogin, providers: [openai] });
+    const multi = unauthenticatedMulti();
+    const screen = await renderList({ onStartLogin, providers: [multi] });
     await screen.getByRole("button", { name: "Login", exact: true }).click();
     await expect.element(screen.getByRole("radiogroup")).toBeInTheDocument();
     await screen.getByRole("button", { name: "Submit" }).click();
-    expect(onStartLogin).toHaveBeenCalledWith("openai", "api_key");
+    expect(onStartLogin).toHaveBeenCalledWith("multi", "api_key");
     await expect.element(screen.getByRole("radiogroup")).toBeInTheDocument();
   });
 
   it("dismisses the method chooser without starting login", async () => {
     const onStartLogin = vi.fn();
-    const openai = providersFixture()[1];
-    const screen = await renderList({ onStartLogin, providers: [openai] });
+    const multi = unauthenticatedMulti();
+    const screen = await renderList({ onStartLogin, providers: [multi] });
     await screen.getByRole("button", { name: "Login", exact: true }).click();
     await expect.element(screen.getByRole("radiogroup")).toBeInTheDocument();
     await screen.getByRole("button", { name: "Cancel" }).click();
@@ -119,9 +163,9 @@ describe("Provider authentication settings", () => {
   });
 
   it("keeps row buttons unchanged while starting from the chooser", async () => {
-    const openai = providersFixture()[1];
+    const multi = unauthenticatedMulti();
     const base = {
-      providers: [openai],
+      providers: [multi],
       onStartLogin: () => {},
       onStartRemoval: () => {},
       conflictOperationId: null as string | null,
@@ -146,12 +190,12 @@ describe("Provider authentication settings", () => {
       onStartRemoval,
       providers: [providersFixture()[0]],
     });
-    await screen.getByRole("button", { name: "Remove" }).click();
+    await screen.getByRole("button", { name: "Logout", exact: true }).click();
     await expect
-      .element(screen.getByRole("button", { name: "Confirm remove" }))
+      .element(screen.getByRole("button", { name: "Logout", exact: true }).last())
       .toBeInTheDocument();
     expect(onStartRemoval).not.toHaveBeenCalled();
-    await screen.getByRole("button", { name: "Confirm remove" }).click();
+    await screen.getByRole("button", { name: "Logout", exact: true }).last().click();
     expect(onStartRemoval).toHaveBeenCalledWith("anthropic");
   });
 
@@ -171,10 +215,13 @@ describe("Provider authentication settings", () => {
         },
       ],
     });
-    await expect.element(screen.getByText("OPENAI_API_KEY", { exact: true })).toBeInTheDocument();
-    await expect
-      .element(screen.getByText("No stored credential", { exact: true }))
-      .toBeInTheDocument();
+    await expect.element(screen.getByText("OpenAI", { exact: true })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Logout", exact: true }).query(),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Login", exact: true }).query(),
+    ).not.toBeInTheDocument();
   });
 
   it("renders select prompts as radio options", async () => {
