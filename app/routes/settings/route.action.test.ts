@@ -44,7 +44,7 @@ function expectDataError(result: unknown, status: number, error: string) {
 }
 
 describe("POST /settings action", () => {
-  it("starts a login with a redirect whose loader supplies the snapshot", async () => {
+  it("redirects after starting a login", async () => {
     const manager = {
       startLogin: vi.fn(async () => ({ ok: true as const, operationId: "op-1" })),
       startRemoval: vi.fn(),
@@ -85,7 +85,7 @@ describe("POST /settings action", () => {
     expect(manager.startRemoval).toHaveBeenCalledTimes(1);
   });
 
-  it("returns a conflict with the existing operation instead of queueing", async () => {
+  it("returns the manager's active-operation conflict", async () => {
     const manager = {
       startLogin: vi.fn(async () => ({
         ok: false as const,

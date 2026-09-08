@@ -775,7 +775,7 @@ describe("login operation", () => {
     }
   });
 
-  it("maps synchronization failures to warnings without rollback", async () => {
+  it("maps login synchronization failures to warnings", async () => {
     const providers = [
       testProvider({
         id: "p",
@@ -884,7 +884,7 @@ describe("login operation", () => {
 });
 
 describe("removal operation", () => {
-  it("removes only stored credentials and exposes no cancellation", async () => {
+  it("starts removal only for stored credentials and exposes no cancellation", async () => {
     const loggedOut: string[] = [];
     let releaseLogout!: () => void;
     const logoutGate = new Promise<void>((resolve) => {

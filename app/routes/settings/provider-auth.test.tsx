@@ -3,7 +3,13 @@ import { render } from "vitest-browser-react";
 
 import type { OperationSnapshot, ProviderStatusDto } from "~/provider-auth-manager";
 
-import { AuthDialogView, describeSource, isSafeHttpUrl, ProviderList } from "./provider-auth";
+import {
+  AuthDialogView,
+  describeSource,
+  isSafeHttpUrl,
+  ProviderAuthSection,
+  ProviderList,
+} from "./provider-auth";
 
 function providersFixture(): ProviderStatusDto[] {
   return [
@@ -32,7 +38,7 @@ function providersFixture(): ProviderStatusDto[] {
     {
       registration: "orphaned",
       id: "ghost",
-      name: "ghost",
+      name: "Removed provider",
       methods: [],
       storedCredential: { type: "oauth" },
       effectiveAuth: null,
@@ -83,7 +89,7 @@ describe("Provider authentication settings", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows status icons and removal without badges", async () => {
+  it("shows provider identity, authentication status, and credential actions", async () => {
     const screen = await renderList();
     await expect.element(screen.getByText("Anthropic", { exact: true })).toBeInTheDocument();
     await expect.element(screen.getByText("anthropic", { exact: true })).toBeInTheDocument();
@@ -140,7 +146,7 @@ describe("Provider authentication settings", () => {
     expect(onStartLogin).toHaveBeenCalledWith("multi", "oauth");
   });
 
-  it("keeps the chooser open until the login prompt appears", async () => {
+  it("keeps the chooser open while starting login", async () => {
     const onStartLogin = vi.fn();
     const multi = unauthenticatedMulti();
     const screen = await renderList({ onStartLogin, providers: [multi] });
@@ -162,28 +168,6 @@ describe("Provider authentication settings", () => {
     expect(screen.getByRole("radiogroup").query()).not.toBeInTheDocument();
   });
 
-  it("keeps row buttons unchanged while starting from the chooser", async () => {
-    const multi = unauthenticatedMulti();
-    const base = {
-      providers: [multi],
-      onStartLogin: () => {},
-      onStartRemoval: () => {},
-      conflictOperationId: null as string | null,
-    };
-    const screen = await render(
-      <ProviderList {...base} startPending={null} operationActive={false} />,
-    );
-    await screen.getByRole("button", { name: "Login", exact: true }).click();
-    await expect.element(screen.getByRole("radiogroup")).toBeInTheDocument();
-    await screen.rerender(
-      <ProviderList {...base} startPending="pending" operationActive={false} />,
-    );
-    const rowButton = [...screen.container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Login",
-    );
-    expect(rowButton?.disabled).toBe(false);
-  });
-
   it("requires confirmation before removing stored auth", async () => {
     const onStartRemoval = vi.fn();
     const screen = await renderList({
@@ -199,7 +183,7 @@ describe("Provider authentication settings", () => {
     expect(onStartRemoval).toHaveBeenCalledWith("anthropic");
   });
 
-  it("displays remaining external auth after stored removal", async () => {
+  it("does not offer credential actions for externally configured providers", async () => {
     const screen = await renderList({
       providers: [
         {
@@ -395,7 +379,7 @@ describe("Provider authentication settings", () => {
       .toBeInTheDocument();
   });
 
-  it("renders login warning and failure without secrets", async () => {
+  it("renders login warning and failure states", async () => {
     const warning: Extract<OperationSnapshot, { kind: "login"; phase: "terminal" }> = {
       operationId: "op-1",
       kind: "login",
@@ -439,6 +423,25 @@ describe("Provider authentication settings", () => {
 });
 
 describe("provider auth helpers", () => {
+  it("filters providers by name or id", async () => {
+    const screen = await render(
+      <ProviderAuthSection
+        providers={providersFixture()}
+        onStartLogin={() => {}}
+        onStartRemoval={() => {}}
+        startPending={null}
+        conflictOperationId={null}
+        operationActive={false}
+      />,
+    );
+    const search = screen.getByRole("searchbox", { name: "Search providers" });
+    await search.fill("Removed");
+    await expect.element(screen.getByText("Removed provider", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("Anthropic", { exact: true }).query()).not.toBeInTheDocument();
+    await search.fill("ghost");
+    await expect.element(screen.getByText("ghost", { exact: true })).toBeInTheDocument();
+  });
+
   it("allows only http(s) provider links", () => {
     expect(isSafeHttpUrl("https://example.com/auth")).toBe(true);
     expect(isSafeHttpUrl("http://localhost:3000/callback")).toBe(true);

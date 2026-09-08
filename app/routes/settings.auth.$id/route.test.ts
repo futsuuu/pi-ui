@@ -71,7 +71,7 @@ describe("GET /settings/auth/:id loader", () => {
 });
 
 describe("POST /settings/auth/:id action", () => {
-  it("answers the current prompt exactly once", async () => {
+  it("forwards a prompt answer", async () => {
     const manager = { answerPrompt: vi.fn(() => ({ ok: true })), cancelLogin: vi.fn() };
     const context = contextWith(manager);
     const result = await callAction(context, "op-1", {
