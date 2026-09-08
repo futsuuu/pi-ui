@@ -1,5 +1,13 @@
-import { ArrowRight, ExternalLink } from "lucide-react";
-import { Dialog, RadioGroup } from "radix-ui";
+import {
+  ArrowRight,
+  CircleCheck,
+  CircleSlash,
+  ExternalLink,
+  LogIn,
+  LogOut,
+  Search,
+} from "lucide-react";
+import { AlertDialog, Dialog, RadioGroup } from "radix-ui";
 import { useEffect, useRef, useState } from "react";
 import { Link, useFetcher, useNavigate, useRevalidator } from "react-router";
 
@@ -156,92 +164,115 @@ export function ProviderList({
   const choosingProvider = choosing ? providers.find((entry) => entry.id === choosing) : undefined;
   return (
     <>
-      <ul className="mt-3 space-y-3">
+      <ul className="mt-3 divide-y divide-gray-200 dark:divide-gray-800">
         {providers.map((provider) => {
           const configured =
             provider.registration === "registered" && provider.effectiveAuth !== null;
-          const source = describeSource(provider);
           const stored = provider.storedCredential;
+          const showLogin =
+            provider.registration === "registered" && !configured && provider.methods.length > 0;
           const isConfirming = confirming === provider.id;
           return (
-            <li
-              key={provider.id}
-              className="rounded-lg border border-gray-200 dark:border-gray-700 p-3"
-            >
-              <div className="flex items-baseline justify-between gap-2">
-                <div>
-                  <span className="text-sm font-medium">{provider.name}</span>{" "}
-                  <span className="text-xs text-gray-500">{provider.id}</span>
+            <li key={provider.id} className="py-3">
+              <div className="flex items-center gap-2">
+                {configured ? (
+                  <CircleCheck
+                    role="img"
+                    aria-label="Authenticated"
+                    className="h-4 w-4 shrink-0 text-green-600 dark:text-green-400"
+                  />
+                ) : (
+                  <CircleSlash
+                    role="img"
+                    aria-label="Not authenticated"
+                    className="h-4 w-4 shrink-0 text-gray-300 dark:text-gray-600"
+                  />
+                )}
+                <div className="min-w-0">
+                  <span className="text-sm font-medium">{provider.name}</span>
+                  <p className="font-mono text-xs text-gray-500">{provider.id}</p>
                 </div>
-                <span className="text-xs">{configured ? "Configured" : "Not configured"}</span>
+                <div className="ml-auto flex shrink-0 items-center gap-2">
+                  {stored ? (
+                    <>
+                      <button
+                        type="button"
+                        disabled={startPending !== null}
+                        onClick={() => setConfirming(provider.id)}
+                        className="flex w-[5.5rem] items-center gap-1.5 rounded-lg border border-red-300 dark:border-red-800 py-1.5 pl-2 pr-3 text-sm text-red-700 dark:text-red-400 disabled:opacity-50"
+                      >
+                        <LogOut className="h-4 w-4 shrink-0" />
+                        <span className="flex-1 text-center">Logout</span>
+                      </button>
+                      <AlertDialog.Root
+                        open={isConfirming}
+                        onOpenChange={(open) => {
+                          if (!open) setConfirming(null);
+                        }}
+                      >
+                        <AlertDialog.Portal>
+                          <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/40" />
+                          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+                            <AlertDialog.Content className="pointer-events-auto w-full max-w-lg max-h-[85vh] overflow-y-auto bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-xl p-5">
+                              <AlertDialog.Title className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                                Logout from {provider.name}
+                              </AlertDialog.Title>
+                              <AlertDialog.Description className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                                Remove the stored credential? Environment variables, cloud
+                                credentials, and models.json are not affected.
+                              </AlertDialog.Description>
+                              <div className="mt-3 flex justify-end gap-2">
+                                <AlertDialog.Cancel asChild>
+                                  <button
+                                    type="button"
+                                    className="w-20 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                                  >
+                                    Cancel
+                                  </button>
+                                </AlertDialog.Cancel>
+                                <AlertDialog.Action asChild>
+                                  <button
+                                    type="button"
+                                    disabled={startPending !== null}
+                                    onClick={() => {
+                                      setConfirming(null);
+                                      onStartRemoval(provider.id);
+                                    }}
+                                    className="w-20 rounded-lg bg-red-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                                  >
+                                    Logout
+                                  </button>
+                                </AlertDialog.Action>
+                              </div>
+                            </AlertDialog.Content>
+                          </div>
+                        </AlertDialog.Portal>
+                      </AlertDialog.Root>
+                    </>
+                  ) : null}
+                  {showLogin ? (
+                    <button
+                      type="button"
+                      disabled={startPending !== null && choosing === null}
+                      onClick={() => {
+                        if (provider.methods.length === 1) {
+                          onStartLogin(provider.id, provider.methods[0].type);
+                        } else {
+                          setChoosing(provider.id);
+                        }
+                      }}
+                      className="flex w-[5.5rem] items-center gap-1.5 rounded-lg border border-gray-200 dark:border-gray-700 py-1.5 pl-2 pr-3 text-sm disabled:opacity-50"
+                    >
+                      <LogIn className="h-4 w-4 shrink-0" />
+                      <span className="flex-1 text-center">Login</span>
+                    </button>
+                  ) : null}
+                </div>
               </div>
-              {source ? <p className="mt-1 text-xs text-gray-500">{source}</p> : null}
-              <p className="mt-1 text-xs text-gray-500">
-                {stored
-                  ? `Stored: ${stored.type === "oauth" ? "OAuth" : "API key"}`
-                  : "No stored credential"}
-              </p>
-              {provider.registration === "registered" && provider.methods.length > 0 ? (
-                <div className="mt-2">
-                  <button
-                    type="button"
-                    disabled={startPending !== null && choosing === null}
-                    onClick={() => {
-                      if (provider.methods.length === 1) {
-                        onStartLogin(provider.id, provider.methods[0].type);
-                      } else {
-                        setChoosing(provider.id);
-                      }
-                    }}
-                    className="w-20 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-sm disabled:opacity-50"
-                  >
-                    Login
-                  </button>
-                </div>
-              ) : null}
               {provider.registration === "orphaned" ? (
                 <p className="mt-1 text-xs text-gray-500">
                   Provider is no longer registered. The stored credential can still be removed.
                 </p>
-              ) : null}
-              {stored ? (
-                <div className="mt-2">
-                  {isConfirming ? (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs text-gray-600 dark:text-gray-400">
-                        Remove the stored credential? Environment variables, cloud credentials, and
-                        models.json are not affected.
-                      </span>
-                      <button
-                        type="button"
-                        disabled={startPending !== null}
-                        onClick={() => {
-                          setConfirming(null);
-                          onStartRemoval(provider.id);
-                        }}
-                        className="rounded-lg bg-red-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-                      >
-                        Confirm remove
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setConfirming(null)}
-                        className="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-sm"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={startPending !== null}
-                      onClick={() => setConfirming(provider.id)}
-                      className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-700 disabled:opacity-50"
-                    >
-                      Remove
-                    </button>
-                  )}
-                </div>
               ) : null}
             </li>
           );
@@ -286,14 +317,17 @@ export function ProviderAuthSection({
           <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
             Provider authentication
           </h2>
-          <input
-            type="search"
-            aria-label="Search providers"
-            placeholder="Search providers"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            className="w-48 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-1.5 text-sm"
-          />
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              type="search"
+              aria-label="Search providers"
+              placeholder="Search providers"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              className="w-48 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 pl-8 pr-3 py-1.5 text-sm"
+            />
+          </div>
         </div>
         {conflictOperationId ? (
           <p className="mt-3 text-sm text-amber-700 dark:text-amber-400">
