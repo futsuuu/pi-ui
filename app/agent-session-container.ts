@@ -282,8 +282,8 @@ export class AgentSessionContainer {
   }
 
   public static async create(
-    viewStateRepository: SessionViewStateRepository = new SessionViewStateRepository(),
     modelRuntime: ModelRuntime,
+    viewStateRepository: SessionViewStateRepository = new SessionViewStateRepository(),
   ) {
     return new AgentSessionContainer(async ({ cwd, sessionManager, sessionStartEvent }) => {
       const services = await createAgentSessionServices({ cwd, modelRuntime });
