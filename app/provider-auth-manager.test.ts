@@ -935,6 +935,44 @@ describe("removal operation", () => {
     }
   });
 
+  it("times out a stalled removal and releases the operation slot", async () => {
+    let aborted = false;
+    const providers = [testProvider({ id: "p", name: "P" })];
+    const runtime = fakeRuntime({
+      providers,
+      stored: [{ providerId: "p", type: "api_key" }],
+      logout: async (_providerId, options) =>
+        new Promise<void>((_resolve, reject) => {
+          options?.signal?.addEventListener(
+            "abort",
+            () => {
+              aborted = true;
+              reject(options.signal?.reason);
+            },
+            { once: true },
+          );
+        }),
+    });
+    const manager = new ProviderAuthManager(runtime, {
+      removalTimeoutMs: 20,
+      terminalTtlMs: 50,
+    });
+    try {
+      const started = await manager.startRemoval("p");
+      if (!started.ok) throw new Error("start failed");
+      await waitFor(() => manager.getSnapshot(started.operationId)?.phase === "terminal");
+      expect(aborted).toBe(true);
+      const terminal = manager.getSnapshot(started.operationId);
+      if (terminal?.phase !== "terminal") throw new Error("expected terminal");
+      expect(terminal.outcome).toBe("failure");
+      expect(terminal.message).toBe("Removal timed out.");
+      const replacement = await manager.startRemoval("p");
+      expect(replacement.ok).toBe(true);
+    } finally {
+      manager.dispose();
+    }
+  });
+
   it("performs no catalog refresh after removal", async () => {
     const refresh = vi.fn(async () => ({ aborted: false, errors: new Map() }));
     const providers = [testProvider({ id: "p", name: "P" })];
