@@ -29,7 +29,7 @@ import * as v from "valibot";
 import { ActionsMenu, DeleteMenuItem } from "~/components/actions-menu";
 import { ScrollArea } from "~/components/scroll-area";
 import { useSessionEventsContext } from "~/contexts/session-events";
-import { agentSessionContainerContext, worktreeRepositoryContext } from "~/router-contexts";
+import { sessionRepositoryContext, worktreeRepositoryContext } from "~/router-contexts";
 import type { Worktree } from "~/worktree-repository";
 
 import type { Route } from "./+types/route";
@@ -72,9 +72,9 @@ function projectOfSession(
   context: Route.LoaderArgs["context"],
   sessionId: string,
 ): Promise<string | null> {
-  const container = context.get(agentSessionContainerContext);
+  const sessions = context.get(sessionRepositoryContext);
   const worktreeRepository = context.get(worktreeRepositoryContext);
-  return container.findSessionCwd(sessionId).then((cwd) => cwd && worktreeRepository.mainPath(cwd));
+  return sessions.findSessionCwd(sessionId).then((cwd) => cwd && worktreeRepository.mainPath(cwd));
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
@@ -101,9 +101,9 @@ export async function action({ request, context }: Route.ActionArgs) {
     }
   }
   if (result.output.type === "deleteSession") {
-    const sessionContainer = context.get(agentSessionContainerContext);
+    const sessions = context.get(sessionRepositoryContext);
     try {
-      await sessionContainer.delete(result.output.id, { cwd: result.output.dir });
+      await sessions.delete(result.output.id, { cwd: result.output.dir });
       return { ok: true as const };
     } catch (error) {
       return data(
@@ -130,10 +130,10 @@ export async function action({ request, context }: Route.ActionArgs) {
       // Sessions live outside the working tree: remove the worktree first so a
       // failed removal leaves both the worktree and its history intact.
       await worktreeRepository.remove(dir, worktree);
-      const sessionContainer = context.get(agentSessionContainerContext);
-      const sessions = await sessionContainer.listInfo(worktree.path);
+      const sessionRepository = context.get(sessionRepositoryContext);
+      const sessions = await sessionRepository.listInfo(worktree.path);
       for (const session of sessions) {
-        await sessionContainer.delete(session.id, { cwd: worktree.path });
+        await sessionRepository.delete(session.id, { cwd: worktree.path });
       }
       return { ok: true as const };
     } catch (error) {

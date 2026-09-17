@@ -2,17 +2,24 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { RouterContextProvider } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import { AgentSessionContainer } from "~/agent-session-container";
-import { agentSessionContainerContext } from "~/router-contexts";
+import { InProcessSessionAdapter } from "~/in-process-session-adapter";
+import {
+  modelRuntimeContext,
+  sessionActivitySourceContext,
+  sessionExecutorContext,
+  sessionRepositoryContext,
+} from "~/router-contexts";
+import { SdkSessionRepository } from "~/sdk-session-repository";
+import type { SessionActivityEvent } from "~/session-contracts";
 import { realFactory, withAgentDir } from "~/test-helpers";
 
 import { loader } from "./route";
-import { agentSessionContext } from "./router-contexts";
+import { sessionIdContext } from "./router-contexts";
 
 function callLoader(
   container: AgentSessionContainer,
@@ -21,10 +28,12 @@ function callLoader(
   const context = new RouterContextProvider();
   return container.get(sessionId).then((session) => {
     if (!session) throw new Error(`session ${sessionId} not found`);
-    // The production loader reads the session through the route middleware;
-    // the test supplies it directly.
-    context.set(agentSessionContext, session);
-    context.set(agentSessionContainerContext, container);
+    const sessions = new InProcessSessionAdapter(container, new SdkSessionRepository());
+    context.set(sessionIdContext, sessionId);
+    context.set(sessionExecutorContext, sessions);
+    context.set(sessionActivitySourceContext, sessions);
+    context.set(sessionRepositoryContext, sessions);
+    context.set(modelRuntimeContext, session.modelRuntime);
     return loader({
       request: new Request(`http://localhost/session/${sessionId}`),
       url: new URL(`http://localhost/session/${sessionId}`),
@@ -48,7 +57,7 @@ describe("GET /session/:id loader", () => {
         // public API starts a turn without running the model, so inject the
         // events the runtime would emit for an in-flight turn.
         const handle = container as unknown as {
-          handleSessionEvent(sessionId: string, event: AgentSessionEvent): void;
+          handleSessionEvent(sessionId: string, event: SessionActivityEvent): void;
         };
         handle.handleSessionEvent(session.sessionId, { type: "turn_start" });
         handle.handleSessionEvent(session.sessionId, {
@@ -58,9 +67,6 @@ describe("GET /session/:id loader", () => {
 
         const data = await callLoader(container, session.sessionId);
         expect(data.messages).toBe(session.messages);
-        // The loader forwards the container's buffer reference unchanged, so
-        // a client that mounts mid-turn receives the buffered events.
-        expect(data.turnEvents).toBe(container.getTurnEvents(session.sessionId));
         expect(data.turnEvents).toEqual([
           { type: "turn_start" },
           expect.objectContaining({ type: "message_start" }),

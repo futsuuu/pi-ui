@@ -1,10 +1,10 @@
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import * as v from "valibot";
 
-import { agentSessionContainerContext } from "~/router-contexts";
+import { sessionActivitySourceContext, sessionExecutorContext } from "~/router-contexts";
 
 import type { Route } from "./+types/route";
-import { agentSessionContext } from "./router-contexts";
+import { sessionIdContext } from "./router-contexts";
 
 const ActionSchema = v.variant("type", [
   v.object({
@@ -47,37 +47,26 @@ export type ActionInput = v.InferInput<typeof ActionSchema>;
 export async function action({ request, context }: Route.ActionArgs) {
   const body = await request.json();
   const action = v.parse(ActionSchema, body);
-  const session = context.get(agentSessionContext);
+  const sessionId = context.get(sessionIdContext);
+  if (action.type === "mark_displayed") {
+    const activity = context.get(sessionActivitySourceContext);
+    return await activity.markMessageDisplayed(sessionId, action.messageKey);
+  }
+  const executor = context.get(sessionExecutorContext);
   if (action.type === "abort") {
-    await session.abort();
+    await executor.abort(sessionId);
     return;
   }
-  if (action.type === "mark_displayed") {
-    // Ordering and key validation live in the session container, which owns
-    // the current projection for the session. Returns the resulting read
-    // state so the client can update its local cursor.
-    const container = context.get(agentSessionContainerContext);
-    return await container.markMessageDisplayed(session.sessionId, action.messageKey);
-  }
-  if (action.type === "prompt" || action.type === "steer" || action.type === "follow-up") {
-    if (
-      session.model?.provider !== action.model.provider ||
-      session.model?.id !== action.model.id
-    ) {
-      const model = session.modelRuntime.getModel(action.model.provider, action.model.id);
-      if (model) {
-        await session.setModel(model);
-      }
-    }
-    if (session.thinkingLevel !== action.thinkingLevel) {
-      session.setThinkingLevel(action.thinkingLevel);
-    }
-    if (action.type === "prompt") {
-      await session.prompt(action.text);
-    } else if (action.type === "steer") {
-      await session.steer(action.text);
-    } else if (action.type === "follow-up") {
-      await session.followUp(action.text);
-    }
+  const input = {
+    text: action.text,
+    model: action.model,
+    thinkingLevel: action.thinkingLevel,
+  };
+  if (action.type === "prompt") {
+    await executor.prompt(sessionId, input);
+  } else if (action.type === "steer") {
+    await executor.steer(sessionId, input);
+  } else if (action.type === "follow-up") {
+    await executor.followUp(sessionId, input);
   }
 }

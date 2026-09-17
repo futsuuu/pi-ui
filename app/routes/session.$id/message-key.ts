@@ -1,6 +1,6 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
-import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+
+import type { SessionActivityEvent, SessionMessage } from "~/session-contracts";
 
 /**
  * The shared identity of a displayed message, stable across streaming
@@ -86,7 +86,7 @@ function assistantRenderable(message: AssistantMessage): boolean {
  *
  * @returns The message key when the message has displayable finalized content, or `null` otherwise.
  */
-export function messageKeyOf(message: AgentMessage): string | null {
+export function messageKeyOf(message: SessionMessage): string | null {
   switch (message.role) {
     case "user":
       return userDisplayText(message.content).trim() ? messageKey("user", message.timestamp) : null;
@@ -152,7 +152,7 @@ export function entryKeyOf(entry: DisplayEntry): string | null {
  * @returns `true` if both values identify the same tool result or share the same role and timestamp, `false` otherwise.
  */
 export function sameIdentity(
-  message: AgentMessage,
+  message: SessionMessage,
   entry: { role: string; timestamp?: number; toolCallId?: string },
 ): boolean {
   if (message.role === "toolResult" && entry.role === "toolResult") {
@@ -177,7 +177,7 @@ export interface TurnDisplayEntry {
  * @param events - The current turn's session events in conversation order
  * @returns Coalesced display entries in event order
  */
-export function foldTurnEvents(events: readonly AgentSessionEvent[]): TurnDisplayEntry[] {
+export function foldTurnEvents(events: readonly SessionActivityEvent[]): TurnDisplayEntry[] {
   const entries: TurnDisplayEntry[] = [];
   for (const event of events) {
     switch (event.type) {
@@ -243,8 +243,8 @@ function upsertDisplayEntry(
  * @returns The ordered display keys for renderable messages and turn entries.
  */
 export function orderedDisplayKeys(
-  messages: readonly AgentMessage[],
-  turnEvents: readonly AgentSessionEvent[] = [],
+  messages: readonly SessionMessage[],
+  turnEvents: readonly SessionActivityEvent[] = [],
 ): string[] {
   const keys: string[] = [];
   const seen = new Set<string>();

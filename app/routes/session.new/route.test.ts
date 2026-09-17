@@ -13,7 +13,9 @@ import { RouterContextProvider } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentSessionContainer } from "~/agent-session-container";
-import { agentSessionContainerContext, modelRuntimeContext } from "~/router-contexts";
+import { InProcessSessionAdapter } from "~/in-process-session-adapter";
+import { modelRuntimeContext, sessionExecutorContext } from "~/router-contexts";
+import { SdkSessionRepository } from "~/sdk-session-repository";
 import { withAgentDir } from "~/test-helpers";
 
 import { action, loader } from "./route";
@@ -45,8 +47,10 @@ function createHarness(
     getAvailable,
     getModel: getModelFromRuntime,
   } as unknown as ModelRuntime;
+  Object.assign(session, { modelRuntime });
+  const sessions = new InProcessSessionAdapter(container, new SdkSessionRepository(modelRuntime));
   const context = new RouterContextProvider();
-  context.set(agentSessionContainerContext, container);
+  context.set(sessionExecutorContext, sessions);
   context.set(modelRuntimeContext, modelRuntime);
   return {
     context,

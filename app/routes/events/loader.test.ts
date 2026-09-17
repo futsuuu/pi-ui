@@ -6,7 +6,9 @@ import { RouterContextProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AgentSessionContainer } from "~/agent-session-container";
-import { agentSessionContainerContext } from "~/router-contexts";
+import { InProcessSessionAdapter } from "~/in-process-session-adapter";
+import { sessionActivitySourceContext, sessionEventHubContext } from "~/router-contexts";
+import { SdkSessionRepository } from "~/sdk-session-repository";
 import type { SessionInfo } from "~/session-info";
 import { createSession, oneTurnSession, realFactory, withAgentDir } from "~/test-helpers";
 
@@ -62,7 +64,9 @@ class SseReader {
 
 function callLoader(container: AgentSessionContainer): Promise<Response> {
   const context = new RouterContextProvider();
-  context.set(agentSessionContainerContext, container);
+  const sessions = new InProcessSessionAdapter(container, new SdkSessionRepository());
+  context.set(sessionActivitySourceContext, sessions);
+  context.set(sessionEventHubContext, sessions);
   return loader({
     request: new Request("http://localhost/events"),
     url: new URL("http://localhost/events"),

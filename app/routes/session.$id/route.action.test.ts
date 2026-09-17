@@ -3,14 +3,27 @@ import os from "node:os";
 import path from "node:path";
 
 import { RouterContextProvider } from "react-router";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { AgentSessionContainer } from "~/agent-session-container";
-import { agentSessionContainerContext } from "~/router-contexts";
+import { InProcessSessionAdapter } from "~/in-process-session-adapter";
+import { sessionActivitySourceContext, sessionExecutorContext } from "~/router-contexts";
+import { SdkSessionRepository } from "~/sdk-session-repository";
+import type { SessionExecutor } from "~/session-contracts";
 import { oneTurnSession, realFactory, withAgentDir } from "~/test-helpers";
 
 import { action } from "./action";
-import { agentSessionContext } from "./router-contexts";
+import { sessionIdContext } from "./router-contexts";
+
+function actionContext(sessionId: string, container: AgentSessionContainer) {
+  const context = new RouterContextProvider();
+  context.set(
+    sessionActivitySourceContext,
+    new InProcessSessionAdapter(container, new SdkSessionRepository()),
+  );
+  context.set(sessionIdContext, sessionId);
+  return context;
+}
 
 function callAction(context: RouterContextProvider, body: unknown): Promise<unknown> {
   return action({
@@ -26,6 +39,34 @@ function callAction(context: RouterContextProvider, body: unknown): Promise<unkn
   });
 }
 
+describe("POST /session/:id commands", () => {
+  it("delegates execution commands through the session executor", async () => {
+    const prompt = vi.fn(async () => undefined);
+    const steer = vi.fn(async () => undefined);
+    const followUp = vi.fn(async () => undefined);
+    const abort = vi.fn(async () => undefined);
+    const executor = { prompt, steer, followUp, abort } as unknown as SessionExecutor;
+    const context = new RouterContextProvider();
+    context.set(sessionIdContext, "session-1");
+    context.set(sessionExecutorContext, executor);
+    const input = {
+      text: "hello",
+      model: { provider: "anthropic", id: "claude" },
+      thinkingLevel: "high",
+    };
+
+    await callAction(context, { type: "prompt", ...input });
+    await callAction(context, { type: "steer", ...input });
+    await callAction(context, { type: "follow-up", ...input });
+    await callAction(context, { type: "abort" });
+
+    expect(prompt).toHaveBeenCalledWith("session-1", input);
+    expect(steer).toHaveBeenCalledWith("session-1", input);
+    expect(followUp).toHaveBeenCalledWith("session-1", input);
+    expect(abort).toHaveBeenCalledWith("session-1");
+  });
+});
+
 describe("POST /session/:id mark_displayed", () => {
   it("advances the shared cursor and returns the resulting read state", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "pi-ui-action-"));
@@ -36,12 +77,7 @@ describe("POST /session/:id mark_displayed", () => {
         const { id } = oneTurnSession(cwd);
 
         const container = AgentSessionContainer.withFactory(realFactory);
-        const session = await container.get(id, { cwd });
-        expect(session).not.toBeNull();
-
-        const context = new RouterContextProvider();
-        context.set(agentSessionContext, session!);
-        context.set(agentSessionContainerContext, container);
+        const context = actionContext(id, container);
 
         const result = await callAction(context, {
           type: "mark_displayed",
@@ -77,11 +113,7 @@ describe("POST /session/:id mark_displayed", () => {
         const { id } = oneTurnSession(cwd);
 
         const container = AgentSessionContainer.withFactory(realFactory);
-        const session = await container.get(id, { cwd });
-        expect(session).not.toBeNull();
-        const context = new RouterContextProvider();
-        context.set(agentSessionContext, session!);
-        context.set(agentSessionContainerContext, container);
+        const context = actionContext(id, container);
 
         await container.markMessageDisplayed(id, "assistant:10");
         // A stale report for the older user message must not regress.
@@ -115,11 +147,7 @@ describe("POST /session/:id mark_displayed", () => {
         const { id } = oneTurnSession(cwd);
 
         const container = AgentSessionContainer.withFactory(realFactory);
-        const session = await container.get(id, { cwd });
-        expect(session).not.toBeNull();
-        const context = new RouterContextProvider();
-        context.set(agentSessionContext, session!);
-        context.set(agentSessionContainerContext, container);
+        const context = actionContext(id, container);
 
         // Invalid key format: valibot validation fails (schema.validation).
         await expect(

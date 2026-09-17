@@ -1,11 +1,11 @@
 import { clampThinkingLevel, type ModelThinkingLevel } from "@earendil-works/pi-ai";
-import { getAgentDir, SettingsManager, type AgentSession } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { Menu } from "lucide-react";
 import { useCallback } from "react";
 import { redirect, useFetcher, useOutletContext } from "react-router";
 import * as v from "valibot";
 
-import { agentSessionContainerContext, modelRuntimeContext } from "~/router-contexts";
+import { modelRuntimeContext, sessionExecutorContext } from "~/router-contexts";
 
 import { PromptForm } from "../session.$id/prompt-form";
 import type { SessionOutletContext } from "../session/route";
@@ -34,26 +34,6 @@ function requestedDirectory(request: Request): string {
   const dir = new URL(request.url).searchParams.get("dir");
   if (!dir) throw redirect("/");
   return dir;
-}
-
-async function waitForPromptStart(session: AgentSession, text: string): Promise<void> {
-  let resolveStart!: () => void;
-  let rejectStart!: (error: unknown) => void;
-  const started = new Promise<void>((resolve, reject) => {
-    resolveStart = resolve;
-    rejectStart = reject;
-  });
-  const completion = session.prompt(text, {
-    preflightResult: (accepted) => {
-      if (accepted) resolveStart();
-      else rejectStart(new Error("Prompt was rejected before starting"));
-    },
-  });
-  void completion.then(
-    () => rejectStart(new Error("Prompt completed before starting")),
-    rejectStart,
-  );
-  await started;
 }
 
 export async function loader({ request, context }: Route.LoaderArgs) {
@@ -91,25 +71,9 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 export async function action({ request, context }: Route.ActionArgs) {
   const dir = requestedDirectory(request);
   const input = v.parse(ActionSchema, await request.json());
-  const container = context.get(agentSessionContainerContext);
-  const modelRuntime = context.get(modelRuntimeContext);
-  const session = await container.create(dir);
-  let started = false;
-  try {
-    const model = modelRuntime.getModel(input.model.provider, input.model.id);
-    if (!model) {
-      throw new Error(
-        `Model ${JSON.stringify(`${input.model.provider}/${input.model.id}`)} not found`,
-      );
-    }
-    await session.setModel(model);
-    session.setThinkingLevel(input.thinkingLevel);
-    await waitForPromptStart(session, input.text);
-    started = true;
-    return redirect(`/session/${encodeURIComponent(session.sessionId)}`);
-  } finally {
-    if (!started) await container.dispose(session.sessionId);
-  }
+  const executor = context.get(sessionExecutorContext);
+  const session = await executor.start(dir, input);
+  return redirect(`/session/${encodeURIComponent(session.id)}`);
 }
 
 export function meta(_: Route.MetaArgs) {

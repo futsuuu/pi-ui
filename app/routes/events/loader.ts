@@ -1,6 +1,5 @@
-import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
-
-import { agentSessionContainerContext } from "~/router-contexts";
+import { sessionActivitySourceContext, sessionEventHubContext } from "~/router-contexts";
+import type { SessionExecutionEvent } from "~/session-contracts";
 import type { SessionInfo } from "~/session-info";
 import type { SessionReadState } from "~/session-view-state";
 
@@ -9,7 +8,7 @@ import type { Route } from "./+types/route";
 /** Messages sent on the global `/events` SSE stream. */
 export type SseEvent =
   | { type: "internal:init"; sessions: SessionInfo[] }
-  | { type: "internal:event"; sessionId: string; event: AgentSessionEvent; info: SessionInfo }
+  | { type: "internal:event"; sessionId: string; event: SessionExecutionEvent; info: SessionInfo }
   | {
       type: "internal:view_state";
       sessionId: string;
@@ -23,7 +22,8 @@ export type SseEvent =
  * @returns A response containing the global event stream.
  */
 export async function loader({ context }: Route.LoaderArgs) {
-  const container = context.get(agentSessionContainerContext);
+  const activity = context.get(sessionActivitySourceContext);
+  const events = context.get(sessionEventHubContext);
 
   let teardown: (() => void) | undefined;
 
@@ -71,7 +71,7 @@ export async function loader({ context }: Route.LoaderArgs) {
       // of being lost to this connection.
       let buffering = true;
       const buffer: Array<() => SseEvent | Promise<SseEvent | undefined>> = [];
-      unsubscribe = container.subscribe((sessionId, event) => {
+      unsubscribe = events.subscribe((sessionId, event) => {
         const produce = (): SseEvent | Promise<SseEvent | undefined> => {
           if (event.type === "session_deleted") {
             infos.delete(sessionId);
@@ -85,7 +85,7 @@ export async function loader({ context }: Route.LoaderArgs) {
           return (async () => {
             let info: SessionInfo | null = null;
             try {
-              info = await container.currentInfo(sessionId);
+              info = await activity.currentInfo(sessionId);
             } catch {
               // fall back to the last known info below
             }
@@ -102,7 +102,7 @@ export async function loader({ context }: Route.LoaderArgs) {
         else enqueue(produce);
       });
 
-      for (const info of await container.currentInfoList()) {
+      for (const info of await activity.currentInfoList()) {
         infos.set(info.id, info);
       }
       if (cleanedUp) return; // canceled while the info list loads

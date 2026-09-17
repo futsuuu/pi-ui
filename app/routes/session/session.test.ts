@@ -11,12 +11,14 @@ import { RouterContextProvider } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import { AgentSessionContainer } from "~/agent-session-container";
+import { InProcessSessionAdapter } from "~/in-process-session-adapter";
 import { ProjectRepository } from "~/project-repository";
 import {
-  agentSessionContainerContext,
   projectRepositoryContext,
+  sessionRepositoryContext,
   worktreeRepositoryContext,
 } from "~/router-contexts";
+import { SdkSessionRepository } from "~/sdk-session-repository";
 import { WorktreeRepository } from "~/worktree-repository";
 
 import { action, loader } from "./route";
@@ -25,6 +27,10 @@ import { action, loader } from "./route";
 const noopFactory: CreateAgentSessionRuntimeFactory = async () => {
   throw new Error("runtime factory should not be called");
 };
+
+function sessions(container: AgentSessionContainer) {
+  return new InProcessSessionAdapter(container, new SdkSessionRepository());
+}
 
 function git(cwd: string, args: string[]): void {
   execFileSync("git", args, { cwd, stdio: "ignore" });
@@ -144,7 +150,10 @@ describe("session layout loader", () => {
         const context = new RouterContextProvider();
         context.set(worktreeRepositoryContext, repo);
         context.set(projectRepositoryContext, projects);
-        context.set(agentSessionContainerContext, AgentSessionContainer.withFactory(noopFactory));
+        context.set(
+          sessionRepositoryContext,
+          sessions(AgentSessionContainer.withFactory(noopFactory)),
+        );
 
         const result = (await runLoader(context, { dir: project })) as {
           cwd: string;
@@ -178,7 +187,10 @@ describe("session layout loader", () => {
         const context = new RouterContextProvider();
         context.set(worktreeRepositoryContext, repo);
         context.set(projectRepositoryContext, new ProjectRepository({ inMemory: true }));
-        context.set(agentSessionContainerContext, AgentSessionContainer.withFactory(noopFactory));
+        context.set(
+          sessionRepositoryContext,
+          sessions(AgentSessionContainer.withFactory(noopFactory)),
+        );
 
         const result = (await runLoader(context, { id })) as {
           cwd: string;
@@ -205,7 +217,10 @@ describe("session layout loader", () => {
         const context = new RouterContextProvider();
         context.set(worktreeRepositoryContext, repo);
         context.set(projectRepositoryContext, projects);
-        context.set(agentSessionContainerContext, AgentSessionContainer.withFactory(noopFactory));
+        context.set(
+          sessionRepositoryContext,
+          sessions(AgentSessionContainer.withFactory(noopFactory)),
+        );
 
         const result = (await runLoader(context, { id })) as { cwd: string };
         expect(result.cwd).toBe(repo.canonicalize(plainDir));
@@ -235,7 +250,7 @@ describe("session list action", () => {
 
         const context = new RouterContextProvider();
         context.set(worktreeRepositoryContext, repo);
-        context.set(agentSessionContainerContext, container);
+        context.set(sessionRepositoryContext, sessions(container));
 
         const result = await postAction(context, {
           type: "deleteWorktree",
@@ -265,7 +280,10 @@ describe("session list action", () => {
 
         const context = new RouterContextProvider();
         context.set(worktreeRepositoryContext, repo);
-        context.set(agentSessionContainerContext, AgentSessionContainer.withFactory(noopFactory));
+        context.set(
+          sessionRepositoryContext,
+          sessions(AgentSessionContainer.withFactory(noopFactory)),
+        );
 
         const result = await postAction(context, {
           type: "deleteWorktree",
@@ -310,7 +328,10 @@ describe("session list action", () => {
 
         const context = new RouterContextProvider();
         context.set(worktreeRepositoryContext, repo);
-        context.set(agentSessionContainerContext, AgentSessionContainer.withFactory(noopFactory));
+        context.set(
+          sessionRepositoryContext,
+          sessions(AgentSessionContainer.withFactory(noopFactory)),
+        );
 
         const result = await postAction(context, {
           type: "deleteWorktree",

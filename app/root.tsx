@@ -13,10 +13,13 @@ import type { Route } from "./+types/root";
 import { SessionEventProvider } from "./contexts/session-events";
 import { ThemeProvider, ThemeScript } from "./contexts/theme";
 import {
-  agentSessionContainerContext,
   modelRuntimeContext,
   projectRepositoryContext,
   providerAuthManagerContext,
+  sessionActivitySourceContext,
+  sessionEventHubContext,
+  sessionExecutorContext,
+  sessionRepositoryContext,
   worktreeRepositoryContext,
 } from "./router-contexts";
 import { getSingletonContainer } from "./singleton-container";
@@ -35,7 +38,10 @@ export const links: Route.LinksFunction = () => [
 export const middleware: Route.MiddlewareFunction[] = [
   async ({ context }) => {
     const container = await getSingletonContainer();
-    context.set(agentSessionContainerContext, container.agentSessionContainer);
+    context.set(sessionRepositoryContext, container.sessions);
+    context.set(sessionExecutorContext, container.sessions);
+    context.set(sessionActivitySourceContext, container.sessions);
+    context.set(sessionEventHubContext, container.sessions);
     context.set(modelRuntimeContext, container.modelRuntime);
     context.set(providerAuthManagerContext, container.providerAuthManager);
     context.set(projectRepositoryContext, container.projectRepository);

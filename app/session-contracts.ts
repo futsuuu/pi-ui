@@ -151,11 +151,14 @@ export type SessionLifecycleEvent =
   | { type: "executor_stopped"; generation: number; reason: "idle" | "shutdown" }
   | { type: "executor_interrupted"; generation: number; message: string };
 
-export type SessionEvent =
+export type SessionExecutionEvent =
   | SessionActivityEvent
-  | { type: "session_deleted" }
-  | { type: "view_state"; viewState: SessionReadState }
   | { type: "lifecycle"; event: SessionLifecycleEvent };
+
+export type SessionEvent =
+  | SessionExecutionEvent
+  | { type: "session_deleted" }
+  | { type: "view_state"; viewState: SessionReadState };
 
 export interface SessionRepository {
   listInfo(dir: string): Promise<SessionListInfo[]>;

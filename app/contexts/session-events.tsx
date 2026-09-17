@@ -1,4 +1,3 @@
-import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import {
   createContext,
   useCallback,
@@ -12,6 +11,7 @@ import {
 } from "react";
 
 import type { SseEvent } from "~/routes/events/loader";
+import type { SessionExecutionEvent } from "~/session-contracts";
 import type { SessionInfo } from "~/session-info";
 import type { SessionReadState } from "~/session-view-state";
 
@@ -26,7 +26,7 @@ interface SessionEventsContextValue {
   /** Subscribe to store updates (for useSyncExternalStore). */
   subscribeStore: (onChange: () => void) => () => void;
   /** Subscribe to one session's events. */
-  subscribe: (sessionId: string, listener: (event: AgentSessionEvent) => void) => () => void;
+  subscribe: (sessionId: string, listener: (event: SessionExecutionEvent) => void) => () => void;
 }
 
 const SessionEventsContext = createContext<SessionEventsContextValue | null>(null);
@@ -36,7 +36,7 @@ const EMPTY_SESSIONS: Map<string, SessionInfo> = new Map();
 
 interface SessionEventStore {
   sessions: Map<string, SessionInfo>;
-  eventListeners: Map<string, Set<(event: AgentSessionEvent) => void>>;
+  eventListeners: Map<string, Set<(event: SessionExecutionEvent) => void>>;
   storeListeners: Set<() => void>;
 }
 
@@ -146,7 +146,7 @@ export function SessionEventProvider({ children }: { children: ReactNode }) {
   const getSessions = useCallback(() => storeRef.current.sessions, []);
 
   const subscribe = useCallback(
-    (sessionId: string, listener: (event: AgentSessionEvent) => void) => {
+    (sessionId: string, listener: (event: SessionExecutionEvent) => void) => {
       const listeners = storeRef.current.eventListeners;
       let set = listeners.get(sessionId);
       if (!set) {
@@ -257,7 +257,7 @@ export function useSessionStream(sessionId: string) {
     connected,
     viewState: useMemo(() => viewStateOf(info), [info]),
     subscribe: useCallback(
-      (listener: (event: AgentSessionEvent) => void) => subscribe(sessionId, listener),
+      (listener: (event: SessionExecutionEvent) => void) => subscribe(sessionId, listener),
       [subscribe, sessionId],
     ),
   };

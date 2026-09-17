@@ -1,6 +1,10 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, StopReason } from "@earendil-works/pi-ai";
-import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+
+import type {
+  SessionActivityEvent,
+  SessionExecutionEvent,
+  SessionMessage,
+} from "~/session-contracts";
 
 import type { Props as AgentMessageProps } from "./agent-message";
 import { entryKeyOf, messageKey, messageKeyOf, sameIdentity } from "./message-key";
@@ -17,7 +21,7 @@ export type AgentMessagePropsWithKey = AgentMessageProps & {
 
 export interface ChatState {
   /** Session history from the loader, rendered as-is (keyed by index). */
-  loadedMessages: AgentMessage[];
+  loadedMessages: SessionMessage[];
   /**
    * Messages streamed via SSE that are not yet included in the loader data;
    * promoted into `loadedMessages` on the next loader revalidation.
@@ -40,7 +44,7 @@ export interface ChatState {
  * `useReducer(chatReducer, loadedMessages, createChatState)`.
  */
 export function createChatState(
-  loadedMessages: AgentMessage[],
+  loadedMessages: SessionMessage[],
   sessionId: string | null = null,
 ): ChatState {
   return {
@@ -52,19 +56,19 @@ export function createChatState(
 }
 
 /**
- * Actions the chat UI dispatches: `AgentSessionEvent`s as forwarded by the SSE
+ * Actions the chat UI dispatches: session activity events as forwarded by the SSE
  * loader, plus the UI-only actions `user_message` (optimistic pending entry),
  * `abort`, and `reset` (loader revalidation / session switch).
  */
 export type ChatAction =
-  | AgentSessionEvent
+  | SessionExecutionEvent
   | { type: "user_message"; content: string }
   | { type: "abort" }
   | {
       type: "reset";
-      loadedMessages: AgentMessage[];
+      loadedMessages: SessionMessage[];
       /** The session's in-flight turn events from the loader (optional). */
-      turnEvents?: readonly AgentSessionEvent[];
+      turnEvents?: readonly SessionActivityEvent[];
       sessionId: string | null;
     };
 
@@ -211,7 +215,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           content: action.result?.content ?? [],
           // The edit tool returns its display diff here (details.diff); the
           // chat entry carries it so ToolResultMessage can render a diff view.
-          details: action.result?.details,
+          details: editDetails(action.result?.details),
           isStreaming: false,
           isError: action.isError,
         }),
@@ -221,7 +225,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           content: action.result?.content ?? [],
           toolName,
           toolCallId: action.toolCallId,
-          details: action.result?.details,
+          details: editDetails(action.result?.details),
           isError: action.isError,
           isStreaming: false,
         }),
@@ -348,6 +352,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return seedTurnEvents(next, turnEvents);
     }
     case "agent_start":
+    case "lifecycle":
     case "auto_retry_start":
     case "auto_retry_end":
     case "bash_execution_update":
@@ -400,6 +405,21 @@ export function chatDisplayKeys(chat: ChatState): string[] {
   for (const message of chat.eventMessages) push(entryKeyOf(message));
   push(chat.pendingUserMessage ? entryKeyOf(chat.pendingUserMessage) : null);
   return keys;
+}
+
+function editDetails(
+  value: unknown,
+): { diff: string; patch: string; firstChangedLine?: number } | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const details = value as Record<string, unknown>;
+  if (typeof details.diff !== "string") return undefined;
+  return {
+    diff: details.diff,
+    patch: typeof details.patch === "string" ? details.patch : "",
+    ...(typeof details.firstChangedLine === "number"
+      ? { firstChangedLine: details.firstChangedLine }
+      : {}),
+  };
 }
 
 /** Find the index of a tool result message by its toolCallId */
@@ -549,7 +569,7 @@ function uid(): string {
  * kept entry. Entries created while seeding are ordinary stream events and
  * are applied normally.
  */
-function seedTurnEvents(state: ChatState, turnEvents: readonly AgentSessionEvent[]): ChatState {
+function seedTurnEvents(state: ChatState, turnEvents: readonly SessionActivityEvent[]): ChatState {
   // Identities kept from the previous state: the live content is newer than
   // the buffered events, so updates are skipped (only ends finalize).
   const keptIdentities = new Set(
@@ -578,7 +598,7 @@ function seedTurnEvents(state: ChatState, turnEvents: readonly AgentSessionEvent
  */
 function applySeedEvent(
   state: ChatState,
-  event: AgentSessionEvent,
+  event: SessionActivityEvent,
   keptIdentities: ReadonlySet<string>,
   keptTools: ReadonlySet<string>,
 ): ChatState {

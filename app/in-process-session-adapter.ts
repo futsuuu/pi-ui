@@ -40,15 +40,20 @@ function snapshotOf(session: AgentSession): SessionSnapshot {
   };
 }
 
-async function configureSession(session: AgentSession, input: SessionPromptInput): Promise<void> {
+async function configureSession(
+  session: AgentSession,
+  input: SessionPromptInput,
+  requireModel = false,
+): Promise<void> {
   if (session.model?.provider !== input.model.provider || session.model.id !== input.model.id) {
     const model = session.modelRuntime.getModel(input.model.provider, input.model.id);
-    if (!model) {
+    if (model) {
+      await session.setModel(model);
+    } else if (requireModel) {
       throw new Error(
         `Model ${JSON.stringify(`${input.model.provider}/${input.model.id}`)} not found`,
       );
     }
-    await session.setModel(model);
   }
   if (session.thinkingLevel !== input.thinkingLevel) {
     session.setThinkingLevel(input.thinkingLevel);
@@ -108,7 +113,7 @@ export class InProcessSessionAdapter
     const session = await this.container.create(cwd);
     let started = false;
     try {
-      await configureSession(session, input);
+      await configureSession(session, input, true);
       await waitForPromptStart(session, input.text);
       started = true;
       return { id: session.sessionId };

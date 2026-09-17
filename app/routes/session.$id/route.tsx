@@ -1,16 +1,19 @@
 import { homedir } from "node:os";
 
-import type { AgentMessage as SessionMessage } from "@earendil-works/pi-agent-core";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
-import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { Menu } from "lucide-react";
 import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { data, useFetcher, useOutletContext, useRevalidator } from "react-router";
 
-import { mergedSessionMessages } from "~/agent-session-container";
 import { ScrollArea } from "~/components/scroll-area";
 import { useSessionStream } from "~/contexts/session-events";
-import { agentSessionContainerContext } from "~/router-contexts";
+import {
+  modelRuntimeContext,
+  sessionActivitySourceContext,
+  sessionExecutorContext,
+  sessionRepositoryContext,
+} from "~/router-contexts";
+import type { SessionExecutionEvent, SessionMessage } from "~/session-contracts";
 
 import type { SessionOutletContext } from "../session/route";
 import type { Route } from "./+types/route";
@@ -23,7 +26,7 @@ import { isForwardKey, selectReportedKey } from "./display-tracker";
 import { entryKeyOf, messageKeyOf } from "./message-key";
 import { PathDisplayProvider } from "./path-display-context";
 import { PromptForm } from "./prompt-form";
-import { agentSessionContext } from "./router-contexts";
+import { sessionIdContext } from "./router-contexts";
 import { ToolCallContext } from "./tool-call-context";
 
 export { action } from "./action";
@@ -34,10 +37,11 @@ export function meta(_: Route.MetaArgs) {
 
 export const middleware: Route.MiddlewareFunction[] = [
   async ({ params, context }) => {
-    const container = context.get(agentSessionContainerContext);
-    const session = await container.get(params.id);
-    if (!session) throw data(`Session ${JSON.stringify(params.id)} not found`, { status: 404 });
-    context.set(agentSessionContext, session);
+    const executor = context.get(sessionExecutorContext);
+    if (!(await executor.ensure(params.id))) {
+      throw data(`Session ${JSON.stringify(params.id)} not found`, { status: 404 });
+    }
+    context.set(sessionIdContext, params.id);
   },
 ];
 
@@ -79,37 +83,29 @@ function TrackedMessage({
  * @returns The session messages, in-flight turn events, model options, session state, directories, and shared display state.
  */
 export async function loader({ context }: Route.LoaderArgs) {
-  const container = context.get(agentSessionContainerContext);
-  const session = context.get(agentSessionContext);
-  // Pass only the fields the Chat component uses, read directly from the
-  // session, instead of the full SessionInfo.
-  const messages = mergedSessionMessages(session);
-  // The model list is streamed to the client as a promise.
-  const models = session.modelRuntime.getAvailable();
-  // The in-flight turn's events, so a client that mounts mid-turn can render
-  // the streaming partial and tool executions without having seen their first
-  // event (closes the [loader read -> subscription] loss window).
-  const turnEvents = container.getTurnEvents(session.sessionId);
-  // The initial read state: the shared display cursor plus the latest
-  // renderable message key. The first render restores this anchor before any
-  // display observer reports a position.
-  const viewState = await container.getSessionReadState(session.sessionId);
+  const sessionId = context.get(sessionIdContext);
+  const executor = context.get(sessionExecutorContext);
+  const activity = context.get(sessionActivitySourceContext);
+  const repository = context.get(sessionRepositoryContext);
+  const durable = await repository.read(sessionId);
+  const live = await executor.snapshot(sessionId);
+  const snapshot = live
+    ? { ...live, id: durable?.id ?? live.id, cwd: durable?.cwd ?? live.cwd }
+    : durable;
+  if (!snapshot) throw data(`Session ${JSON.stringify(sessionId)} not found`, { status: 404 });
+  const models = context.get(modelRuntimeContext).getAvailable();
+  const turnEvents = activity.getTurnEvents(sessionId);
+  const viewState = await activity.getSessionReadState(sessionId);
   return {
-    cwd: session.sessionManager.getCwd(),
+    cwd: snapshot.cwd,
     home: homedir(),
     state: {
-      model: session.model
-        ? {
-            name: session.model.name,
-            provider: session.model.provider,
-            id: session.model.id,
-          }
-        : null,
-      thinkingLevel: session.thinkingLevel,
-      isStreaming: session.isStreaming,
-      contextUsage: session.getContextUsage() ?? null,
+      model: snapshot.state.model,
+      thinkingLevel: snapshot.state.thinkingLevel,
+      isStreaming: snapshot.state.isStreaming,
+      contextUsage: snapshot.state.contextUsage,
     },
-    messages,
+    messages: snapshot.messages,
     turnEvents,
     models,
     viewState,
@@ -196,7 +192,7 @@ function Chat({
   // a cost that grows with the text length. The delay for each batch is
   // derived from the newest partial at the time the batch starts (16ms for
   // short text, capped at 200ms), so the interval widens as the stream grows.
-  const pendingUpdateRef = useRef<AgentSessionEvent | null>(null);
+  const pendingUpdateRef = useRef<SessionExecutionEvent | null>(null);
   const updateTimerRef = useRef<number | null>(null);
   useEffect(() => {
     const flushPendingUpdate = () => {
