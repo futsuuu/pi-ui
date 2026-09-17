@@ -1,7 +1,4 @@
-import { execFile } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
-import { unlink } from "node:fs/promises";
-import { promisify } from "node:util";
+import { statSync } from "node:fs";
 
 import type { TextContent } from "@earendil-works/pi-ai/compat";
 import {
@@ -21,67 +18,14 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 import { messageKey, orderedDisplayKeys, toolResultKey } from "./routes/session.$id/message-key";
+import { SdkSessionRepository } from "./sdk-session-repository";
+import { SessionEventHub, type SessionEventProjection } from "./session-event-hub";
 import type { SessionInfo } from "./session-info";
 import {
   SessionViewStateRepository,
   type SessionReadState,
   type SessionViewState,
 } from "./session-view-state";
-
-const execFileAsync = promisify(execFile);
-
-/**
- * Delete a session file, trying the `trash` CLI first (moves it to the OS
- * trash), then falling back to permanent deletion. Mirrors Pi's TUI behavior:
- * `trash` is only treated as successful when the file is actually gone, so a
- * missing-path misconfiguration cannot leave the session behind.
- */
-async function deleteSessionFile(sessionPath: string): Promise<void> {
-  const args = sessionPath.startsWith("-") ? ["--", sessionPath] : [sessionPath];
-  let trashHint: string | null = null;
-  try {
-    await execFileAsync("trash", args);
-    if (!existsSync(sessionPath)) return;
-    trashHint = "trash reported success but the session file is still present";
-  } catch (error) {
-    // `trash` is not installed or failed; keep its error for diagnostics.
-    const message = error instanceof Error ? error.message : "";
-    const stderr =
-      error instanceof Error && "stderr" in error
-        ? (String((error as { stderr: unknown }).stderr)
-            .trim()
-            .split("\n")[0] ?? "")
-        : "";
-    const detail = stderr || message;
-    if (detail) {
-      trashHint = `trash: ${detail.slice(0, 200)}`;
-    }
-  }
-  try {
-    await unlink(sessionPath);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(trashHint ? `${message} (${trashHint})` : message);
-  }
-}
-
-/**
- * Finds persisted session information by session ID.
- *
- * @param sessionId - The ID of the session to find
- * @param hints - The working directory and optional session directory used to locate sessions
- * @returns The matching persisted session information, or `null` if no session matches
- */
-async function findSessionInfo(
-  sessionId: string,
-  hints: { cwd: string; sessionDir?: string },
-): Promise<PersistedSessionInfo | null> {
-  // Passing the cwd lets `list` match the session header's cwd when a custom
-  // sessionDir is used; without it `resolvePath("")` would fall back to the
-  // server process cwd and wrongly filter out sessions.
-  const infoList = await SessionManager.list(hints.cwd, hints.sessionDir);
-  return infoList.find((info) => info.id === sessionId) ?? null;
-}
 
 export type ContainerEvent =
   | AgentSessionEvent
@@ -189,33 +133,24 @@ export function mergedSessionMessages(session: {
     : merged;
 }
 
+interface ActiveSessionRecord {
+  runtime: Promise<AgentSessionRuntime | null>;
+  turn: SessionEventProjection<AgentSessionEvent, AgentSessionEvent[]>;
+  idleTimer?: ReturnType<typeof setTimeout>;
+}
+
 export class AgentSessionContainer {
-  // We should not expose `AgentSessionRuntime` because it can modify the inner `session` field.
-  private runtimes: Map<string, Promise<AgentSessionRuntime | null>> = new Map();
-  private listeners: Set<(sessionId: string, event: ContainerEvent) => void> = new Set();
-  /**
-   * Current turn's events per session, shared across connections. Bounded by
-   * the turn's message/tool-event count: `message_update` and
-   * `tool_execution_update` events are coalesced to the newest value per
-   * message/tool identity. Replaced on `turn_start`, cleared on
-   * `agent_settled`, deletion, and runtime disposal.
-   */
-  private turnBuffers: Map<string, AgentSessionEvent[]> = new Map();
-  private idleDisposalTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+  private readonly activeSessions = new Map<string, ActiveSessionRecord>();
+  private readonly events = new SessionEventHub<ContainerEvent>();
 
   private constructor(
     private createRuntimeFactory: CreateAgentSessionRuntimeFactory,
     private viewStateRepository: SessionViewStateRepository,
+    private repository: SdkSessionRepository,
   ) {}
 
-  public async listInfo(dir: string) {
-    const sessions = await SessionManager.list(dir);
-    return sessions.map((s) => ({
-      id: s.id,
-      firstMessage: s.firstMessage.slice(0, 100),
-      messageCount: s.messageCount,
-      timestamp: s.modified.getTime(),
-    }));
+  public listInfo(dir: string) {
+    return this.repository.listInfo(dir);
   }
 
   /**
@@ -224,19 +159,17 @@ export class AgentSessionContainer {
    * persisted headers otherwise; never loads a runtime.
    */
   public async findSessionCwd(sessionId: string): Promise<string | null> {
-    const runtime = this.runtimes.get(sessionId);
-    if (runtime) {
+    const record = this.activeSessions.get(sessionId);
+    if (record) {
       this.refreshIdleDisposal(sessionId);
-      const loaded = await runtime.catch(() => null);
+      const loaded = await record.runtime.catch(() => null);
       if (loaded) return loaded.session.sessionManager.getCwd();
     }
-    const infos = await SessionManager.listAll();
-    return infos.find((info) => info.id === sessionId)?.cwd ?? null;
+    return this.repository.findSessionCwd(sessionId);
   }
 
   public subscribe(callback: (sessionId: string, event: ContainerEvent) => void): () => void {
-    this.listeners.add(callback);
-    return () => this.listeners.delete(callback);
+    return this.events.subscribe(callback);
   }
 
   /**
@@ -248,56 +181,46 @@ export class AgentSessionContainer {
    * reference and rebuild on revalidation.
    */
   public getTurnEvents(sessionId: string): AgentSessionEvent[] {
-    return this.turnBuffers.get(sessionId) ?? EMPTY_TURN_EVENTS;
+    return this.activeSessions.get(sessionId)?.turn.current ?? EMPTY_TURN_EVENTS;
   }
 
-  private broadcast(sessionId: string, event: ContainerEvent) {
-    for (const listener of this.listeners) {
-      try {
-        listener(sessionId, event);
-      } catch {
-        // ignore disconnected clients
-      }
-    }
-  }
-
-  /** Keep the per-session turn buffer in sync with the session's events. */
   private handleSessionEvent(sessionId: string, event: AgentSessionEvent) {
-    this.refreshIdleDisposal(sessionId);
-    const next = applyTurnEvent(this.turnBuffers.get(sessionId), event);
-    if (next) this.turnBuffers.set(sessionId, next);
-    else this.turnBuffers.delete(sessionId);
-    // A settled message must leave the session unread until a client displays
-    // it — even when the session was never opened as a page (no record yet,
-    // e.g. a prompt sent through a fetcher). Creating a null-cursor record
-    // keeps "no record" meaning "read" (e.g. after a server restart) while
-    // still flagging the new message as unread.
+    const record = this.activeSessions.get(sessionId);
+    if (record) {
+      this.refreshIdleDisposal(sessionId);
+      record.turn.update(event);
+    }
     if (
       (event.type === "message_end" || event.type === "tool_execution_end") &&
       this.viewStateRepository.get(sessionId) === null
     ) {
       this.viewStateRepository.set(sessionId, null);
     }
-    this.broadcast(sessionId, event);
+    this.events.publish(sessionId, event);
   }
 
   public static async create(
     modelRuntime: ModelRuntime,
     viewStateRepository: SessionViewStateRepository = new SessionViewStateRepository(),
+    repository: SdkSessionRepository = new SdkSessionRepository(modelRuntime),
   ) {
-    return new AgentSessionContainer(async ({ cwd, sessionManager, sessionStartEvent }) => {
-      const services = await createAgentSessionServices({ cwd, modelRuntime });
-      const result = await createAgentSessionFromServices({
-        services,
-        sessionManager,
-        sessionStartEvent,
-      });
-      return {
-        ...result,
-        services,
-        diagnostics: services.diagnostics,
-      };
-    }, viewStateRepository);
+    return new AgentSessionContainer(
+      async ({ cwd, sessionManager, sessionStartEvent }) => {
+        const services = await createAgentSessionServices({ cwd, modelRuntime });
+        const result = await createAgentSessionFromServices({
+          services,
+          sessionManager,
+          sessionStartEvent,
+        });
+        return {
+          ...result,
+          services,
+          diagnostics: services.diagnostics,
+        };
+      },
+      viewStateRepository,
+      repository,
+    );
   }
 
   /**
@@ -308,21 +231,25 @@ export class AgentSessionContainer {
   public static withFactory(
     factory: CreateAgentSessionRuntimeFactory,
     viewStateRepository: SessionViewStateRepository = new SessionViewStateRepository(),
+    repository: SdkSessionRepository = new SdkSessionRepository(),
   ): AgentSessionContainer {
-    return new AgentSessionContainer(factory, viewStateRepository);
+    return new AgentSessionContainer(factory, viewStateRepository, repository);
   }
 
   public async create(cwd: string) {
-    const sessionManager = SessionManager.create(cwd);
+    const sessionManager = this.repository.create(cwd);
     const runtime = await createAgentSessionRuntime(this.createRuntimeFactory, {
       cwd: sessionManager.getCwd(),
       agentDir: getAgentDir(),
       sessionManager,
     });
     const sessionId = runtime.session.sessionId;
-    const promise = Promise.resolve(runtime);
-    this.runtimes.set(sessionId, promise);
-    this.scheduleIdleDisposal(sessionId, promise);
+    const record: ActiveSessionRecord = {
+      runtime: Promise.resolve(runtime),
+      turn: this.events.createProjection(applyTurnEvent),
+    };
+    this.activeSessions.set(sessionId, record);
+    this.scheduleIdleDisposal(sessionId, record);
     runtime.session.subscribe((event) => this.handleSessionEvent(sessionId, event));
     return runtime.session;
   }
@@ -333,42 +260,41 @@ export class AgentSessionContainer {
   }
 
   private getRuntime(sessionId: string, hints: { cwd?: string } = {}) {
-    const existing = this.runtimes.get(sessionId);
+    const existing = this.activeSessions.get(sessionId);
     if (existing) {
       this.refreshIdleDisposal(sessionId);
-      return existing;
+      return existing.runtime;
     }
-    const promise = this.getRuntimeInner(sessionId, hints);
-    this.runtimes.set(sessionId, promise);
-    void promise.then(
-      (runtime) => {
-        if (this.runtimes.get(sessionId) !== promise) return;
-        if (runtime) {
-          this.scheduleIdleDisposal(sessionId, promise);
+    const runtime = this.getRuntimeInner(sessionId, hints);
+    const record: ActiveSessionRecord = {
+      runtime,
+      turn: this.events.createProjection(applyTurnEvent),
+    };
+    this.activeSessions.set(sessionId, record);
+    void runtime.then(
+      (loaded) => {
+        if (this.activeSessions.get(sessionId) !== record) return;
+        if (loaded) {
+          this.scheduleIdleDisposal(sessionId, record);
         } else {
-          this.runtimes.delete(sessionId);
-          this.clearIdleDisposal(sessionId);
+          this.activeSessions.delete(sessionId);
+          this.clearIdleDisposal(record);
         }
       },
       () => {
-        if (this.runtimes.get(sessionId) === promise) {
-          this.runtimes.delete(sessionId);
-          this.clearIdleDisposal(sessionId);
+        if (this.activeSessions.get(sessionId) === record) {
+          this.activeSessions.delete(sessionId);
+          this.clearIdleDisposal(record);
         }
       },
     );
-    return promise;
+    return runtime;
   }
 
   private async getRuntimeInner(sessionId: string, hints: { cwd?: string } = {}) {
-    const infoList = hints.cwd
-      ? await SessionManager.list(hints.cwd)
-      : await SessionManager.listAll();
-    const found = infoList.find((info) => info.id === sessionId);
-    if (!found) {
-      return null;
-    }
-    const sessionManager = SessionManager.open(found.path);
+    const found = await this.repository.findInfo(sessionId, hints);
+    if (!found) return null;
+    const sessionManager = this.repository.open(found.path);
     const runtime = await createAgentSessionRuntime(this.createRuntimeFactory, {
       cwd: sessionManager.getCwd(),
       agentDir: getAgentDir(),
@@ -384,18 +310,18 @@ export class AgentSessionContainer {
    * their persisted info only.
    */
   public async currentInfoList(): Promise<SessionInfo[]> {
-    const persisted = await SessionManager.listAll();
+    const persisted = await this.repository.listAll();
     return Promise.all(persisted.map((info) => this.infoFromPersisted(info)));
   }
 
   private async infoFromPersisted(persisted: PersistedSessionInfo): Promise<SessionInfo> {
-    const runtime = this.runtimes.get(persisted.id);
-    if (runtime) {
-      const loaded = await runtime.catch(() => null);
+    const record = this.activeSessions.get(persisted.id);
+    if (record) {
+      const loaded = await record.runtime.catch(() => null);
       if (loaded) return this.loadedInfo(persisted.id, loaded.session);
     }
     const keys = orderedDisplayKeys(
-      messageEntries(SessionManager.open(persisted.path).getEntries()),
+      messageEntries(this.repository.open(persisted.path).getEntries()),
     );
     const stored = this.viewStateRepository.get(persisted.id);
     const lastDisplayed = stored?.lastDisplayedMessageKey ?? null;
@@ -423,17 +349,17 @@ export class AgentSessionContainer {
    * session is not loaded. Never creates a runtime.
    */
   public async currentInfo(sessionId: string): Promise<SessionInfo | null> {
-    const runtime = this.runtimes.get(sessionId);
-    if (!runtime) return null;
+    const record = this.activeSessions.get(sessionId);
+    if (!record) return null;
     this.refreshIdleDisposal(sessionId);
-    const loaded = await runtime.catch(() => null);
+    const loaded = await record.runtime.catch(() => null);
     return loaded ? this.loadedInfo(sessionId, loaded.session) : null;
   }
 
   private loadedInfo(sessionId: string, session: AgentSession): SessionInfo {
     const keys = orderedDisplayKeys(
       mergedSessionMessages(session),
-      this.turnBuffers.get(sessionId) ?? [],
+      this.activeSessions.get(sessionId)?.turn.current ?? [],
     );
     const stored = this.viewStateRepository.get(sessionId);
     const lastDisplayed = stored?.lastDisplayedMessageKey ?? null;
@@ -447,61 +373,52 @@ export class AgentSessionContainer {
   }
 
   private refreshIdleDisposal(sessionId: string) {
-    const promise = this.runtimes.get(sessionId);
-    if (promise) this.scheduleIdleDisposal(sessionId, promise);
+    const record = this.activeSessions.get(sessionId);
+    if (record) this.scheduleIdleDisposal(sessionId, record);
   }
 
-  private clearIdleDisposal(sessionId: string) {
-    const timer = this.idleDisposalTimers.get(sessionId);
-    if (timer !== undefined) clearTimeout(timer);
-    this.idleDisposalTimers.delete(sessionId);
+  private clearIdleDisposal(record: ActiveSessionRecord) {
+    if (record.idleTimer !== undefined) clearTimeout(record.idleTimer);
+    record.idleTimer = undefined;
   }
 
-  private scheduleIdleDisposal(sessionId: string, promise: Promise<AgentSessionRuntime | null>) {
-    this.clearIdleDisposal(sessionId);
+  private scheduleIdleDisposal(sessionId: string, record: ActiveSessionRecord) {
+    this.clearIdleDisposal(record);
     const timer = setTimeout(() => {
-      if (this.idleDisposalTimers.get(sessionId) !== timer) return;
-      this.idleDisposalTimers.delete(sessionId);
-      void this.disposeIfIdle(sessionId, promise).catch(() => undefined);
+      if (record.idleTimer !== timer) return;
+      record.idleTimer = undefined;
+      void this.disposeIfIdle(sessionId, record).catch(() => undefined);
     }, SESSION_IDLE_TIMEOUT_MS);
     timer.unref?.();
-    this.idleDisposalTimers.set(sessionId, timer);
+    record.idleTimer = timer;
   }
 
-  private async disposeIfIdle(sessionId: string, promise: Promise<AgentSessionRuntime | null>) {
-    if (this.runtimes.get(sessionId) !== promise || this.idleDisposalTimers.has(sessionId)) {
-      return;
-    }
-    const runtime = await promise;
-    if (this.runtimes.get(sessionId) !== promise || this.idleDisposalTimers.has(sessionId)) {
-      return;
-    }
-    if (
-      runtime?.session.isStreaming ||
-      runtime?.session.isCompacting ||
-      this.turnBuffers.has(sessionId)
-    ) {
-      this.scheduleIdleDisposal(sessionId, promise);
+  private async disposeIfIdle(sessionId: string, record: ActiveSessionRecord) {
+    if (this.activeSessions.get(sessionId) !== record || record.idleTimer !== undefined) return;
+    const runtime = await record.runtime;
+    if (this.activeSessions.get(sessionId) !== record || record.idleTimer !== undefined) return;
+    if (runtime?.session.isStreaming || runtime?.session.isCompacting || record.turn.current) {
+      this.scheduleIdleDisposal(sessionId, record);
       return;
     }
     await this.dispose(sessionId);
   }
 
   public async dispose(sessionId: string) {
-    const promise = this.runtimes.get(sessionId);
-    this.clearIdleDisposal(sessionId);
-    if (!promise) return;
-    this.runtimes.delete(sessionId);
-    this.turnBuffers.delete(sessionId);
-    const runtime = await promise;
-    if (runtime) {
-      await runtime.dispose();
-    }
+    const record = this.activeSessions.get(sessionId);
+    if (!record) return;
+    this.clearIdleDisposal(record);
+    this.activeSessions.delete(sessionId);
+    record.turn.clear();
+    const runtime = await record.runtime;
+    if (runtime) await runtime.dispose();
   }
 
   public async disposeAll() {
-    await Promise.allSettled([...this.runtimes.keys()].map((sessionId) => this.dispose(sessionId)));
-    this.listeners.clear();
+    await Promise.allSettled(
+      [...this.activeSessions.keys()].map((sessionId) => this.dispose(sessionId)),
+    );
+    this.events.clear();
   }
 
   /**
@@ -513,17 +430,12 @@ export class AgentSessionContainer {
    * the given id exists.
    */
   public async delete(sessionId: string, hints: { cwd: string; sessionDir?: string }) {
-    const found = await findSessionInfo(sessionId, hints);
-    if (!found) {
-      throw new Error(`Session ${JSON.stringify(sessionId)} not found`);
-    }
+    const found = await this.repository.findInfo(sessionId, hints);
+    if (!found) throw new Error(`Session ${JSON.stringify(sessionId)} not found`);
     await this.dispose(sessionId);
-    await deleteSessionFile(found.path);
-    // Only broadcast once the file is actually gone, so a failed deletion
-    // cannot leave clients with a removed session.
-    this.turnBuffers.delete(sessionId);
+    await this.repository.deletePath(found.path);
     this.viewStateRepository.delete(sessionId);
-    this.broadcast(sessionId, { type: "session_deleted" });
+    this.events.publish(sessionId, { type: "session_deleted" });
   }
 
   /**
@@ -568,7 +480,7 @@ export class AgentSessionContainer {
     }
     this.viewStateRepository.set(sessionId, messageKey);
     const readState = this.readState(sessionId, keys);
-    this.broadcast(sessionId, { type: "view_state", viewState: readState });
+    this.events.publish(sessionId, { type: "view_state", viewState: readState });
     return readState;
   }
 
@@ -576,23 +488,17 @@ export class AgentSessionContainer {
     sessionId: string,
     hints: { cwd?: string; sessionDir?: string },
   ): Promise<string[] | null> {
-    const runtime = this.runtimes.get(sessionId);
-    if (runtime) {
+    const record = this.activeSessions.get(sessionId);
+    if (record) {
       this.refreshIdleDisposal(sessionId);
-      const loaded = await runtime.catch(() => null);
+      const loaded = await record.runtime.catch(() => null);
       if (loaded) {
-        return orderedDisplayKeys(
-          mergedSessionMessages(loaded.session),
-          this.turnBuffers.get(sessionId) ?? [],
-        );
+        return orderedDisplayKeys(mergedSessionMessages(loaded.session), record.turn.current ?? []);
       }
     }
-    const infoList = hints.cwd
-      ? await SessionManager.list(hints.cwd, hints.sessionDir)
-      : await SessionManager.listAll();
-    const found = infoList.find((info) => info.id === sessionId);
+    const found = await this.repository.findInfo(sessionId, hints);
     if (!found) return null;
-    return orderedDisplayKeys(messageEntries(SessionManager.open(found.path).getEntries()));
+    return orderedDisplayKeys(messageEntries(this.repository.open(found.path).getEntries()));
   }
 
   private readState(sessionId: string, keys: readonly string[]): SessionReadState {

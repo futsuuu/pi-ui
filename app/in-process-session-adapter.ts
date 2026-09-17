@@ -6,6 +6,7 @@ import {
   type ContainerEvent,
 } from "./agent-session-container";
 import { toSessionActivityEvent } from "./pi-session-event-adapter";
+import { SdkSessionRepository } from "./sdk-session-repository";
 import type {
   SessionActivitySource,
   SessionDeleteHints,
@@ -82,19 +83,21 @@ function applicationEvent(event: ContainerEvent): SessionEvent {
 export class InProcessSessionAdapter
   implements SessionRepository, SessionExecutor, SessionActivitySource, SessionEventHub
 {
-  constructor(private readonly container: AgentSessionContainer) {}
+  constructor(
+    private readonly container: AgentSessionContainer,
+    private readonly repository: SdkSessionRepository,
+  ) {}
 
   listInfo(dir: string) {
-    return this.container.listInfo(dir);
+    return this.repository.listInfo(dir);
   }
 
   findSessionCwd(sessionId: string) {
     return this.container.findSessionCwd(sessionId);
   }
 
-  async read(sessionId: string, hints: SessionLookupHints = {}): Promise<SessionSnapshot | null> {
-    const session = await this.container.get(sessionId, hints);
-    return session ? snapshotOf(session) : null;
+  read(sessionId: string, hints: SessionLookupHints = {}) {
+    return this.repository.read(sessionId, hints);
   }
 
   delete(sessionId: string, hints: SessionDeleteHints) {

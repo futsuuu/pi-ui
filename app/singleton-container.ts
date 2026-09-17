@@ -4,6 +4,7 @@ import { AgentSessionContainer } from "./agent-session-container";
 import { InProcessSessionAdapter } from "./in-process-session-adapter";
 import { ProjectRepository } from "./project-repository";
 import { ProviderAuthManager } from "./provider-auth-manager";
+import { SdkSessionRepository } from "./sdk-session-repository";
 import { SessionViewStateRepository } from "./session-view-state";
 import { WorktreeRepository } from "./worktree-repository";
 
@@ -26,17 +27,19 @@ async function createContainer(): Promise<SingletonContainer> {
     allowModelNetwork: true,
   });
   const providerAuthManager = new ProviderAuthManager(modelRuntime);
+  const sessionRepository = new SdkSessionRepository(modelRuntime);
   const sessionViewStateRepository = new SessionViewStateRepository();
   const agentSessionContainer = await AgentSessionContainer.create(
     modelRuntime,
     sessionViewStateRepository,
+    sessionRepository,
   );
   return {
     agentSessionContainer,
     modelRuntime,
     providerAuthManager,
     projectRepository: new ProjectRepository(),
-    sessions: new InProcessSessionAdapter(agentSessionContainer),
+    sessions: new InProcessSessionAdapter(agentSessionContainer, sessionRepository),
     worktreeRepository: new WorktreeRepository(),
   };
 }
