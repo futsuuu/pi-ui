@@ -1,6 +1,7 @@
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 import { AgentSessionContainer } from "./agent-session-container";
+import { InProcessSessionAdapter } from "./in-process-session-adapter";
 import { ProjectRepository } from "./project-repository";
 import { ProviderAuthManager } from "./provider-auth-manager";
 import { SessionViewStateRepository } from "./session-view-state";
@@ -11,6 +12,7 @@ interface SingletonContainer {
   modelRuntime: ModelRuntime;
   providerAuthManager: ProviderAuthManager;
   projectRepository: ProjectRepository;
+  sessions: InProcessSessionAdapter;
   worktreeRepository: WorktreeRepository;
 }
 
@@ -25,14 +27,16 @@ async function createContainer(): Promise<SingletonContainer> {
   });
   const providerAuthManager = new ProviderAuthManager(modelRuntime);
   const sessionViewStateRepository = new SessionViewStateRepository();
+  const agentSessionContainer = await AgentSessionContainer.create(
+    modelRuntime,
+    sessionViewStateRepository,
+  );
   return {
-    agentSessionContainer: await AgentSessionContainer.create(
-      modelRuntime,
-      sessionViewStateRepository,
-    ),
+    agentSessionContainer,
     modelRuntime,
     providerAuthManager,
     projectRepository: new ProjectRepository(),
+    sessions: new InProcessSessionAdapter(agentSessionContainer),
     worktreeRepository: new WorktreeRepository(),
   };
 }
