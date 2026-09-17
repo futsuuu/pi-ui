@@ -33,11 +33,13 @@ export interface SelectedModel {
  */
 function MessageInput({
   isStreaming,
+  disabled,
   onSubmit,
   onAbort,
   children,
 }: {
   isStreaming: boolean;
+  disabled: boolean;
   onSubmit?: (text: string) => void;
   onAbort: () => void;
   children?: React.ReactNode;
@@ -54,7 +56,7 @@ function MessageInput({
 
   function handleSubmit() {
     const text = input.trim();
-    if (!onSubmit || !text || isStreaming) return;
+    if (!onSubmit || !text || isStreaming || disabled) return;
     setInput("");
     onSubmit(text);
   }
@@ -75,7 +77,7 @@ function MessageInput({
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={isStreaming ? "Pi is thinking…" : "Type a message… (Ctrl+Enter to send)"}
-          disabled={isStreaming}
+          disabled={isStreaming || disabled}
           rows={1}
           className="w-full resize-none bg-transparent text-sm focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden max-h-60"
           onInput={(e) => {
@@ -99,7 +101,7 @@ function MessageInput({
             ) : (
               <button
                 onClick={handleSubmit}
-                disabled={!onSubmit || !input.trim()}
+                disabled={!onSubmit || !input.trim() || disabled}
                 className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white rounded-lg p-1.5 transition-colors disabled:cursor-not-allowed"
               >
                 <SendIcon className="w-4 h-4" strokeWidth={2} />
@@ -229,6 +231,7 @@ function ModelListItems({
 
 export interface PromptFormProps {
   isStreaming: boolean;
+  disabled?: boolean;
   models: Promise<readonly Model<Api>[]>;
   defaultModel: SelectedModel | null;
   defaultThinkingLevel: ModelThinkingLevel;
@@ -256,6 +259,7 @@ export interface PromptFormProps {
  */
 export const PromptForm = memo(function PromptForm({
   isStreaming,
+  disabled = false,
   models,
   defaultModel,
   defaultThinkingLevel,
@@ -313,6 +317,7 @@ export const PromptForm = memo(function PromptForm({
   return (
     <MessageInput
       isStreaming={isStreaming}
+      disabled={disabled}
       onSubmit={selectedModel ? handleSubmit : undefined}
       onAbort={onAbort}
     >
