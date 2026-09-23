@@ -121,6 +121,7 @@ export default function NewSession({ loaderData }: Route.ComponentProps) {
         </div>
       </div>
       <PromptForm
+        key={loaderData.dir}
         isStreaming={false}
         disabled={fetcher.state !== "idle"}
         models={loaderData.models}
